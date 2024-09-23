@@ -210,107 +210,6 @@ function hslToRgb([h, s, l]) {
     return [Math.round(r), Math.round(g), Math.round(b)];
 }
 
-// WRONG Function to create the palette
-// function createPalette(colors) {
-//     const jsonOutput = {
-//         "palettes": {},
-//         "scale": defaultScaleData,
-//         "typescale": {
-//             "size": {},
-//             "line-height": {},
-//             "tracking": {}
-//         },
-//         "typeface": {
-//             "Display": { "$type": "text", "$value": "Nunito Sans" },
-//             "Text": { "$type": "text", "$value": "Nunito Sans" }
-//         }
-//     };
-
-//     colors.forEach(({ name, hex }) => {
-//         const startRgb = hexToRgb(hex);
-//         const startHsl = rgbToHsl(startRgb);
-
-//         steps.forEach(step => {
-//             const lightness = step;
-//             const rgb = hslToRgb([startHsl[0], startHsl[1], lightness]);
-//             const colorHex = rgbToHex(rgb);
-//             jsonOutput["palettes"][`${name} ${step}`] = { "$type": "color", "$value": colorHex };
-//         });
-
-//         // Add additional color variations
-//         [0, 5, 8, 10, 12, 38].forEach(opacity => {
-//             jsonOutput["palettes"][`${name} ${steps[0]} ${opacity}%`] = { "$type": "color", "$value": hex + Math.round(opacity * 2.55).toString(16).padStart(2, '0') };
-//         });
-//     });
-
-//     // Add color roles
-//     Object.keys(colorRolesTemplate).forEach(role => {
-//         const paletteReference = colorRolesTemplate[role];
-//         jsonOutput[role] = { "$type": "color", "$value": `{palettes.${paletteReference}}` };
-//     });
-
-//     // Add typescale data
-//     Object.keys(typescaleData.size).forEach(key => {
-//         jsonOutput.typescale.size[key] = { "$type": "number", "$value": typescaleData.size[key] };
-//         jsonOutput.typescale["line-height"][key] = { "$type": "number", "$value": typescaleData["line-height"][key] };
-//         jsonOutput.typescale.tracking[key] = { "$type": "number", "$value": 0 }; // Default tracking value
-//     });
-
-//     // Add state layers
-//     jsonOutput["state-layer"] = {
-//         "Enabled": { "$type": "color", "$value": "{palettes.Primary 40 0%}" },
-//         "Disabled": { "$type": "color", "$value": "{palettes.Neutral 10 12%}" },
-//         "Hovered": { "$type": "color", "$value": "{palettes.Primary 40 8%}" },
-//         "Focused": { "$type": "color", "$value": "{palettes.Primary 40 10%}" },
-//         "Pressed": { "$type": "color", "$value": "{palettes.Primary 40 10%}" },
-//         "Dragged": { "$type": "color", "$value": "{palettes.Primary 40 10%}" }
-//     };
-
-//     return jsonOutput;
-// }
-
-// Update the generatePalette function to use the new structure
-// function generatePalette() {
-//     const colors = [...document.querySelectorAll('.color-input-row')].map(row => ({
-//         name: row.querySelector('input[type="text"]:first-child').value,
-//         hex: row.querySelector('input[type="text"]:nth-child(2)').value
-//     })).filter(c => c.name && /^#[0-9A-F]{6}$/i.test(c.hex));
-
-//     if (colors.length) {
-//         const jsonOutput = createPalette(colors);
-
-//         // Include typography settings
-//         jsonOutput.typography = {
-//             baseFontSize: document.getElementById('baseFontSizeInput').value,
-//             baseLineHeight: document.getElementById('baseLineHeightInput').value,
-//             baseFontFamily: document.getElementById('baseFontSelector').value,
-//             baseFontWeight: document.getElementById('baseFontWeightSelector').value,
-//             headerFontFamily: document.getElementById('headerFontSelector').value,
-//             headerFontWeight: document.getElementById('headerFontWeightSelector').value,
-//             displayFontFamily: document.getElementById('displayFontSelector').value,
-//             displayFontWeight: document.getElementById('displayFontWeightSelector').value
-//         };
-
-//         // Update JSON output
-//         let jsonOutputElem = document.getElementById('jsonOutput');
-//         if (!jsonOutputElem) {
-//             jsonOutputElem = document.createElement('pre');
-//             jsonOutputElem.id = 'jsonOutput';
-//             jsonOutputElem.className = 'json-output';
-//             jsonOutputElem.style.display = 'none';
-//             document.body.appendChild(jsonOutputElem);
-//         }
-//         const fullJsonString = JSON.stringify(jsonOutput, null, 2);
-//         jsonOutputElem.textContent = fullJsonString;
-//         jsonOutputElem.dataset.fullJson = fullJsonString;
-//     } else {
-//         alert('Please enter all color names and valid hex codes');
-//     }
-
-//     paletteGenerated = true;
-// }
-
-
 function createPalette(colors) {
     const palette = document.getElementById('palette');
     palette.innerHTML = '';
@@ -781,15 +680,18 @@ function updateTypography() {
     const baseFontFamily = document.getElementById('baseFontSelector').value;
     const baseFontWeight = document.getElementById('baseFontWeightSelector').value;
     const baseFontSize = parseFloat(document.getElementById('baseFontSizeInput').value);
-    const baseLineHeight = parseFloat(document.getElementById('baseLineHeightInput').value) * baseFontSize;
+    const baseLineHeight = parseFloat(document.getElementById('baseLineHeightInput').value);
+    const paragraphSpacing = parseFloat(document.getElementById('paragraphSpacingInput').value);
 
     // Header Text Settings
     const headerFontFamily = document.getElementById('headerFontSelector').value;
     const headerFontWeight = document.getElementById('headerFontWeightSelector').value;
+    const headerLineHeight = parseFloat(document.getElementById('headerLineHeightInput').value);
 
     // Display Text Settings
     const displayFontFamily = document.getElementById('displayFontSelector').value;
     const displayFontWeight = document.getElementById('displayFontWeightSelector').value;
+    const displayLineHeight = parseFloat(document.getElementById('displayLineHeightInput').value);
 
     // Typography Scale Ratios
     const scaleRatios = {
@@ -797,7 +699,7 @@ function updateTypography() {
         'md': 1,      // Base size
         'lg': 1.25,
         'xl': 1.5,
-        '2xl': 1.75,
+        '2xl': 1.65,
         '3xl': 2,
         '4xl': 2.5,
         '5xl': 3,
@@ -806,33 +708,22 @@ function updateTypography() {
         '8xl': 4.5
     };
 
-    // Generate Typography Styles
+// Generate Typography Styles
     const typographyStyles = {};
 
     Object.keys(scaleRatios).forEach(sizeKey => {
-        let fontSize = baseFontSize * scaleRatios[sizeKey];
+        let fontSize = Math.round(baseFontSize * scaleRatios[sizeKey]);
+        let lineHeight = Math.round(baseLineHeight * scaleRatios[sizeKey]);
 
-        // Calculate line height based on the rules
-        let lineHeight;
-
-        if (fontSize > baseFontSize) {
-            // For headers and display text
-            lineHeight = Math.min(fontSize * 1.5, fontSize);
-            lineHeight = Math.max(lineHeight, 24);
-            // Round to nearest multiple of 4
-            lineHeight = Math.ceil(lineHeight / 4) * 4;
-        } else {
-            // For base and smaller text
-            lineHeight = baseLineHeight;
-            lineHeight = Math.max(lineHeight, 24);
-            lineHeight = Math.ceil(lineHeight / 4) * 4;
-        }
+        // Round line height to nearest multiple of 4
+        lineHeight = Math.ceil(lineHeight / 4) * 4;
 
         typographyStyles[sizeKey] = {
             fontSize: `${fontSize}px`,
             lineHeight: `${lineHeight}px`,
             fontFamily: baseFontFamily,
-            fontWeight: baseFontWeight
+            fontWeight: baseFontWeight,
+            marginBottom: `${paragraphSpacing}px`
         };
     });
 
@@ -840,21 +731,25 @@ function updateTypography() {
     ['lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl'].forEach(sizeKey => {
         typographyStyles[sizeKey].fontFamily = headerFontFamily;
         typographyStyles[sizeKey].fontWeight = headerFontWeight;
+                typographyStyles[sizeKey].lineHeight = `${headerLineHeight}px`;  // Header-specific line height
+
     });
 
     ['6xl', '7xl', '8xl'].forEach(sizeKey => {
         typographyStyles[sizeKey].fontFamily = displayFontFamily;
         typographyStyles[sizeKey].fontWeight = displayFontWeight;
+                typographyStyles[sizeKey].lineHeight = `${displayLineHeight}px`;  // Display-specific line height
+
     });
 
-    // Additional styles
-    // Paragraph variants
+    // Update paragraph styles
     ['paragraph-regular', 'paragraph-medium', 'paragraph-semibold', 'paragraph-bold', 'paragraph-italic'].forEach(style => {
         typographyStyles[style] = {
             ...typographyStyles['md'],
             fontWeight: style.includes('medium') ? '500' : style.includes('semibold') ? '600' : style.includes('bold') ? '700' : baseFontWeight,
             fontStyle: style.includes('italic') ? 'italic' : 'normal',
-            textDecoration: style.includes('underline') ? 'underline' : 'none'
+            textDecoration: style.includes('underline') ? 'underline' : 'none',
+            marginBottom: `${paragraphSpacing}px`
         };
     });
 
@@ -864,7 +759,8 @@ function updateTypography() {
             ...typographyStyles['sm'],
             fontWeight: style.includes('medium') ? '500' : style.includes('semibold') ? '600' : style.includes('bold') ? '700' : baseFontWeight,
             fontStyle: style.includes('italic') ? 'italic' : 'normal',
-            textDecoration: style.includes('underline') ? 'underline' : 'none'
+            textDecoration: style.includes('underline') ? 'underline' : 'none',
+            marginBottom: `${paragraphSpacing}px`
         };
     });
 
@@ -872,35 +768,41 @@ function updateTypography() {
     typographyStyles['code-regular'] = {
         ...typographyStyles['sm'],
         fontFamily: 'Courier New, monospace',
-        fontWeight: '400'
+        fontWeight: '400',
+        marginBottom: `${paragraphSpacing}px`
     };
     typographyStyles['code-bold'] = {
         ...typographyStyles['sm'],
         fontFamily: 'Courier New, monospace',
-        fontWeight: '700'
+        fontWeight: '700',
+        marginBottom: `${paragraphSpacing}px`
     };
     typographyStyles['code-italic'] = {
         ...typographyStyles['sm'],
         fontFamily: 'Courier New, monospace',
-        fontStyle: 'italic'
+        fontStyle: 'italic',
+        marginBottom: `${paragraphSpacing}px`
     };
 
     // Blockquote
     typographyStyles['blockquote'] = {
         ...typographyStyles['lg'],
-        fontStyle: 'italic'
+        fontStyle: 'italic',
+        marginBottom: `${paragraphSpacing}px`
     };
 
     // Link styles
     typographyStyles['link'] = {
         ...typographyStyles['md'],
         color: '#1a0dab',
-        textDecoration: 'underline'
+        textDecoration: 'underline',
+        marginBottom: `${paragraphSpacing}px`
     };
     typographyStyles['link-hover'] = {
         ...typographyStyles['md'],
         color: '#c61a09',
-        textDecoration: 'underline'
+        textDecoration: 'underline',
+        marginBottom: `${paragraphSpacing}px`
     };
 
     // Update Samples
@@ -913,6 +815,7 @@ function updateSample(sampleId, typographyStyles, isMobile) {
     const sample = document.getElementById(sampleId);
     sample.innerHTML = getSampleContent();
     const elements = sample.querySelectorAll('[data-typography]');
+    const paragraphSpacing = parseFloat(document.getElementById('paragraphSpacingInput').value);
 
     elements.forEach(element => {
         const type = element.getAttribute('data-typography');
@@ -929,13 +832,14 @@ function updateSample(sampleId, typographyStyles, isMobile) {
         }
 
         element.style.fontSize = `${fontSizeValue}px`;
-        element.style.lineHeight = `${lineHeightValue}px`;
+        element.style.lineHeight = `${lineHeightValue}px`; // Ensure line height is applied
         element.style.fontFamily = style.fontFamily;
         element.style.fontWeight = style.fontWeight || 'normal';
         element.style.fontStyle = style.fontStyle || 'normal';
         element.style.textDecoration = style.textDecoration || 'none';
         element.style.color = style.color || 'inherit';
         element.style.textAlign = 'left';
+        element.style.marginBottom = `${paragraphSpacing}px`; // Apply paragraph spacing to all elements
 
         // Add typography name badges inside the element
         if (!isMobile && !element.querySelector('.typography-name-container')) {
@@ -1093,12 +997,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Update typography in real-time
+// Update typography in real-time
     const typographyInputs = document.querySelectorAll('.typography-settings input, .typography-settings select');
     typographyInputs.forEach(input => {
         input.addEventListener('change', updateTypography);
         input.addEventListener('input', updateTypography);
     });
+
+    // Add event listener for paragraph spacing input
+    document.getElementById('paragraphSpacingInput').addEventListener('input', updateTypography);
 
     // Initialize the tabs
     openTab('colorTab');

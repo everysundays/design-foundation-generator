@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>31 Design System Generator</title>
+    <title>v.32 Design System Generator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
@@ -12,7 +12,7 @@
     <div class="container">
         <div class="header-row">
             <div class="tabs">
-            <h1>31</h1>
+                <h1>v.32</h1>
                 <button class="tab-button active" onclick="openTab('colorTab')">Color</button>
                 <button class="tab-button" onclick="openTab('typographyTab')">Typography</button>
             </div>
@@ -39,78 +39,91 @@
                 <div class="generator-container">
                     <h2>Typography</h2>
                     <div class="typography-settings">
-                      <div class="typography-column">
-                        <div class="typography-row">
-                          <div class="typography-group">
-                            <label for="baseFontSelector">Base Font</label>
-                            <select id="baseFontSelector" class="typography-select"></select>
-                        </div>
+                        <div class="typography-column">
+                            <div class="typography-row">
+                                <div class="typography-group">
+                                    <label for="displayFontSelector">Display</label>
+                                    <select id="displayFontSelector" class="typography-select"></select>
+                                    <select id="displayFontWeightSelector" class="typography-select"></select>
+                                </div>
+
+                                <div class="typography-group">
+                                    <div class="input-with-unit">
+                                      <label for="baseLineHeightInput">Line Height</label>
+                                      <input type="number" id="displayLineHeightInput" value="72" step="4" class="typography-input">
+                                      <span class="unit">px</span>
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="typography-row">
+                            <div class="typography-group">
+                                <label for="headerFontSelector">Header</label>
+                                <select id="headerFontSelector" class="typography-select"></select>
+                                <select id="headerFontWeightSelector" class="typography-select"></select>
+                            </div>
+
+                            <div class="typography-group">
+                                <div class="input-with-unit">
+                                  <label for="baseLineHeightInput">Line Height</label>
+                                  <input type="number" id="headerLineHeightInput" value="40" step="4" class="typography-input">
+                                  <span class="unit">px</span>
+                              </div>
+                          </div>
+
+
+                      </div>
+                      <div class="typography-row">
                         <div class="typography-group">
+                            <label for="baseFontSelector">Base</label>
+                            <select id="baseFontSelector" class="typography-select"></select>
                             <select id="baseFontWeightSelector" class="typography-select"></select>
                         </div>
-                    </div>
-                    <div class="typography-row">
-                      <div class="typography-group">
-                        <label for="baseFontSizeInput">Base Font Size</label>
-                        <div class="input-with-unit">
-                          <input type="number" id="baseFontSizeInput" value="16" class="typography-input">
-                          <span class="unit">px</span>
+
+                        <div class="typography-group">
+                            <div class="input-with-unit">
+                              <label for="baseLineHeightInput">Line Height</label>
+                              <input type="number" id="baseLineHeightInput" value="24" step="4" class="typography-input">
+                              <span class="unit">px</span>
+                          </div>
                       </div>
-                  </div>
-                  <div class="typography-group">
-                    <label for="baseLineHeightInput">Line Height</label>
-                    <div class="input-with-unit">
-                      <input type="number" id="baseLineHeightInput" value="1.5" step="0.1" class="typography-input">
-                      <span class="unit">px</span>
+
                   </div>
               </div>
-              <div class="typography-group">
-                    <label for="baseLineHeightInput">Paragraph Spacing</label>
-                    <div class="input-with-unit">
-                      <input type="number" id="baseLineHeightInput" value="0" step="1" class="typography-input">
-                      <span class="unit">px</span>
-                  </div>
-              </div>
-          </div>
-      </div>
+              <div class="typography-column">
+                <div class="typography-row">
+                    <div class="typography-group">
+                        <label for="baseFontSizeInput">Base Size</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="baseFontSizeInput" value="16" step="1" class="typography-input">
+                            <span class="unit">px</span>
+                        </div>
+                    </div>
+                    <div class="typography-group">
+                        <label for="paragraphSpacingInput">Spacing</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="paragraphSpacingInput" value="8" step="1" class="typography-input">
+                            <span class="unit">px</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-      <div class="typography-column">
-        <div class="typography-row">
-          <div class="typography-group">
-            <label for="displayFontSelector">Display Font</label>
-            <select id="displayFontSelector" class="typography-select"></select>
-        </div>
-        <div class="typography-group">
-            <select id="displayFontWeightSelector" class="typography-select"></select>
-        </div>
-    </div>
-    <div class="typography-row">
-      <div class="typography-group">
-        <label for="headerFontSelector">Header Font</label>
-        <select id="headerFontSelector" class="typography-select"></select>
-    </div>
-    <div class="typography-group">
-        <select id="headerFontWeightSelector" class="typography-select"></select>
-    </div>
-</div>
-</div>
-</div>
-
-<div class="typography-samples-wrapper">
-    <div id="typographyLegend" class="typography-legend"></div>
-    <div id="typographySamples" class="typography-samples">
-        <div class="typography-sample desktop-sample">
-            <h3>Desktop</h3>
-            <div class="sample" id="desktopSample"></div>
-        </div>
-        <div class="typography-sample mobile-sample">
-            <h3>Mobile</h3>
-            <div class="sample" id="mobileSample"></div>
+        <div class="typography-samples-wrapper">
+            <div id="typographyLegend" class="typography-legend"></div>
+            <div id="typographySamples" class="typography-samples">
+                <div class="typography-sample desktop-sample">
+                    <h3>Desktop</h3>
+                    <div class="sample" id="desktopSample"></div>
+                </div>
+                <div class="typography-sample mobile-sample">
+                    <h3>Mobile</h3>
+                    <div class="sample" id="mobileSample"></div>
+                </div>
+            </div>
         </div>
     </div>
-</div>
-</div>
-<footer id="abbreviationFooter" class="abbreviation-footer"></footer>
+    <footer id="abbreviationFooter" class="abbreviation-footer"></footer>
 </div>
 </div>
 
