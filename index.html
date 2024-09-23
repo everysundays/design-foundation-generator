@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>31 Design System Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <link id="dynamic-fonts" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="header-row">
+            <div class="tabs">
+            <h1>31</h1>
+                <button class="tab-button active" onclick="openTab('colorTab')">Color</button>
+                <button class="tab-button" onclick="openTab('typographyTab')">Typography</button>
+            </div>
+            <div class="header-buttons">
+                <button id="generateButton" class="header-icon-button">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button id="downloadButton" class="header-icon-button">
+                    <i class="fas fa-download"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="tab-content-wrapper">
+            <div id="colorTab" class="tab-content active">
+                <div class="generator-container">
+                    <h2>Color</h2>
+                    <div id="colorInputs"></div>
+                    <div id="palette" class="display-area palette"></div>
+                </div>
+            </div>
+
+            <div id="typographyTab" class="tab-content">
+                <div class="generator-container">
+                    <h2>Typography</h2>
+                    <div class="typography-settings">
+                      <div class="typography-column">
+                        <div class="typography-row">
+                          <div class="typography-group">
+                            <label for="baseFontSelector">Base Font</label>
+                            <select id="baseFontSelector" class="typography-select"></select>
+                        </div>
+                        <div class="typography-group">
+                            <select id="baseFontWeightSelector" class="typography-select"></select>
+                        </div>
+                    </div>
+                    <div class="typography-row">
+                      <div class="typography-group">
+                        <label for="baseFontSizeInput">Base Font Size</label>
+                        <div class="input-with-unit">
+                          <input type="number" id="baseFontSizeInput" value="16" class="typography-input">
+                          <span class="unit">px</span>
+                      </div>
+                  </div>
+                  <div class="typography-group">
+                    <label for="baseLineHeightInput">Line Height</label>
+                    <div class="input-with-unit">
+                      <input type="number" id="baseLineHeightInput" value="1.5" step="0.1" class="typography-input">
+                      <span class="unit">px</span>
+                  </div>
+              </div>
+              <div class="typography-group">
+                    <label for="baseLineHeightInput">Paragraph Spacing</label>
+                    <div class="input-with-unit">
+                      <input type="number" id="baseLineHeightInput" value="0" step="1" class="typography-input">
+                      <span class="unit">px</span>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      <div class="typography-column">
+        <div class="typography-row">
+          <div class="typography-group">
+            <label for="displayFontSelector">Display Font</label>
+            <select id="displayFontSelector" class="typography-select"></select>
+        </div>
+        <div class="typography-group">
+            <select id="displayFontWeightSelector" class="typography-select"></select>
+        </div>
+    </div>
+    <div class="typography-row">
+      <div class="typography-group">
+        <label for="headerFontSelector">Header Font</label>
+        <select id="headerFontSelector" class="typography-select"></select>
+    </div>
+    <div class="typography-group">
+        <select id="headerFontWeightSelector" class="typography-select"></select>
+    </div>
+</div>
+</div>
+</div>
+
+<div class="typography-samples-wrapper">
+    <div id="typographyLegend" class="typography-legend"></div>
+    <div id="typographySamples" class="typography-samples">
+        <div class="typography-sample desktop-sample">
+            <h3>Desktop</h3>
+            <div class="sample" id="desktopSample"></div>
+        </div>
+        <div class="typography-sample mobile-sample">
+            <h3>Mobile</h3>
+            <div class="sample" id="mobileSample"></div>
+        </div>
+    </div>
+</div>
+</div>
+<footer id="abbreviationFooter" class="abbreviation-footer"></footer>
+</div>
+</div>
+
+<pre id="jsonOutput" class="json-output" style="display: none;"></pre>
+</div>
+
+<script src="scripts.js"></script> 
+</body>
+</html>
