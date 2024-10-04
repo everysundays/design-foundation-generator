@@ -122,6 +122,10 @@ display: flex;
 align-items: center
 }
 
+.color-row.header-row .color-label{
+width: 60px;
+}
+
 .color-input-row {
 display: flex;
 align-items: flex-end;
@@ -152,11 +156,11 @@ cursor: pointer;
 }
 
 .palette {
-margin-top: var(--gap-medium);
+margin-top: var(--gap-large);
 }
 .color-label {
 font: 400 var(--small-body-font-size) Arial;
-width: 120px;
+width: 100px;
 margin-right: 10px;
 text-align: right;
 }
