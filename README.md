@@ -1,7 +1,71 @@
-# design-system-generator
-Design System helper to solve the problem that Google M3 has forgot to include many color palettes into their Figma template files. So I decided to make a complete set and make a generator to create new ones easily
+# Design Foundation Generator v2
 
-• Generates color palettes, color roles (now support Google M3) and typography first set into json to be imported with heron variable tools plugin.
-• work in progress, now at version 31. still buggy.
+A comprehensive design system generator that helps designers and developers create, manage, and implement consistent design tokens across platforms.
 
-** Everything writes with ChatGPT-o1. Redefine design layout with v0.dev
+## 🎯 Vision
+Transform how design systems are created and maintained by providing intelligent tools for generating, validating, and distributing design tokens. Our focus is on creating a bridge between design decisions and implementation while ensuring accessibility and consistency.
+
+## 🎨 Core Features
+
+### Color System Management
+- Advanced color palette generation with WCAG compliance checking
+- Real-time accessibility validation for text contrast (AA/AAA)
+- Per-row hue and saturation controls
+- Color row duplication with custom naming
+- Intelligent color role suggestions
+
+### Token Management
+- Comprehensive token system (colors, typography, spacing, etc.)
+- Scoped themes for different projects/brands
+- Token relationship visualization
+- Custom naming and grouping system
+
+### Export & Integration
+- Figma-compatible variable export
+- Design token JSON format support
+- Platform-specific token generation (Web, iOS, Android)
+- Integration with popular design tools
+
+## 👥 Target Users
+- System Designers & UX Engineers
+- Design Operations Teams
+- Freelance Designers
+- Frontend Developers
+
+## 🛣️ Development Roadmap
+
+### Phase 1: Foundation (Current)
+- [ ] Enhanced color palette interface
+- [ ] WCAG compliance indicators
+- [ ] Per-row controls for hue and saturation
+- [ ] Color row duplication feature
+- [ ] Custom color naming system
+
+### Phase 2: Token System
+- [ ] Comprehensive token management
+- [ ] Theme scoping system
+- [ ] Token relationship visualization
+- [ ] Export system for multiple platforms
+
+### Phase 3: Integration & Extensions
+- [ ] Figma plugin/integration
+- [ ] API for external tool integration
+- [ ] Dark mode theme support
+- [ ] Platform-specific token generation
+
+## 🔧 Technical Stack
+- Frontend: HTML5, CSS3, JavaScript
+- Build Tools: TBD
+- Testing Framework: TBD
+
+## 📝 Project Status
+Currently in active development. Phase 1 features are being implemented with a focus on the color system management features.
+
+## 🤝 Contributing
+This project is currently in development. Contribution guidelines will be added soon.
+
+## 📄 License
+TBD
+
+---
+*Last Updated: April 2024*
