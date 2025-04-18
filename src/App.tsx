@@ -1,11 +1,13 @@
 import React from 'react'
-import styled from 'styled-components'
+import styled, { ThemeProvider } from 'styled-components'
+import { GlobalStyle } from './styles/GlobalStyle'
+import { theme } from './styles/theme'
 import { ColorPalette } from './components/color/ColorPalette'
 
 const AppContainer = styled.div`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
+  min-height: 100vh;
+  padding: ${({ theme }) => theme.spacing.xl};
+  background: ${({ theme }) => theme.colors.background.secondary};
 `
 
 const Header = styled.header`
@@ -19,14 +21,17 @@ const Title = styled.h1`
 
 const App: React.FC = () => {
   return (
-    <AppContainer>
-      <Header>
-        <Title>Design Foundation Generator</Title>
-      </Header>
-      <main>
-        <ColorPalette />
-      </main>
-    </AppContainer>
+    <ThemeProvider theme={theme}>
+      <GlobalStyle />
+      <AppContainer>
+        <Header>
+          <Title>Design Foundation Generator</Title>
+        </Header>
+        <main>
+          <ColorPalette />
+        </main>
+      </AppContainer>
+    </ThemeProvider>
   )
 }
 

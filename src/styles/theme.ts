@@ -1,44 +1,36 @@
 import { createGlobalStyle, DefaultTheme } from 'styled-components'
 
-export const theme: DefaultTheme = {
+export const theme = {
   colors: {
-    primary: '#0055CC',
-    secondary: '#6B778C',
-    success: '#36B37E',
-    danger: '#FF5630',
-    warning: '#FFAB00',
-    info: '#00B8D9',
     background: {
       primary: '#FFFFFF',
-      secondary: '#F4F5F7',
-      hover: '#EBECF0',
+      secondary: '#F5F5F5',
+      hover: 'rgba(0, 0, 0, 0.04)'
     },
     text: {
-      primary: '#172B4D',
-      secondary: '#6B778C',
-      inverse: '#FFFFFF',
+      primary: '#1F1F1F',
+      secondary: '#6B6B6B'
     },
     border: {
-      default: '#DFE1E6',
-      focus: '#4C9AFF',
-    },
+      default: '#E0E0E0'
+    }
   },
   spacing: {
     xs: '4px',
     sm: '8px',
     md: '16px',
     lg: '24px',
-    xl: '32px',
+    xl: '32px'
   },
   borderRadius: {
-    small: '3px',
-    medium: '4px',
-    large: '8px',
+    small: '4px',
+    medium: '8px',
+    large: '12px'
   },
   typography: {
     fontFamily: {
       base: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif',
-      mono: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace',
+      mono: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace'
     },
     fontSize: {
       xs: '12px',
@@ -46,20 +38,20 @@ export const theme: DefaultTheme = {
       md: '16px',
       lg: '18px',
       xl: '20px',
-      xxl: '24px',
+      xxl: '24px'
     },
     fontWeight: {
       regular: '400',
       medium: '500',
       semibold: '600',
-      bold: '700',
+      bold: '700'
     },
     lineHeight: {
       tight: '1.25',
       normal: '1.5',
-      relaxed: '1.75',
-    },
-  },
+      relaxed: '1.75'
+    }
+  }
 };
 
 export default theme;

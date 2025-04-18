@@ -1,58 +1,102 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { calculateWCAGRatio } from '../../utils/colorUtils';
-import { ADS_COLORS, NEUTRAL_COLORS, DARK_NEUTRAL_COLORS } from '../../constants/adsColors';
+import { ADS_COLORS, NEUTRAL_COLORS, DARK_NEUTRAL_COLORS, HSLColor } from '../../constants/adsColors';
+import { ColorTooltip } from '../color/ColorTooltip';
+import { HSLToHex, hexToHSL } from '../../utils/colorUtils';
 
 const Wrapper = styled.div`
   border: 1px solid ${({ theme }) => theme.colors.border.default};
   border-radius: ${({ theme }) => theme.borderRadius.medium};
-  padding: ${({ theme }) => theme.spacing.xl};
-  background: ${({ theme }) => theme.colors.background.primary};
-  max-width: fit-content;
-  margin: 0 auto;
+  padding: ${({ theme }) => theme.spacing.lg};
+  background: #FFFFFF;
+  display: inline-flex;
+  position: relative;
+  overflow: visible;
 `;
 
 const Container = styled.div`
   display: flex;
+  overflow-x: auto;
+  padding-bottom: ${({ theme }) => theme.spacing.md};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+`;
+
+const PaletteLayout = styled.div`
+  display: flex;
+  gap: ${({ theme }) => theme.spacing.lg};
+  padding: ${({ theme }) => theme.spacing.md};
+`;
+
+const MainPalettes = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const DarkNeutralSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid ${({ theme }) => theme.colors.border.default};
+  padding-left: ${({ theme }) => theme.spacing.lg};
+`;
+
+const Section = styled.div`
+  display: flex;
+`;
+
+const SectionTitle = styled.h2`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  margin: 0 0 ${({ theme }) => theme.spacing.sm};
 `;
 
 const ScaleColumn = styled.div`
   display: flex;
   flex-direction: column;
   gap: ${({ theme }) => theme.spacing.xs};
-  min-width: 40px;
-  padding-right: ${({ theme }) => theme.spacing.xl};
+  min-width: 32px;
+  padding-right: ${({ theme }) => theme.spacing.md};
   text-align: right;
   border-right: 1px solid ${({ theme }) => theme.colors.border.default};
-  margin-right: ${({ theme }) => theme.spacing.xl};
+  margin-right: ${({ theme }) => theme.spacing.md};
 `;
 
 const ScaleLabel = styled.div`
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: ${({ theme }) => theme.colors.text.secondary};
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  padding-right: ${({ theme }) => theme.spacing.xs};
 `;
 
 const ColorGrid = styled.div`
   display: flex;
-  gap: ${({ theme }) => theme.spacing.md};
+  gap: ${({ theme }) => theme.spacing.xs};
 `;
 
-const ColorColumn = styled.div<{ $isFocused: boolean }>`
+const ColorColumn = styled.div<{ $isSelected: boolean }>`
+  display: flex;
+  gap: ${({ theme }) => theme.spacing.md};
+  opacity: 1;
+  background: ${({ $isSelected, theme }) => $isSelected ? theme.colors.background.hover : 'transparent'};
+  border-radius: ${({ theme }) => theme.borderRadius.medium};
+  padding: ${({ theme }) => theme.spacing.xs};
+  transition: background 0.2s ease;
+  cursor: pointer;
+  position: relative;
+`;
+
+const ColorScales = styled.div`
   display: flex;
   flex-direction: column;
   gap: ${({ theme }) => theme.spacing.xs};
-  position: relative;
-  padding-bottom: ${({ $isFocused }) => $isFocused ? '120px' : '0'};
-  transition: padding-bottom 0.2s ease;
 `;
 
-const ColorCell = styled.div<{ $color: string; $isSelected?: boolean }>`
-  width: 48px;
-  height: 48px;
+const ColorCell = styled.div<{ $color: string; $showTooltip?: boolean }>`
+  width: 40px;
+  height: 40px;
   background-color: ${({ $color }) => $color};
   border-radius: ${({ theme }) => theme.borderRadius.small};
   position: relative;
@@ -61,16 +105,12 @@ const ColorCell = styled.div<{ $color: string; $isSelected?: boolean }>`
   align-items: center;
   justify-content: center;
   gap: 2px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  
-  ${({ $isSelected, theme }) => $isSelected && `
-    border-color: ${theme.colors.border.focus};
-  `}
 
-  &:hover {
-    border-color: ${({ theme }) => theme.colors.border.focus};
-  }
+  ${({ $showTooltip }) => $showTooltip && `
+    &:hover > div {
+      display: block;
+    }
+  `}
 `;
 
 const WcagText = styled.div<{ $color: 'white' | 'black' }>`
@@ -89,18 +129,48 @@ const AlphaIndicator = styled.div`
   opacity: 0.8;
 `;
 
-const ColumnControls = styled.div<{ $visible: boolean }>`
+const ControlPanel = styled.div<{ $position: 'left' | 'right' }>`
   position: absolute;
-  bottom: ${({ theme }) => theme.spacing.xs};
-  left: 0;
-  width: 100%;
-  opacity: ${({ $visible }) => $visible ? 1 : 0};
-  pointer-events: ${({ $visible }) => $visible ? 'auto' : 'none'};
-  transition: opacity 0.2s ease;
+  ${({ $position }) => $position === 'left' ? 'right: 100%;' : 'left: 100%;'}
+  top: 0;
   background: ${({ theme }) => theme.colors.background.primary};
-  padding: ${({ theme }) => theme.spacing.sm};
+  border: 1px solid ${({ theme }) => theme.colors.border.default};
+  border-radius: ${({ theme }) => theme.borderRadius.medium};
+  padding: ${({ theme }) => theme.spacing.md};
+  width: 280px;
+  margin: 0 ${({ theme }) => theme.spacing.xs};
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+`;
+
+const ControlHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+`;
+
+const ControlTitle = styled.h3`
+  font-size: 0.875rem;
+  margin: 0;
+  color: ${({ theme }) => theme.colors.text.primary};
+  text-transform: capitalize;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: ${({ theme }) => theme.spacing.xs};
+  right: ${({ theme }) => theme.spacing.xs};
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  padding: 4px;
   border-radius: ${({ theme }) => theme.borderRadius.small};
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.background.hover};
+  }
 `;
 
 const Input = styled.input`
@@ -113,14 +183,22 @@ const Input = styled.input`
 `;
 
 const SliderContainer = styled.div`
-  margin-bottom: ${({ theme }) => theme.spacing.xs};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
 `;
 
 const SliderLabel = styled.label`
   display: block;
   font-size: 0.75rem;
   color: ${({ theme }) => theme.colors.text.secondary};
-  margin-bottom: 2px;
+  margin-bottom: ${({ theme }) => theme.spacing.xs};
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const SliderValue = styled.span`
+  font-family: ${({ theme }) => theme.typography.fontFamily.mono};
+  font-size: 0.75rem;
 `;
 
 const Slider = styled.input`
@@ -141,32 +219,426 @@ const Button = styled.button`
   }
 `;
 
-const ALL_SCALES = ['-100', '0', '100', '200', '250', '300', '350', '400', '500', '600', '700', '800', '900', '1000', '1100'];
+const HexInput = styled.input`
+  width: 100%;
+  padding: ${({ theme }) => theme.spacing.xs};
+  border: 1px solid ${({ theme }) => theme.colors.border.default};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  font-family: ${({ theme }) => theme.typography.fontFamily.mono};
+  font-size: 0.875rem;
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+`;
 
-// Define hue ranges for each color
+// Define scale sets for each type
+const FOUNDATION_SCALES = ['100', '200', '300', '400', '500', '600', '700', '800', '900', '1000'];
+const NEUTRAL_SCALES = ['0', '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000'];
+const DARK_NEUTRAL_SCALES = ['-100', '0', '100', '200', '250', '300', '350', '400', '500', '600', '700', '800', '900', '1000'];
+
+// Define hue ranges for each color with center points
 const HUE_RANGES = {
-  lime: { min: 60, max: 90 },
-  red: { min: -20, max: 10 },
-  orange: { min: 20, max: 40 },
-  yellow: { min: 40, max: 60 },
-  green: { min: 90, max: 150 },
-  teal: { min: 150, max: 200 },
-  blue: { min: 200, max: 240 },
-  purple: { min: 240, max: 300 },
-  magenta: { min: 300, max: 340 },
+  lime: { min: 60, max: 90, center: 75 },
+  red: { min: -20, max: 10, center: -5 },
+  orange: { min: 20, max: 40, center: 30 },
+  yellow: { min: 40, max: 60, center: 50 },
+  green: { min: 90, max: 150, center: 120 },
+  teal: { min: 150, max: 200, center: 175 },
+  blue: { min: 200, max: 240, center: 220 },
+  purple: { min: 240, max: 300, center: 270 },
+  magenta: { min: 300, max: 340, center: 320 },
+  neutral: { min: 0, max: 360, center: 180 },
+  'dark-neutral': { min: 0, max: 360, center: 180 }
+} as const;
+
+// Define saturation limits for each color
+const NEUTRAL_SATURATION = {
+  lime: 85,
+  red: 90,
+  orange: 95,
+  yellow: 90,
+  green: 85,
+  teal: 80,
+  blue: 85,
+  purple: 80,
+  magenta: 85,
+  neutral: 15,
+  'dark-neutral': 20
+} as const;
+
+// Define lightness levels for each scale relative to level 700
+const LIGHTNESS_LEVELS = {
+  // Foundation and Neutral colors (lighter to darker)
+  '100': 96,
+  '200': 93,
+  '300': 90,
+  '400': 85,
+  '500': 75,
+  '600': 65,
+  '700': 55, // Base level
+  '800': 45,
+  '900': 35,
+  '1000': 25,
+  // Special levels for neutral
+  '0': 100,
+  // Dark neutral specific scales (darker to lighter)
+  '-100': 100,
+  '250': 87.5,
+  '350': 82.5,
+} as const;
+
+// Store original ADS colors lightness values
+const ADS_LIGHTNESS: Record<string, Record<string, number>> = {
+  lime: {},
+  red: {},
+  orange: {},
+  yellow: {},
+  green: {},
+  teal: {},
+  blue: {},
+  purple: {},
+  magenta: {},
+  neutral: {},
+  'dark-neutral': {},
+};
+
+// Initialize ADS lightness values
+Object.entries(ADS_COLORS).forEach(([color, scales]) => {
+  Object.entries(scales).forEach(([scale, hex]) => {
+    if (!ADS_LIGHTNESS[color]) ADS_LIGHTNESS[color] = {};
+    ADS_LIGHTNESS[color][scale] = hexToHSL(hex).l;
+  });
+});
+
+Object.entries(NEUTRAL_COLORS.solid).forEach(([scale, hex]) => {
+  ADS_LIGHTNESS.neutral[scale] = hexToHSL(hex).l;
+});
+
+Object.entries(DARK_NEUTRAL_COLORS.solid).forEach(([scale, hex]) => {
+  ADS_LIGHTNESS['dark-neutral'][scale] = hexToHSL(hex).l;
+});
+
+type HueRange = typeof HUE_RANGES[keyof typeof HUE_RANGES];
+type ColorValue = string | HSLColor;
+
+type ColorScale = {
+  [key: string]: string;
+};
+
+type ColorMap = {
+  [key: string]: ColorScale;
+};
+
+type FoundationColors = {
+  [K in keyof typeof ADS_COLORS]: Record<string, string>;
+} & {
+  'neutral': Record<string, string>;
+  'neutral-alpha': Record<string, string>;
+};
+
+type DarkNeutralColors = {
+  'dark-neutral': Record<string, string>;
+  'dark-neutral-alpha': Record<string, string>;
+};
+
+const convertHSLToHex = (color: HSLColor): string => {
+  return HSLToHex(color.h, color.s, color.l);
 };
 
 export const ColorPalette: React.FC = () => {
-  const [focusedColumn, setFocusedColumn] = useState<string | null>(null);
-  const [selectedCell, setSelectedCell] = useState<string | null>(null);
-  
-  // Combine all color types into one object
-  const allColors = {
-    ...ADS_COLORS,
-    'neutral': NEUTRAL_COLORS.solid,
-    'neutral-alpha': NEUTRAL_COLORS.alpha,
-    'dark-neutral': DARK_NEUTRAL_COLORS.solid,
-    'dark-neutral-alpha': DARK_NEUTRAL_COLORS.alpha,
+  const [selectedColumn, setSelectedColumn] = useState<string | null>(null);
+  const [controlPosition, setControlPosition] = useState<'left' | 'right'>('right');
+  const [colorName, setColorName] = useState<string>('');
+  const [hue, setHue] = useState<number>(0);
+  const [saturation, setSaturation] = useState<number>(100);
+  const [editedColors, setEditedColors] = useState<ColorMap>({});
+  const [foundationColors, setFoundationColors] = useState<FoundationColors>(() => {
+    const initialColors = {
+      ...Object.entries(ADS_COLORS).reduce((acc, [key, value]) => {
+        acc[key as keyof typeof ADS_COLORS] = Object.entries(value).reduce((scales, [scale, color]) => {
+          scales[scale] = convertHSLToHex(color as HSLColor);
+          return scales;
+        }, {} as Record<string, string>);
+        return acc;
+      }, {} as Record<string, Record<string, string>>),
+      'neutral': Object.entries(NEUTRAL_COLORS.solid).reduce((acc, [scale, color]) => {
+        acc[scale] = convertHSLToHex(color as HSLColor);
+        return acc;
+      }, {} as Record<string, string>),
+      'neutral-alpha': Object.entries(NEUTRAL_COLORS.alpha).reduce((acc, [scale, color]) => {
+        acc[scale] = convertHSLToHex(color as HSLColor);
+        return acc;
+      }, {} as Record<string, string>),
+    };
+    return initialColors as FoundationColors;
+  });
+  const [darkNeutralColors, setDarkNeutralColors] = useState<DarkNeutralColors>(() => {
+    const initialColors = {
+      'dark-neutral': Object.entries(DARK_NEUTRAL_COLORS.solid).reduce((acc, [scale, color]) => {
+        acc[scale] = convertHSLToHex(color as HSLColor);
+        return acc;
+      }, {} as Record<string, string>),
+      'dark-neutral-alpha': Object.entries(DARK_NEUTRAL_COLORS.alpha).reduce((acc, [scale, color]) => {
+        acc[scale] = convertHSLToHex(color as HSLColor);
+        return acc;
+      }, {} as Record<string, string>),
+    };
+    return initialColors;
+  });
+  const [hexValue, setHexValue] = useState<string>('');
+  const colorGridRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const controlPanelRef = useRef<HTMLDivElement>(null);
+
+  // Update state when selecting a column
+  useEffect(() => {
+    if (selectedColumn) {
+      setColorName(selectedColumn);
+      const baseColor = getBaseColor(selectedColumn);
+      if (baseColor) {
+        const { h, s } = hexToHSL(baseColor);
+        const range = getHueRange(selectedColumn);
+        setHue(range.center);
+        setSaturation(s);
+        
+        // Update hex value with level 700 color
+        const colors = selectedColumn.includes('dark-neutral') 
+          ? darkNeutralColors['dark-neutral']
+          : foundationColors[selectedColumn.split('-')[0] as keyof FoundationColors];
+        const level700Color = getColorValue(colors, '700');
+        setHexValue(level700Color);
+      }
+    }
+  }, [selectedColumn, darkNeutralColors, foundationColors]);
+
+  const getColorString = (color: ColorValue | HSLColor): string => {
+    if (typeof color === 'object' && 'h' in color && 's' in color && 'l' in color) {
+      return HSLToHex(color.h, color.s, color.l);
+    }
+    return color as string;
+  };
+
+  const getColorValue = (colors: ColorScale | undefined, scale: string): string => {
+    if (!colors) return 'transparent';
+    
+    const color = colors[scale];
+    if (!color) {
+      const alphaScale = scale + 'a';
+      const alphaColor = colors[alphaScale];
+      if (!alphaColor) return 'transparent';
+      return alphaColor;
+    }
+    
+    return color;
+  };
+
+  const getBaseColor = (colorKey: string): string | undefined => {
+    const colors = colorKey.includes('dark-neutral') 
+      ? (darkNeutralColors as unknown as ColorMap)[colorKey]
+      : (foundationColors as unknown as ColorMap)[colorKey];
+    
+    if (!colors) return undefined;
+    
+    const color = colors['500'] || colors['500a'] || Object.values(colors)[0];
+    return color;
+  };
+
+  const handleNameChange = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && selectedColumn) {
+      const newName = event.currentTarget.value;
+      setColorName(newName);
+    }
+  };
+
+  const getHueRange = (colorName: string): HueRange => {
+    const key = colorName.toLowerCase().replace('-alpha', '').split('-')[0];
+    return HUE_RANGES[key as keyof typeof HUE_RANGES] || HUE_RANGES.neutral;
+  };
+
+  const getNeutralSaturation = (colorName: string): number => {
+    const key = colorName.toLowerCase().replace('-alpha', '').split('-')[0];
+    return NEUTRAL_SATURATION[key as keyof typeof NEUTRAL_SATURATION] || NEUTRAL_SATURATION.neutral;
+  };
+
+  const normalizeHue = (hue: number): number => {
+    if (hue < 0) return 360 + hue;
+    if (hue >= 360) return hue - 360;
+    return hue;
+  };
+
+  const handleHueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedColumn) return;
+    
+    const newHue = Number(event.target.value);
+    const range = getHueRange(selectedColumn);
+    
+    // Handle red color special case
+    if (selectedColumn.includes('red')) {
+      let normalizedHue = newHue;
+      if (newHue < 0) {
+        normalizedHue = 360 + newHue;
+        if (normalizedHue > 340) {
+          normalizedHue = 340;
+        }
+      }
+      setHue(normalizedHue);
+      updateColors(normalizedHue, saturation);
+    } else {
+      // For other colors, ensure hue stays within range
+      const boundedHue = Math.max(range.min, Math.min(range.max, newHue));
+      setHue(boundedHue);
+      updateColors(boundedHue, saturation);
+    }
+  };
+
+  const handleSaturationChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedColumn) return;
+    
+    const newSaturation = Number(event.target.value);
+    const neutralSat = getNeutralSaturation(selectedColumn);
+    
+    // For neutral colors, limit maximum saturation
+    if (selectedColumn.includes('neutral')) {
+      const boundedSaturation = Math.min(newSaturation, neutralSat);
+      setSaturation(boundedSaturation);
+      updateColors(hue, boundedSaturation);
+    } else {
+      setSaturation(newSaturation);
+      updateColors(hue, newSaturation);
+    }
+  };
+
+  const getScalesForType = (colorType: string): string[] => {
+    if (colorType.includes('dark-neutral')) {
+      return DARK_NEUTRAL_SCALES;
+    } else if (colorType.includes('neutral')) {
+      return NEUTRAL_SCALES;
+    }
+    return FOUNDATION_SCALES;
+  };
+
+  const updateColors = (h: number, s: number) => {
+    if (!selectedColumn || selectedColumn.includes('-alpha')) return;
+
+    const colors = { ...editedColors };
+    if (!colors[selectedColumn]) {
+      colors[selectedColumn] = {};
+    }
+
+    // Get the appropriate scales for this color type
+    const scales = getScalesForType(selectedColumn);
+    
+    // Special case: neutral level 0 is always white
+    if (selectedColumn.includes('neutral') && scales.includes('0')) {
+      colors[selectedColumn]['0'] = '#FFFFFF';
+    }
+
+    // Calculate new colors using HSL values directly
+    scales.forEach(scale => {
+      if (scale !== '0' || !selectedColumn.includes('neutral')) {
+        const l = LIGHTNESS_LEVELS[scale as keyof typeof LIGHTNESS_LEVELS];
+        colors[selectedColumn][scale] = HSLToHex(h, s, l);
+      }
+    });
+
+    // Update hex value with level 700 color
+    const level700Color = colors[selectedColumn]['700'];
+    setHexValue(typeof level700Color === 'string' ? level700Color : '');
+    setEditedColors(colors);
+  };
+
+  const updateColorsFromHex = (hex: string) => {
+    if (!selectedColumn || selectedColumn.includes('-alpha') || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+
+    const { h, s } = hexToHSL(hex);
+    setHue(h);
+    setSaturation(s);
+    updateColors(h, s);
+  };
+
+  const handleHexChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newHex = event.target.value;
+    setHexValue(newHex);
+    
+    if (newHex.length === 7) {  // Full hex color (#RRGGBB)
+      updateColorsFromHex(newHex);
+    }
+  };
+
+  const handleDuplicatePalette = () => {
+    if (!selectedColumn) return;
+
+    const colors = selectedColumn.includes('dark-neutral')
+      ? { ...darkNeutralColors }
+      : { ...foundationColors };
+
+    const baseKey = selectedColumn.replace(/-\d+$/, '');
+    let counter = 1;
+    let newKey = `${baseKey}-${counter}`;
+
+    // Find the last column of the same type
+    const columns = Object.keys(colors).filter(key => key.startsWith(baseKey));
+    const lastColumn = columns[columns.length - 1];
+    
+    if (lastColumn) {
+      const lastCounter = parseInt(lastColumn.split('-').pop() || '0');
+      counter = lastCounter + 1;
+      newKey = `${baseKey}-${counter}`;
+    }
+
+    // Create new color scale with current hue and saturation
+    const currentColors = selectedColumn.includes('dark-neutral')
+      ? darkNeutralColors['dark-neutral']
+      : foundationColors[selectedColumn.split('-')[0] as keyof FoundationColors];
+    const newColors: ColorScale = {};
+    
+    Object.entries(currentColors).forEach(([scale, color]) => {
+      const { l } = hexToHSL(color);
+      newColors[scale] = HSLToHex(hue, saturation, l);
+    });
+
+    if (selectedColumn.includes('dark-neutral')) {
+      setDarkNeutralColors({
+        ...darkNeutralColors,
+        [newKey]: newColors,
+      } as DarkNeutralColors);
+    } else {
+      setFoundationColors({
+        ...foundationColors,
+        [newKey]: newColors,
+      } as FoundationColors);
+    }
+  };
+
+  const handleColumnClick = (key: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    // Prevent interaction with alpha columns
+    if (key.includes('-alpha')) return;
+
+    // If clicking the same column, toggle the panel
+    if (selectedColumn === key) {
+      setSelectedColumn(null);
+      return;
+    }
+
+    // If clicking a different column, show its panel
+    setSelectedColumn(key);
+    
+    if (colorGridRef.current && wrapperRef.current) {
+      const columnElement = event.currentTarget;
+      const columnRect = columnElement.getBoundingClientRect();
+      const wrapperRect = wrapperRef.current.getBoundingClientRect();
+      
+      const spaceOnRight = wrapperRect.right - columnRect.right;
+      const spaceOnLeft = columnRect.left - wrapperRect.left;
+      const requiredSpace = 300;
+      
+      setControlPosition(spaceOnRight >= requiredSpace ? 'right' : 'left');
+    }
+  };
+
+  const handleCloseClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedColumn(null);
   };
 
   const getWcagCompliance = (color: string) => {
@@ -174,99 +646,148 @@ export const ColorPalette: React.FC = () => {
     const blackRatio = calculateWCAGRatio(color, '#000000');
     
     return {
-      white: whiteRatio >= 4.5 ? 'AA' : null,
-      black: blackRatio >= 4.5 ? 'AA' : null
+      white: whiteRatio >= 7.0 ? 'AAA' : whiteRatio >= 4.5 ? 'AA' : null,
+      black: blackRatio >= 7.0 ? 'AAA' : blackRatio >= 4.5 ? 'AA' : null
     };
   };
 
-  const isAlphaColor = (key: string, colorKey: string) => {
-    return key.includes('alpha') || colorKey.includes('a');
+  const isAlphaColor = (key: string) => {
+    return key.includes('alpha');
   };
 
-  const getHueRange = (colorName: string) => {
-    const key = colorName.toLowerCase();
-    return HUE_RANGES[key as keyof typeof HUE_RANGES] || { min: 0, max: 360 };
-  };
+  const renderColorGrid = (colors: Record<string, ColorScale>, scales: string[]) => (
+    <ColorGrid ref={colorGridRef}>
+      {Object.entries(colors).map(([key, colors]) => {
+        const isAlpha = key.includes('-alpha');
+        return (
+          <ColorColumn 
+            key={key}
+            data-key={key}
+            $isSelected={selectedColumn === key}
+            onClick={(e) => handleColumnClick(key, e)}
+            style={{ cursor: isAlpha ? 'default' : 'pointer' }}
+          >
+            <ColorScales>
+              {scales.map(scale => {
+                const colorValue = editedColors[key]?.[scale] || getColorValue(colors, scale);
+                return (
+                  <ColorCell 
+                    key={scale} 
+                    $color={colorValue}
+                    $showTooltip={true}
+                  >
+                    {colorValue !== 'transparent' && (
+                      <>
+                        <ColorTooltip color={colorValue} />
+                        {isAlpha ? (
+                          <AlphaIndicator>α</AlphaIndicator>
+                        ) : (
+                          (() => {
+                            const wcag = getWcagCompliance(colorValue);
+                            return (
+                              <>
+                                {wcag.white && <WcagText $color="white">{wcag.white}</WcagText>}
+                                {wcag.black && <WcagText $color="black">{wcag.black}</WcagText>}
+                              </>
+                            );
+                          })()
+                        )}
+                      </>
+                    )}
+                  </ColorCell>
+                );
+              })}
+            </ColorScales>
+            {selectedColumn === key && !isAlpha && (
+              <ControlPanel 
+                ref={controlPanelRef}
+                $position={controlPosition}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ControlHeader>
+                  <ControlTitle>{colorName}</ControlTitle>
+                  <CloseButton onClick={handleCloseClick}>✕</CloseButton>
+                </ControlHeader>
+                <Input 
+                  type="text"
+                  value={colorName}
+                  onChange={(e) => setColorName(e.target.value)}
+                  onKeyDown={handleNameChange}
+                />
+                <HexInput
+                  type="text"
+                  value={hexValue}
+                  onChange={handleHexChange}
+                  placeholder="#000000"
+                  pattern="^#[0-9A-Fa-f]{6}$"
+                />
+                <SliderContainer>
+                  <SliderLabel>
+                    Hue
+                    <SliderValue>{Math.round(hue)}°</SliderValue>
+                  </SliderLabel>
+                  <Slider 
+                    type="range"
+                    min={getHueRange(key).min}
+                    max={getHueRange(key).max}
+                    value={hue}
+                    onChange={handleHueChange}
+                  />
+                </SliderContainer>
+                <SliderContainer>
+                  <SliderLabel>
+                    Saturation
+                    <SliderValue>{Math.round(saturation)}%</SliderValue>
+                  </SliderLabel>
+                  <Slider 
+                    type="range"
+                    min={0}
+                    max={getNeutralSaturation(key)}
+                    value={saturation}
+                    onChange={handleSaturationChange}
+                  />
+                </SliderContainer>
+                <Button onClick={handleDuplicatePalette}>
+                  Duplicate Palette
+                </Button>
+              </ControlPanel>
+            )}
+          </ColorColumn>
+        );
+      })}
+    </ColorGrid>
+  );
+
+  const renderScaleColumn = (scales: string[]) => (
+    <ScaleColumn>
+      {scales.map(scale => (
+        <ScaleLabel key={scale}>{scale}</ScaleLabel>
+      ))}
+    </ScaleColumn>
+  );
 
   return (
-    <Wrapper>
-      <Container>
-        <ScaleColumn>
-          {ALL_SCALES.map(scale => (
-            <ScaleLabel key={scale}>{scale}</ScaleLabel>
-          ))}
-        </ScaleColumn>
-        <ColorGrid>
-          {Object.entries(allColors).map(([key, colors]) => {
-            const hueRange = getHueRange(key);
-            return (
-              <ColorColumn 
-                key={key}
-                $isFocused={focusedColumn === key}
-                onMouseEnter={() => setFocusedColumn(key)}
-                onMouseLeave={() => setFocusedColumn(null)}
-              >
-                {ALL_SCALES.map(scale => {
-                  const normalKey = scale;
-                  const alphaKey = `${scale}a`;
-                  const color = colors[normalKey as keyof typeof colors] || 
-                              colors[alphaKey as keyof typeof colors] || 
-                              'transparent';
-                  const isAlpha = isAlphaColor(key, color !== 'transparent' ? (colors[alphaKey as keyof typeof colors] ? alphaKey : normalKey) : '');
-                  const cellId = `${key}-${scale}`;
-                  
-                  return (
-                    <ColorCell 
-                      key={scale} 
-                      $color={color}
-                      $isSelected={selectedCell === cellId}
-                      onClick={() => setSelectedCell(cellId)}
-                    >
-                      {color !== 'transparent' && (() => {
-                        if (isAlpha) {
-                          return <AlphaIndicator>α</AlphaIndicator>;
-                        }
-                        const wcag = getWcagCompliance(color);
-                        return (
-                          <>
-                            {wcag.white && <WcagText $color="white">AA</WcagText>}
-                            {wcag.black && <WcagText $color="black">AA</WcagText>}
-                          </>
-                        );
-                      })()}
-                    </ColorCell>
-                  );
-                })}
-                <ColumnControls $visible={focusedColumn === key}>
-                  <Input 
-                    type="text"
-                    placeholder="Color name"
-                    defaultValue={key}
-                  />
-                  <SliderContainer>
-                    <SliderLabel>Hue</SliderLabel>
-                    <Slider 
-                      type="range"
-                      min={hueRange.min}
-                      max={hueRange.max}
-                      defaultValue={(hueRange.min + hueRange.max) / 2}
-                    />
-                  </SliderContainer>
-                  <SliderContainer>
-                    <SliderLabel>Saturation</SliderLabel>
-                    <Slider 
-                      type="range"
-                      min={0}
-                      max={100}
-                      defaultValue={100}
-                    />
-                  </SliderContainer>
-                  <Button>Duplicate Column</Button>
-                </ColumnControls>
-              </ColorColumn>
-            );
-          })}
-        </ColorGrid>
+    <Wrapper ref={wrapperRef}>
+      <Container onClick={handleCloseClick}>
+        <PaletteLayout>
+          {/* Foundation Colors */}
+          <MainPalettes>
+            <SectionTitle>Foundation Colors</SectionTitle>
+            <Section>
+              {renderScaleColumn(FOUNDATION_SCALES)}
+              {renderColorGrid(foundationColors, FOUNDATION_SCALES)}
+            </Section>
+          </MainPalettes>
+
+          {/* Dark Neutral Colors */}
+          <DarkNeutralSection>
+            <SectionTitle>Dark Neutral Colors</SectionTitle>
+            <Section>
+              {renderScaleColumn(DARK_NEUTRAL_SCALES)}
+              {renderColorGrid(darkNeutralColors, DARK_NEUTRAL_SCALES)}
+            </Section>
+          </DarkNeutralSection>
+        </PaletteLayout>
       </Container>
     </Wrapper>
   );

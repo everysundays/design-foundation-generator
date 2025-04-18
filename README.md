@@ -67,5 +67,47 @@ This project is currently in development. Contribution guidelines will be added 
 ## 📄 License
 TBD
 
+## Project Progress
+
+![Progress](https://progress-bar.dev/37/?title=completed&width=400)
+
+Current Status:
+- ✅ Basic UI Components (100%)
+- ✅ Color Grid Layout (100%)
+- ✅ WCAG Compliance Indicators (100%)
+- ⏳ Color Property Controls (0%)
+- ⏳ Additional Features (0%)
+
+Last Updated: 2024-03-28
+
+## Features
+
+- Color palette generation with WCAG compliance checking
+- Support for both solid and alpha colors
+- Scale generation for each color
+- Neutral and dark neutral color support
+- Real-time WCAG contrast validation
+- Color property controls (coming soon)
+  - Name editing
+  - Hue adjustment
+  - Saturation adjustment
+  - Duplication
+- Export functionality (coming soon)
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+## Documentation
+
+- [Data Structure](/.ai-memory/data-structure.md)
+- [Progress Tracking](/.ai-memory/color-palette-progress.md)
+
 ---
 *Last Updated: April 2024*
