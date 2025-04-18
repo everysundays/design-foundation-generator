@@ -2,6 +2,21 @@
 
 A comprehensive design system generator that helps designers and developers create, manage, and implement consistent design tokens across platforms.
 
+## 📋 Version History
+
+### v0.2.0 (2025-04-18)
+- ✨ Improved color palette layout and interaction
+- 🎨 Enhanced alpha color display system
+- 🔧 Adjusted control panel behavior and positioning
+- 🏗️ Prepared HSL color system implementation
+- 📝 Added color scale documentation
+
+### v0.1.0 (2025-04-17)
+- 🎨 Initial color palette implementation
+- ✨ Basic WCAG compliance checking
+- 🏗️ Core component structure
+- 📝 Basic documentation
+
 ## 🎯 Vision
 Transform how design systems are created and maintained by providing intelligent tools for generating, validating, and distributing design tokens. Our focus is on creating a bridge between design decisions and implementation while ensuring accessibility and consistency.
 
@@ -69,16 +84,16 @@ TBD
 
 ## Project Progress
 
-![Progress](https://progress-bar.dev/37/?title=completed&width=400)
+![Progress](https://progress-bar.dev/45/?title=completed&width=400)
 
 Current Status:
 - ✅ Basic UI Components (100%)
 - ✅ Color Grid Layout (100%)
 - ✅ WCAG Compliance Indicators (100%)
-- ⏳ Color Property Controls (0%)
-- ⏳ Additional Features (0%)
+- ⏳ Color Property Controls (80%)
+- ⏳ Additional Features (20%)
 
-Last Updated: 2024-03-28
+Last Updated: 2025-04-18
 
 ## Features
 
@@ -110,4 +125,4 @@ npm run dev
 - [Progress Tracking](/.ai-memory/color-palette-progress.md)
 
 ---
-*Last Updated: April 2024*
+*Last Updated: April 2025*
