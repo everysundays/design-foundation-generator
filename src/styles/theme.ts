@@ -1,7 +1,33 @@
+/**
+ * theme.ts - Theme Configuration
+ * 
+ * INDEX:
+ * theme - Main theme configuration object
+ * DefaultTheme - Type definition for theme
+ * 
+ * SECTIONS:
+ * colors - Color palette definitions
+ * spacing - Spacing scale definitions
+ * borderRadius - Border radius definitions
+ * typography - Typography scale definitions
+ */
+
 import { createGlobalStyle, DefaultTheme } from 'styled-components'
 
-export const theme = {
+/**
+ * Global theme object containing all design tokens
+ */
+export const theme: DefaultTheme = {
+  /**
+   * Color palette definitions
+   */
   colors: {
+    primary: '#2196F3',
+    secondary: '#9C27B0',
+    success: '#4CAF50',
+    danger: '#F44336',
+    warning: '#FF9800',
+    info: '#00BCD4',
     background: {
       primary: '#FFFFFF',
       secondary: '#F5F5F5',
@@ -9,12 +35,18 @@ export const theme = {
     },
     text: {
       primary: '#1F1F1F',
-      secondary: '#6B6B6B'
+      secondary: '#6B6B6B',
+      inverse: '#FFFFFF'
     },
     border: {
-      default: '#E0E0E0'
+      default: '#E0E0E0',
+      focus: '#2196F3'
     }
   },
+
+  /**
+   * Spacing scale
+   */
   spacing: {
     xs: '4px',
     sm: '8px',
@@ -22,11 +54,19 @@ export const theme = {
     lg: '24px',
     xl: '32px'
   },
+
+  /**
+   * Border radius scale
+   */
   borderRadius: {
     small: '4px',
     medium: '8px',
     large: '12px'
   },
+
+  /**
+   * Typography system
+   */
   typography: {
     fontFamily: {
       base: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif',
@@ -52,7 +92,7 @@ export const theme = {
       relaxed: '1.75'
     }
   }
-};
+}
 
 export default theme;
 
@@ -69,63 +109,4 @@ export const GlobalStyle = createGlobalStyle`
     color: ${({ theme }) => theme.colors.text.primary};
     line-height: ${({ theme }) => theme.typography.lineHeight.normal};
   }
-`
-
-// Add theme type declaration
-declare module 'styled-components' {
-  export interface DefaultTheme {
-    colors: {
-      background: {
-        primary: string
-        secondary: string
-        hover: string
-      }
-      text: {
-        primary: string
-        secondary: string
-        inverse: string
-      }
-      border: {
-        default: string
-        focus: string
-      }
-    }
-    spacing: {
-      xs: string
-      sm: string
-      md: string
-      lg: string
-      xl: string
-    }
-    borderRadius: {
-      small: string
-      medium: string
-      large: string
-    }
-    typography: {
-      fontFamily: {
-        base: string
-        mono: string
-      }
-      fontSize: {
-        xs: string
-        sm: string
-        md: string
-        lg: string
-        xl: string
-        xxl: string
-      }
-      fontWeight: {
-        regular: string
-        medium: string
-        semibold: string
-        bold: string
-      }
-      lineHeight: {
-        tight: string
-        normal: string
-        relaxed: string
-      }
-    }
-  }
-} 
+` 

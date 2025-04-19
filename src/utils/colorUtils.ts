@@ -1,6 +1,23 @@
+/**
+ * colorUtils.ts - Color Utility Functions
+ * 
+ * INDEX:
+ * calculateWCAGRatio - Calculates contrast ratio between two colors for WCAG compliance
+ * getRelativeLuminance - Calculates relative luminance of a color
+ * hexToRGB - Converts hex color to RGB values
+ * hexToHSL - Converts hex color to HSL values
+ * HSLToHex - Converts HSL values to hex color
+ * checkWCAGCompliance - Checks if contrast ratio meets WCAG standards
+ * generateColorValue - Generates color value based on base color and index
+ * generateColorScale - Generates complete color scale from base color
+ */
+
 import chroma from 'chroma-js';
 import { ColorValue, WCAG, COLOR_SCALE } from '../types/color';
 
+/**
+ * Calculates contrast ratio between two colors for WCAG compliance
+ */
 export const calculateWCAGRatio = (color1: string, color2: string): number => {
   // Convert colors to relative luminance
   const l1 = getRelativeLuminance(color1);
@@ -12,6 +29,9 @@ export const calculateWCAGRatio = (color1: string, color2: string): number => {
   return (lighter + 0.05) / (darker + 0.05);
 };
 
+/**
+ * Calculates relative luminance of a color
+ */
 const getRelativeLuminance = (hex: string): number => {
   const rgb = hexToRGB(hex);
   const [r, g, b] = [rgb.r, rgb.g, rgb.b].map(component => {
@@ -23,6 +43,9 @@ const getRelativeLuminance = (hex: string): number => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 
+/**
+ * Converts hex color to RGB values
+ */
 export const hexToRGB = (hex: string) => {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result ? {
@@ -32,6 +55,9 @@ export const hexToRGB = (hex: string) => {
   } : { r: 0, g: 0, b: 0 };
 };
 
+/**
+ * Converts hex color to HSL values
+ */
 export const hexToHSL = (hex: string) => {
   const { r, g, b } = hexToRGB(hex);
   const rNorm = r / 255;
@@ -68,6 +94,9 @@ export const hexToHSL = (hex: string) => {
   };
 };
 
+/**
+ * Converts HSL values to hex color
+ */
 export const HSLToHex = (h: number, s: number, l: number): string => {
   s /= 100;
   l /= 100;
@@ -100,6 +129,9 @@ export const HSLToHex = (h: number, s: number, l: number): string => {
   return `#${rHex}${gHex}${bHex}`;
 };
 
+/**
+ * Checks if contrast ratio meets WCAG standards
+ */
 export const checkWCAGCompliance = (ratio: number) => {
   return {
     aa: ratio >= WCAG.AA_NORMAL,
@@ -107,6 +139,9 @@ export const checkWCAGCompliance = (ratio: number) => {
   };
 };
 
+/**
+ * Generates color value based on base color and index
+ */
 export const generateColorValue = (color: string, index: number): ColorValue => {
   const hex = color;
   const whiteTextRatio = calculateWCAGRatio(hex, '#FFFFFF');
@@ -126,6 +161,9 @@ export const generateColorValue = (color: string, index: number): ColorValue => 
   };
 };
 
+/**
+ * Generates complete color scale from base color
+ */
 export const generateColorScale = (
   baseColor: string,
   hue: number,

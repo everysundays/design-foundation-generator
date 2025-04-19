@@ -1,3 +1,14 @@
+/**
+ * ColorPalette Component
+ * 
+ * A comprehensive color management system that provides:
+ * - Interactive color palette generation and editing
+ * - WCAG compliance checking
+ * - Color scale management
+ * - Alpha color support
+ * - Color duplication and customization
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { calculateWCAGRatio } from '../../utils/colorUtils';
@@ -5,6 +16,10 @@ import { ADS_COLORS, NEUTRAL_COLORS, DARK_NEUTRAL_COLORS, HSLColor } from '../..
 import { ColorTooltip } from '../color/ColorTooltip';
 import { HSLToHex, hexToHSL } from '../../utils/colorUtils';
 
+/**
+ * Main wrapper component for the color palette
+ * Provides border, background, and positioning context
+ */
 const Wrapper = styled.div`
   border: 1px solid ${({ theme }) => theme.colors.border.default};
   border-radius: ${({ theme }) => theme.borderRadius.medium};
@@ -15,6 +30,10 @@ const Wrapper = styled.div`
   overflow: visible;
 `;
 
+/**
+ * Container for scrollable color palette content
+ * Handles horizontal scrolling for wide color sets
+ */
 const Container = styled.div`
   display: flex;
   overflow-x: auto;
@@ -22,17 +41,29 @@ const Container = styled.div`
   border-radius: ${({ theme }) => theme.borderRadius.small};
 `;
 
+/**
+ * Layout component for the main palette sections
+ * Provides consistent spacing between palette sections
+ */
 const PaletteLayout = styled.div`
   display: flex;
   gap: ${({ theme }) => theme.spacing.lg};
   padding: ${({ theme }) => theme.spacing.md};
 `;
 
+/**
+ * Container for the main color palettes
+ * Organizes colors in a vertical layout
+ */
 const MainPalettes = styled.div`
   display: flex;
   flex-direction: column;
 `;
 
+/**
+ * Section for dark neutral colors
+ * Separated from main palettes with a border
+ */
 const DarkNeutralSection = styled.div`
   display: flex;
   flex-direction: column;
@@ -40,10 +71,18 @@ const DarkNeutralSection = styled.div`
   padding-left: ${({ theme }) => theme.spacing.lg};
 `;
 
+/**
+ * Generic section container for color groups
+ * Provides consistent layout for color sections
+ */
 const Section = styled.div`
   display: flex;
 `;
 
+/**
+ * Title component for color sections
+ * Uses secondary text color for visual hierarchy
+ */
 const SectionTitle = styled.h2`
   font-size: 0.75rem;
   color: ${({ theme }) => theme.colors.text.secondary};
@@ -302,31 +341,52 @@ const ADS_LIGHTNESS: Record<string, Record<string, number>> = {
 
 // Initialize ADS lightness values
 Object.entries(ADS_COLORS).forEach(([color, scales]) => {
-  Object.entries(scales).forEach(([scale, hex]) => {
+  Object.entries(scales).forEach(([scale, hslColor]) => {
     if (!ADS_LIGHTNESS[color]) ADS_LIGHTNESS[color] = {};
+    const hex = HSLToHex(hslColor.h, hslColor.s, hslColor.l);
     ADS_LIGHTNESS[color][scale] = hexToHSL(hex).l;
   });
 });
 
-Object.entries(NEUTRAL_COLORS.solid).forEach(([scale, hex]) => {
+Object.entries(NEUTRAL_COLORS.solid).forEach(([scale, hslColor]) => {
+  const color = hslColor as HSLColor;
+  const hex = HSLToHex(color.h, color.s, color.l);
   ADS_LIGHTNESS.neutral[scale] = hexToHSL(hex).l;
 });
 
-Object.entries(DARK_NEUTRAL_COLORS.solid).forEach(([scale, hex]) => {
+Object.entries(DARK_NEUTRAL_COLORS.solid).forEach(([scale, hslColor]) => {
+  const color = hslColor as HSLColor;
+  const hex = HSLToHex(color.h, color.s, color.l);
   ADS_LIGHTNESS['dark-neutral'][scale] = hexToHSL(hex).l;
 });
 
+/**
+ * Type definition for hue ranges in the color system
+ */
 type HueRange = typeof HUE_RANGES[keyof typeof HUE_RANGES];
+
+/**
+ * Type for color values that can be either string or HSL object
+ */
 type ColorValue = string | HSLColor;
 
+/**
+ * Type definition for a color scale with string keys and values
+ */
 type ColorScale = {
   [key: string]: string;
 };
 
+/**
+ * Type definition for a map of color scales
+ */
 type ColorMap = {
   [key: string]: ColorScale;
 };
 
+/**
+ * Type definition for foundation colors including neutral variants
+ */
 type FoundationColors = {
   [K in keyof typeof ADS_COLORS]: Record<string, string>;
 } & {
@@ -334,15 +394,25 @@ type FoundationColors = {
   'neutral-alpha': Record<string, string>;
 };
 
+/**
+ * Type definition for dark neutral colors and their alpha variants
+ */
 type DarkNeutralColors = {
   'dark-neutral': Record<string, string>;
   'dark-neutral-alpha': Record<string, string>;
 };
 
+/**
+ * Converts HSL color object to hex string
+ */
 const convertHSLToHex = (color: HSLColor): string => {
   return HSLToHex(color.h, color.s, color.l);
 };
 
+/**
+ * Main ColorPalette component for managing and displaying color system
+ * Manages the entire color palette system and user interactions
+ */
 export const ColorPalette: React.FC = () => {
   const [selectedColumn, setSelectedColumn] = useState<string | null>(null);
   const [controlPosition, setControlPosition] = useState<'left' | 'right'>('right');

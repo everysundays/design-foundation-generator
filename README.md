@@ -69,9 +69,56 @@ Transform how design systems are created and maintained by providing intelligent
 - [ ] Platform-specific token generation
 
 ## 🔧 Technical Stack
-- Frontend: HTML5, CSS3, JavaScript
-- Build Tools: TBD
-- Testing Framework: TBD
+
+### Core Technologies
+- **Frontend Framework**: React v18.2.0
+- **Language**: TypeScript v5.3.3
+- **Build Tool**: Vite v5.1.4
+- **Package Manager**: npm/yarn
+
+### UI & Styling
+- **CSS-in-JS**: styled-components v6.1.8
+- **Color Management**: chroma-js v2.4.2
+- **CSS Features**: CSS3, CSS Variables, Flexbox, Grid
+
+### Development Tools
+- **Linting**: ESLint v8.57.0
+- **Code Formatting**: Prettier v3.2.5
+- **Type Checking**: TypeScript
+- **Development Server**: Vite Dev Server
+
+### Project Structure
+```
+src/
+├── components/     # React components
+├── types/         # TypeScript type definitions
+├── utils/         # Utility functions
+├── constants/     # Constant values
+├── hooks/         # Custom React hooks
+└── styles/        # Global styles
+```
+
+### Development Environment
+- **Node.js**: Latest LTS version
+- **Module System**: ESM (ECMAScript Modules)
+- **TypeScript Configuration**: Strict mode enabled
+- **Editor Support**: VS Code recommended
+
+### Testing & Quality
+- **Testing Framework**: TBD
+- **Code Quality**: ESLint + Prettier
+- **Type Safety**: TypeScript strict mode
+- **Browser Support**: Modern browsers (Chrome, Firefox, Safari, Edge)
+
+### Build & Deployment
+- **Build Command**: `npm run build`
+- **Development Command**: `npm run dev`
+- **Preview Command**: `npm run preview`
+- **Lint Command**: `npm run lint`
+- **Format Command**: `npm run format`
+
+### Dependencies
+Key dependencies are managed in `package.json`. Run `npm install` to install all dependencies.
 
 ## 📝 Project Status
 Currently in active development. Phase 1 features are being implemented with a focus on the color system management features.
