@@ -1,39 +1,39 @@
-# Design Foundation Generator
+# AI Memory
 
-โปรเจคนี้เป็นเครื่องมือสำหรับสร้างและจัดการ Color Palette ตามมาตรฐาน Atlassian Design System (ADS)
+This directory contains AI's working memory, focusing on process and way of work rather than project-specific details.
 
-## โครงสร้างโปรเจค
+## Structure
 
 ```
 .ai-memory/
-├── README.md                    # เอกสารหลักของโปรเจค
-├── manifesto.md                # แนวทางการทำงานร่วมกัน
-├── sprint-progress.md          # สถานะปัจจุบันและอัปเดตรายวัน
-├── features/                   # รายละเอียดฟีเจอร์
-│   ├── color-wheel/           # Color wheel controller
-│   └── color-scales/          # Color scales management
-├── technical/                  # เอกสารทางเทคนิค
-├── decisions/                  # การตัดสินใจสำคัญ
-└── references/                # เอกสารอ้างอิง
+├── manifesto.md     # Core principles and guidelines
+├── process.md       # Development process documentation
+├── decisions.md     # Confirmed decisions log
+├── failures.md      # Lessons learned from failures
+└── way-of-work.md   # Collaboration guidelines
 ```
 
-## ฟีเจอร์หลัก
+## Purpose
 
-1. **Color Palette Display**
-   - แสดงค่าสีตามมาตรฐาน ADS
-   - รองรับทั้งสีปกติและ alpha
-   - แสดงค่า WCAG compliance
+1. **Process Documentation**
+   - Development workflow
+   - Decision-making process
+   - Quality standards
 
-2. **Color Management**
-   - ปรับแต่งค่าสีด้วย Color Wheel
-   - ควบคุม Hue, Saturation, Lightness
-   - Preview การเปลี่ยนแปลง
+2. **Collaboration Guidelines**
+   - How AI and human work together
+   - Communication patterns
+   - Responsibility boundaries
 
-## การพัฒนา
+3. **Decision Tracking**
+   - Record of confirmed decisions
+   - Context and rationale
+   - Implementation references
 
-โปรเจคนี้ใช้แนวทางการพัฒนาแบบ feature-driven โดยแต่ละฟีเจอร์จะมีเอกสารครบถ้วนก่อนเริ่มพัฒนา ดูรายละเอียดเพิ่มเติมได้ที่ [manifesto.md](manifesto.md)
+4. **Learning from Failures**
+   - Critical analysis of what went wrong
+   - Root cause identification
+   - Prevention strategies for future projects
 
-## อ้างอิง
-
-- [Atlassian Design System](https://atlassian.design/)
-- [Color Palette Standards](references/ads-standards.md) 
+## Note
+Project-specific details, including features and requirements, are stored in the `/features` directory at the project root. 

@@ -13,11 +13,12 @@
  */
 
 import { createGlobalStyle, DefaultTheme } from 'styled-components'
+import { Theme, BackgroundColors } from '../types/theme'
 
 /**
  * Global theme object containing all design tokens
  */
-export const theme: DefaultTheme = {
+export const theme: Theme = {
   /**
    * Color palette definitions
    */
@@ -31,8 +32,9 @@ export const theme: DefaultTheme = {
     background: {
       primary: '#FFFFFF',
       secondary: '#F5F5F5',
-      hover: 'rgba(0, 0, 0, 0.04)'
-    },
+      hover: '#E5E5E5',
+      surface: '#FFFFFF'
+    } as BackgroundColors,
     text: {
       primary: '#1F1F1F',
       secondary: '#6B6B6B',

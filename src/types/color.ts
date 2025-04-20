@@ -62,4 +62,38 @@ export const WCAG = {
   AA_LARGE: 3,
   AAA_NORMAL: 7,
   AAA_LARGE: 4.5,
-}; 
+};
+
+/**
+ * HSB Color Model
+ */
+export interface HSBColor {
+  /** Hue: 0-360 degrees */
+  hue: number;
+  /** Saturation: 0-100 percent */
+  saturation: number;
+  /** Brightness: 0-100 percent */
+  brightness: number;
+}
+
+/**
+ * Color Scale Levels
+ * - 100-400: Light shades
+ * - 500: Base color
+ * - 600-1000: Dark shades
+ */
+export type ScaleLevel = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 | 1000;
+
+/**
+ * Color Scale Configuration
+ */
+export interface ColorScaleConfig {
+  /** Base color level (usually 500) */
+  baseLevel: ScaleLevel;
+  /** Minimum brightness value */
+  minBrightness: number;
+  /** Maximum brightness value */
+  maxBrightness: number;
+  /** Base brightness value */
+  baseBrightness: number;
+} 
