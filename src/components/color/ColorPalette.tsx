@@ -269,9 +269,10 @@ const HexInput = styled.input`
 `;
 
 // Define scale sets for each type
-const FOUNDATION_SCALES = ['100', '200', '300', '400', '500', '600', '700', '800', '900', '1000'];
-const NEUTRAL_SCALES = ['0', '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000'];
-const DARK_NEUTRAL_SCALES = ['-100', '0', '100', '200', '250', '300', '350', '400', '500', '600', '700', '800', '900', '1000'];
+const ALL_SCALES = ['0', '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000', '1100'] as const;
+const FOUNDATION_SCALES = ['100', '200', '300', '400', '500', '600', '700', '800', '900', '1000', '1100'] as const;
+const NEUTRAL_SCALES = ['0', '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000', '1100'] as const;
+const DARK_NEUTRAL_SCALES = ['-100', '0', '100', '200', '250', '300', '350', '400', '500', '600', '700', '800', '900', '1000', '1100'] as const;
 
 // Define hue ranges for each color with center points
 const HUE_RANGES = {
@@ -373,34 +374,30 @@ type ColorValue = string | HSLColor;
 /**
  * Type definition for a color scale with string keys and values
  */
-type ColorScale = {
-  [key: string]: string;
-};
+interface ColorScale {
+  [key: string]: HSLColor;
+}
 
 /**
  * Type definition for a map of color scales
  */
-type ColorMap = {
+interface ColorMap {
   [key: string]: ColorScale;
-};
+}
 
 /**
  * Type definition for foundation colors including neutral variants
  */
-type FoundationColors = {
-  [K in keyof typeof ADS_COLORS]: Record<string, string>;
-} & {
-  'neutral': Record<string, string>;
-  'neutral-alpha': Record<string, string>;
-};
+interface FoundationColors {
+  [key: string]: ColorScale;
+}
 
 /**
  * Type definition for dark neutral colors and their alpha variants
  */
-type DarkNeutralColors = {
-  'dark-neutral': Record<string, string>;
-  'dark-neutral-alpha': Record<string, string>;
-};
+interface DarkNeutralColors {
+  [key: string]: ColorScale;
+}
 
 /**
  * Converts HSL color object to hex string
@@ -421,39 +418,19 @@ export const ColorPalette: React.FC = () => {
   const [saturation, setSaturation] = useState<number>(100);
   const [editedColors, setEditedColors] = useState<ColorMap>({});
   const [foundationColors, setFoundationColors] = useState<FoundationColors>(() => {
-    const initialColors = {
-      ...Object.entries(ADS_COLORS).reduce((acc, [key, value]) => {
-        acc[key as keyof typeof ADS_COLORS] = Object.entries(value).reduce((scales, [scale, color]) => {
-          scales[scale] = convertHSLToHex(color as HSLColor);
-          return scales;
-        }, {} as Record<string, string>);
-        return acc;
-      }, {} as Record<string, Record<string, string>>),
-      'neutral': Object.entries(NEUTRAL_COLORS.solid).reduce((acc, [scale, color]) => {
-        acc[scale] = convertHSLToHex(color as HSLColor);
-        return acc;
-      }, {} as Record<string, string>),
-      'neutral-alpha': Object.entries(NEUTRAL_COLORS.alpha).reduce((acc, [scale, color]) => {
-        acc[scale] = convertHSLToHex(color as HSLColor);
-        return acc;
-      }, {} as Record<string, string>),
+    return {
+      ...ADS_COLORS,
+      'neutral': NEUTRAL_COLORS.solid,
+      'neutral-alpha': NEUTRAL_COLORS.alpha,
     };
-    return initialColors as FoundationColors;
   });
   const [darkNeutralColors, setDarkNeutralColors] = useState<DarkNeutralColors>(() => {
-    const initialColors = {
-      'dark-neutral': Object.entries(DARK_NEUTRAL_COLORS.solid).reduce((acc, [scale, color]) => {
-        acc[scale] = convertHSLToHex(color as HSLColor);
-        return acc;
-      }, {} as Record<string, string>),
-      'dark-neutral-alpha': Object.entries(DARK_NEUTRAL_COLORS.alpha).reduce((acc, [scale, color]) => {
-        acc[scale] = convertHSLToHex(color as HSLColor);
-        return acc;
-      }, {} as Record<string, string>),
+    return {
+      'dark-neutral': DARK_NEUTRAL_COLORS.solid,
+      'dark-neutral-alpha': DARK_NEUTRAL_COLORS.alpha,
     };
-    return initialColors;
   });
-  const [hexValue, setHexValue] = useState<string>('');
+  const [currentHSL, setCurrentHSL] = useState<HSLColor>({ h: 0, s: 100, l: 50 });
   const colorGridRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
@@ -464,43 +441,33 @@ export const ColorPalette: React.FC = () => {
       setColorName(selectedColumn);
       const baseColor = getBaseColor(selectedColumn);
       if (baseColor) {
-        const { h, s } = hexToHSL(baseColor);
         const range = getHueRange(selectedColumn);
-        setHue(range.center);
-        setSaturation(s);
-        
-        // Update hex value with level 700 color
-        const colors = selectedColumn.includes('dark-neutral') 
-          ? darkNeutralColors['dark-neutral']
-          : foundationColors[selectedColumn.split('-')[0] as keyof FoundationColors];
-        const level700Color = getColorValue(colors, '700');
-        setHexValue(level700Color);
+        setHue(baseColor.h);
+        setSaturation(baseColor.s);
+        setCurrentHSL(baseColor);
       }
     }
   }, [selectedColumn, darkNeutralColors, foundationColors]);
 
-  const getColorString = (color: ColorValue | HSLColor): string => {
-    if (typeof color === 'object' && 'h' in color && 's' in color && 'l' in color) {
-      return HSLToHex(color.h, color.s, color.l);
-    }
-    return color as string;
+  const getColorString = (color: HSLColor): string => {
+    return HSLToHex(color.h, color.s, color.l);
   };
 
-  const getColorValue = (colors: ColorScale | undefined, scale: string): string => {
-    if (!colors) return 'transparent';
+  const getColorValue = (colorScale: ColorScale | undefined, scale: string): HSLColor | undefined => {
+    if (!colorScale) return undefined;
     
-    const color = colors[scale];
+    const color = colorScale[scale];
     if (!color) {
       const alphaScale = scale + 'a';
-      const alphaColor = colors[alphaScale];
-      if (!alphaColor) return 'transparent';
+      const alphaColor = colorScale[alphaScale];
+      if (!alphaColor) return undefined;
       return alphaColor;
     }
     
     return color;
   };
 
-  const getBaseColor = (colorKey: string): string | undefined => {
+  const getBaseColor = (colorKey: string): HSLColor | undefined => {
     const colors = colorKey.includes('dark-neutral') 
       ? (darkNeutralColors as unknown as ColorMap)[colorKey]
       : (foundationColors as unknown as ColorMap)[colorKey];
@@ -535,52 +502,23 @@ export const ColorPalette: React.FC = () => {
   };
 
   const handleHueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedColumn) return;
-    
-    const newHue = Number(event.target.value);
-    const range = getHueRange(selectedColumn);
-    
-    // Handle red color special case
-    if (selectedColumn.includes('red')) {
-      let normalizedHue = newHue;
-      if (newHue < 0) {
-        normalizedHue = 360 + newHue;
-        if (normalizedHue > 340) {
-          normalizedHue = 340;
-        }
-      }
-      setHue(normalizedHue);
-      updateColors(normalizedHue, saturation);
-    } else {
-      // For other colors, ensure hue stays within range
-      const boundedHue = Math.max(range.min, Math.min(range.max, newHue));
-      setHue(boundedHue);
-      updateColors(boundedHue, saturation);
-    }
+    const newHue = parseInt(event.target.value);
+    setHue(newHue);
+    updateColors(newHue, saturation);
   };
 
   const handleSaturationChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedColumn) return;
-    
-    const newSaturation = Number(event.target.value);
-    const neutralSat = getNeutralSaturation(selectedColumn);
-    
-    // For neutral colors, limit maximum saturation
-    if (selectedColumn.includes('neutral')) {
-      const boundedSaturation = Math.min(newSaturation, neutralSat);
-      setSaturation(boundedSaturation);
-      updateColors(hue, boundedSaturation);
-    } else {
-      setSaturation(newSaturation);
-      updateColors(hue, newSaturation);
-    }
+    const newSaturation = parseInt(event.target.value);
+    setSaturation(newSaturation);
+    updateColors(hue, newSaturation);
   };
 
-  const getScalesForType = (colorType: string): string[] => {
-    if (colorType.includes('dark-neutral')) {
-      return DARK_NEUTRAL_SCALES;
-    } else if (colorType.includes('neutral')) {
+  const getScalesForType = (colorType: string): readonly string[] => {
+    if (colorType === 'neutral') {
       return NEUTRAL_SCALES;
+    }
+    if (colorType === 'dark-neutral') {
+      return DARK_NEUTRAL_SCALES;
     }
     return FOUNDATION_SCALES;
   };
@@ -598,20 +536,18 @@ export const ColorPalette: React.FC = () => {
     
     // Special case: neutral level 0 is always white
     if (selectedColumn.includes('neutral') && scales.includes('0')) {
-      colors[selectedColumn]['0'] = '#FFFFFF';
+      colors[selectedColumn]['0'] = { h: 0, s: 0, l: 100 };
     }
 
     // Calculate new colors using HSL values directly
     scales.forEach(scale => {
       if (scale !== '0' || !selectedColumn.includes('neutral')) {
         const l = LIGHTNESS_LEVELS[scale as keyof typeof LIGHTNESS_LEVELS];
-        colors[selectedColumn][scale] = HSLToHex(h, s, l);
+        colors[selectedColumn][scale] = { h, s, l };
       }
     });
 
-    // Update hex value with level 700 color
-    const level700Color = colors[selectedColumn]['700'];
-    setHexValue(typeof level700Color === 'string' ? level700Color : '');
+    setCurrentHSL({ h, s, l: LIGHTNESS_LEVELS['700'] });
     setEditedColors(colors);
   };
 
@@ -626,7 +562,7 @@ export const ColorPalette: React.FC = () => {
 
   const handleHexChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newHex = event.target.value;
-    setHexValue(newHex);
+    setCurrentHSL(hexToHSL(newHex));
     
     if (newHex.length === 7) {  // Full hex color (#RRGGBB)
       updateColorsFromHex(newHex);
@@ -634,48 +570,22 @@ export const ColorPalette: React.FC = () => {
   };
 
   const handleDuplicatePalette = () => {
-    if (!selectedColumn) return;
+    if (!selectedColumn || selectedColumn.includes('-alpha')) return;
 
-    const colors = selectedColumn.includes('dark-neutral')
-      ? { ...darkNeutralColors }
-      : { ...foundationColors };
+    const currentColors = editedColors[selectedColumn] || 
+      (selectedColumn.includes('dark-neutral') 
+        ? darkNeutralColors[selectedColumn]
+        : foundationColors[selectedColumn]);
 
-    const baseKey = selectedColumn.replace(/-\d+$/, '');
-    let counter = 1;
-    let newKey = `${baseKey}-${counter}`;
+    const newColors = { ...editedColors };
+    const newKey = `${selectedColumn}-copy`;
+    newColors[newKey] = {};
 
-    // Find the last column of the same type
-    const columns = Object.keys(colors).filter(key => key.startsWith(baseKey));
-    const lastColumn = columns[columns.length - 1];
-    
-    if (lastColumn) {
-      const lastCounter = parseInt(lastColumn.split('-').pop() || '0');
-      counter = lastCounter + 1;
-      newKey = `${baseKey}-${counter}`;
-    }
-
-    // Create new color scale with current hue and saturation
-    const currentColors = selectedColumn.includes('dark-neutral')
-      ? darkNeutralColors['dark-neutral']
-      : foundationColors[selectedColumn.split('-')[0] as keyof FoundationColors];
-    const newColors: ColorScale = {};
-    
     Object.entries(currentColors).forEach(([scale, color]) => {
-      const { l } = hexToHSL(color);
-      newColors[scale] = HSLToHex(hue, saturation, l);
+      newColors[newKey][scale] = { ...color };
     });
 
-    if (selectedColumn.includes('dark-neutral')) {
-      setDarkNeutralColors({
-        ...darkNeutralColors,
-        [newKey]: newColors,
-      } as DarkNeutralColors);
-    } else {
-      setFoundationColors({
-        ...foundationColors,
-        [newKey]: newColors,
-      } as FoundationColors);
-    }
+    setEditedColors(newColors);
   };
 
   const handleColumnClick = (key: string, event: React.MouseEvent) => {
@@ -725,10 +635,16 @@ export const ColorPalette: React.FC = () => {
     return key.includes('alpha');
   };
 
-  const renderColorGrid = (colors: Record<string, ColorScale>, scales: string[]) => (
+  const renderColorGrid = (colors: Record<string, ColorScale>, scales: readonly string[]) => (
     <ColorGrid ref={colorGridRef}>
-      {Object.entries(colors).map(([key, colors]) => {
+      {Object.entries(colors).map(([key, colorScale]) => {
         const isAlpha = key.includes('-alpha');
+        const isDarkNeutral = key.includes('dark-neutral');
+        const isNeutral = key === 'neutral';
+        
+        // Calculate empty cells needed at the top
+        const startIndex = isNeutral ? 0 : (isDarkNeutral ? 0 : 1);
+        
         return (
           <ColorColumn 
             key={key}
@@ -738,22 +654,27 @@ export const ColorPalette: React.FC = () => {
             style={{ cursor: isAlpha ? 'default' : 'pointer' }}
           >
             <ColorScales>
+              {/* Add empty cells at the top if needed */}
+              {Array.from({ length: startIndex }, (_, i) => (
+                <ColorCell key={`empty-${i}`} $color="transparent" />
+              ))}
               {scales.map(scale => {
-                const colorValue = editedColors[key]?.[scale] || getColorValue(colors, scale);
+                const hslColor = getColorValue(colorScale, scale);
+                const colorHex = hslColor ? getColorString(hslColor) : 'transparent';
                 return (
                   <ColorCell 
                     key={scale} 
-                    $color={colorValue}
+                    $color={colorHex}
                     $showTooltip={true}
                   >
-                    {colorValue !== 'transparent' && (
+                    {hslColor && (
                       <>
-                        <ColorTooltip color={colorValue} />
+                        <ColorTooltip color={colorHex} />
                         {isAlpha ? (
                           <AlphaIndicator>α</AlphaIndicator>
                         ) : (
                           (() => {
-                            const wcag = getWcagCompliance(colorValue);
+                            const wcag = getWcagCompliance(colorHex);
                             return (
                               <>
                                 {wcag.white && <WcagText $color="white">{wcag.white}</WcagText>}
@@ -786,7 +707,7 @@ export const ColorPalette: React.FC = () => {
                 />
                 <HexInput
                   type="text"
-                  value={hexValue}
+                  value={getColorString(currentHSL)}
                   onChange={handleHexChange}
                   placeholder="#000000"
                   pattern="^#[0-9A-Fa-f]{6}$"
@@ -828,9 +749,9 @@ export const ColorPalette: React.FC = () => {
     </ColorGrid>
   );
 
-  const renderScaleColumn = (scales: string[]) => (
+  const renderScaleColumn = (scales: readonly string[]) => (
     <ScaleColumn>
-      {scales.map(scale => (
+      {ALL_SCALES.map(scale => (
         <ScaleLabel key={scale}>{scale}</ScaleLabel>
       ))}
     </ScaleColumn>
