@@ -1,0 +1,32 @@
+{
+  "name": "design-foundation-generator",
+  "version": "0.1.0",
+  "description": "A tool to help UX/UI Designers create and manage design systems",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext ts,tsx",
+    "format": "prettier --write 'src/**/*.{ts,tsx,css,html}'",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "chroma-js": "^2.4.2",
+    "wcag-contrast": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/chroma-js": "^2.4.0",
+    "@types/node": "^20.4.5",
+    "@typescript-eslint/eslint-plugin": "^6.2.0",
+    "@typescript-eslint/parser": "^6.2.0",
+    "eslint": "^8.45.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.1.6",
+    "vite": "^4.4.7",
+    "vitest": "^0.33.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

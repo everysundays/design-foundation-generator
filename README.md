@@ -1,7 +1,70 @@
-# design-system-generator
-Design System helper to solve the problem that Google M3 has forgot to include many color palettes into their Figma template files. So I decided to make a complete set and make a generator to create new ones easily
+# Design Foundation Generator
 
-• Generates color palettes, color roles (now support Google M3) and typography first set into json to be imported with heron variable tools plugin.
-• work in progress, now at version 31. still buggy.
+A tool to help UX/UI Designers create and manage design systems with standardized color palettes and typography.
 
-** Everything writes with ChatGPT-o1. Redefine design layout with v0.dev
+## Features
+
+- Color palette generation with customizable scales
+- Color management based on HSL and HSB color models
+- Theme creation by selecting specific colors for roles
+- Typography system with scale generation
+- Export to design tools like Figma
+
+## Project Structure
+
+```
+design-foundation-generator/
+├── src/                  # Source code
+│   ├── components/       # Reusable UI components
+│   │   ├── color-wheel/  # Color wheel selection
+│   │   ├── color-scales/ # Color scale generation
+│   │   └── ...
+│   ├── styles/           # CSS stylesheets
+│   ├── types/            # TypeScript type definitions
+│   └── utils/            # Utility functions
+├── docs/                 # Documentation
+└── config/               # Configuration files
+```
+
+## Development
+
+### Prerequisites
+
+- Node.js 16+
+- npm or yarn
+
+### Getting Started
+
+1. Clone the repository
+   ```
+   git clone https://github.com/everysundays/design-foundation-generator.git
+   cd design-foundation-generator
+   ```
+
+2. Install dependencies
+   ```
+   npm install
+   ```
+
+3. Start development server
+   ```
+   npm run dev
+   ```
+
+4. Build for production
+   ```
+   npm run build
+   ```
+
+## Architecture
+
+The application is built using a modular approach with feature-based organization:
+
+- **Color Management**: Tools for creating and editing color palettes
+- **Color Scales**: Algorithms for generating balanced color scales
+- **Typography**: Typography scale management
+- **Export**: Export functionality to various design tools
+
+## License
+
+MIT
