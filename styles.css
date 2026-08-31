@@ -312,3 +312,37 @@ body {
   height: 16px;
   border-radius: var(--border-radius-full);
 }
+
+.spacing-settings {
+  padding: 10px 0;
+  margin-bottom: var(--gap-large);
+}
+
+.spacing-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-small);
+}
+
+.spacing-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-medium);
+}
+
+.spacing-label {
+  font: 700 var(--small-body-font-size) var(--font-family-body);
+  width: 90px;
+}
+
+.spacing-value {
+  font: 400 var(--small-body-font-size) var(--font-family-body);
+  width: 60px;
+  color: #666;
+}
+
+.spacing-bar {
+  height: 20px;
+  background-color: var(--primary-color);
+  border-radius: var(--border-radius-small);
+}

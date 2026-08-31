@@ -1,9 +1,13 @@
 let paletteGenerated = false;
+let currentTypographyStyles = {};
 
 let typescaleData = {
     size: {},
     "line-height": {}
 };
+
+// Spacing scale steps (multiples of the base unit, matching a 4-point grid)
+const spacingSteps = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64];
 
 const colorRolesTemplate = {
     "Primary": "Primary 40",
@@ -272,6 +276,35 @@ function createPalette(colors) {
     return jsonOutput;
 }
 
+// Render the live spacing scale preview
+function updateSpacingScale() {
+    const baseUnit = parseFloat(document.getElementById('spacingBaseUnitInput').value) || 4;
+    const container = document.getElementById('spacingScale');
+    container.innerHTML = '';
+
+    spacingSteps.forEach(step => {
+        const px = step * baseUnit;
+
+        const row = document.createElement('div');
+        row.className = 'spacing-row';
+
+        const label = document.createElement('div');
+        label.className = 'spacing-label';
+        label.textContent = `space-${step}`;
+
+        const value = document.createElement('div');
+        value.className = 'spacing-value';
+        value.textContent = `${px}px`;
+
+        const bar = document.createElement('div');
+        bar.className = 'spacing-bar';
+        bar.style.width = `${Math.min(px, 400)}px`;
+
+        row.append(label, value, bar);
+        container.appendChild(row);
+    });
+}
+
 function positionLegends() {
     const sample = document.querySelector('.sample');
     const legendItems = document.querySelectorAll('.typography-name');
@@ -301,17 +334,61 @@ function generatePalette() {
             jsonOutput[role] = { "$type": "color", "$value": `{palettes.${paletteReference}}` };
         });
 
-// Include typography settings
-        jsonOutput['typography'] = {
-            baseFontSize: document.getElementById('baseFontSizeInput').value,
-            baseLineHeight: document.getElementById('baseLineHeightInput').value,
-            baseFontFamily: document.getElementById('baseFontSelector').value,
-            baseFontWeight: document.getElementById('baseFontWeightSelector').value,
-            headerFontFamily: document.getElementById('headerFontSelector').value,
-            headerFontWeight: document.getElementById('headerFontWeightSelector').value,
-            displayFontFamily: document.getElementById('displayFontSelector').value,
-            displayFontWeight: document.getElementById('displayFontWeightSelector').value
+// Include typography tokens (font family / weight / size / line-height / composite typography)
+        const baseFontFamily = document.getElementById('baseFontSelector').value;
+        const baseFontWeight = document.getElementById('baseFontWeightSelector').value;
+        const headerFontFamily = document.getElementById('headerFontSelector').value;
+        const headerFontWeight = document.getElementById('headerFontWeightSelector').value;
+        const displayFontFamily = document.getElementById('displayFontSelector').value;
+        const displayFontWeight = document.getElementById('displayFontWeightSelector').value;
+
+        jsonOutput['font-family'] = {
+            base: { "$type": "fontFamilies", "$value": baseFontFamily },
+            header: { "$type": "fontFamilies", "$value": headerFontFamily },
+            display: { "$type": "fontFamilies", "$value": displayFontFamily }
         };
+
+        jsonOutput['font-weight'] = {
+            base: { "$type": "fontWeights", "$value": baseFontWeight },
+            header: { "$type": "fontWeights", "$value": headerFontWeight },
+            display: { "$type": "fontWeights", "$value": displayFontWeight }
+        };
+
+        jsonOutput['font-size'] = {};
+        jsonOutput['line-height'] = {};
+        jsonOutput['typography'] = {};
+
+        const familyAlias = family => {
+            if (family === headerFontFamily) return 'header';
+            if (family === displayFontFamily) return 'display';
+            return 'base';
+        };
+
+        Object.entries(currentTypographyStyles).forEach(([key, style]) => {
+            if (!style || !style.fontSize) return;
+
+            jsonOutput['font-size'][key] = { "$type": "fontSizes", "$value": style.fontSize };
+            jsonOutput['line-height'][key] = { "$type": "dimension", "$value": style.lineHeight };
+
+            const typographyValue = {
+                fontFamily: `{font-family.${familyAlias(style.fontFamily)}}`,
+                fontWeight: style.fontWeight,
+                fontSize: `{font-size.${key}}`,
+                lineHeight: `{line-height.${key}}`
+            };
+            if (style.textDecoration && style.textDecoration !== 'none') {
+                typographyValue.textDecoration = style.textDecoration;
+            }
+
+            jsonOutput['typography'][key] = { "$type": "typography", "$value": typographyValue };
+        });
+
+// Include spacing tokens (4-point-grid multiples of the base unit)
+        const spacingBaseUnit = parseFloat(document.getElementById('spacingBaseUnitInput').value) || 4;
+        jsonOutput['spacing'] = {};
+        spacingSteps.forEach(step => {
+            jsonOutput['spacing'][`space-${step}`] = { "$type": "spacing", "$value": `${step * spacingBaseUnit}px` };
+        });
 
 // Ensure JSON output element exists and update it
         let jsonOutputElem = document.getElementById('jsonOutput');
@@ -805,6 +882,9 @@ typographyStyles['link-hover'] = {
     marginBottom: `${paragraphSpacing}px`
 };
 
+// Store for export (see generatePalette)
+currentTypographyStyles = typographyStyles;
+
 // Update Samples
 updateSample('desktopSample', typographyStyles, false);
 updateSample('mobileSample', typographyStyles, true);
@@ -960,7 +1040,7 @@ function downloadJson() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `palette.json`;
+        a.download = `tokens.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1007,6 +1087,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // Add event listener for paragraph spacing input
     document.getElementById('paragraphSpacingInput').addEventListener('input', updateTypography);
 
+// Update spacing scale in real-time
+    document.getElementById('spacingBaseUnitInput').addEventListener('input', updateSpacingScale);
+
 // Initialize the tabs
     openTab('colorTab');
 
@@ -1015,6 +1098,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Initial typography update
     updateTypography();
+
+// Initial spacing scale render
+    updateSpacingScale();
 
 // Populate the abbreviation footer
     populateAbbreviationFooter();

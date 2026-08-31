@@ -15,6 +15,7 @@
                 <h1>v.32</h1>
                 <button class="tab-button active" onclick="openTab('colorTab')">Color</button>
                 <button class="tab-button" onclick="openTab('typographyTab')">Typography</button>
+                <button class="tab-button" onclick="openTab('spacingTab')">Spacing</button>
             </div>
             <div class="header-buttons">
                 <button id="generateButton" class="header-icon-button">
@@ -125,6 +126,22 @@
     </div>
     <footer id="abbreviationFooter" class="abbreviation-footer"></footer>
 </div>
+
+            <div id="spacingTab" class="tab-content">
+                <div class="generator-container">
+                    <h2>Spacing</h2>
+                    <div class="spacing-settings">
+                        <div class="typography-group">
+                            <label for="spacingBaseUnitInput">Base Unit</label>
+                            <div class="input-with-unit">
+                                <input type="number" id="spacingBaseUnitInput" value="4" min="1" step="1" class="typography-input">
+                                <span class="unit">px</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="spacingScale" class="spacing-scale"></div>
+                </div>
+            </div>
 </div>
 
 <pre id="jsonOutput" class="json-output" style="display: none;"></pre>
