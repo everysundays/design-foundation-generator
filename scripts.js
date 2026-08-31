@@ -78,6 +78,21 @@ const colorRolesTemplate = {
     "state-layer/Dragged": "Primary 40 10%"
 };
 
+// Penpot token names may only contain letters/digits separated by "." or "-"
+// (no spaces, no "/") - this turns any human-readable label into a valid one.
+function slugify(str) {
+    return str
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+// Matches the key format used in the "palettes" group: "<color-name>.<step>"
+function paletteKey(name, step) {
+    return `${slugify(name)}.${step}`;
+}
+
 // Include the defaultScaleData constant
 const defaultScaleData = {
     "scaffold": {
@@ -171,6 +186,11 @@ function hexToRgb(hex) {
 
 function rgbToHex([r, g, b]) {
     return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+}
+
+function hexToRgba(hex, alphaPercent) {
+    const [r, g, b] = hexToRgb(hex);
+    return `rgba(${r}, ${g}, ${b}, ${alphaPercent / 100})`;
 }
 
 function rgbToHsl([r, g, b]) {
@@ -269,7 +289,7 @@ function createPalette(colors) {
 
 // Add each calculated color to the palette in the JSON output
         colorPalette.forEach((colorHex, index) => {
-            jsonOutput["palettes"][`${name} ${steps[index]}`] = { "$type": "color", "$value": colorHex };
+            jsonOutput["palettes"][paletteKey(name, steps[index])] = { "$type": "color", "$value": colorHex };
         });
     });
 
@@ -326,12 +346,34 @@ function generatePalette() {
     })).filter(c => c.name && /^#[0-9A-F]{6}$/i.test(c.hex));
 
     if (colors.length) {
-        const jsonOutput = createPalette(colors);
+        const tokens = createPalette(colors);
+        const jsonOutput = tokens; // keep existing variable name for the rest of this function
 
 // Assign roles to reference colors from the palettes using the correct format
+// (role labels like "Primary Fixed Dim" are slugified into valid token names;
+//  refs with a trailing alpha, e.g. "Primary 40 8%", are resolved to a direct
+//  rgba() value since Penpot token references can't carry an opacity modifier)
         Object.keys(colorRolesTemplate).forEach(role => {
             const paletteReference = colorRolesTemplate[role];
-            jsonOutput[role] = { "$type": "color", "$value": `{palettes.${paletteReference}}` };
+            const roleName = slugify(role);
+            const alphaMatch = paletteReference.match(/^(.*)\s(\d+)%$/);
+
+            if (alphaMatch) {
+                const [, baseRef, alphaStr] = alphaMatch;
+                const baseParts = baseRef.trim().split(/\s+/);
+                const step = baseParts.pop();
+                const name = baseParts.join(' ');
+                const baseHex = tokens.palettes[paletteKey(name, step)]?.["$value"];
+                jsonOutput[roleName] = {
+                    "$type": "color",
+                    "$value": baseHex ? hexToRgba(baseHex, parseInt(alphaStr, 10)) : "#000000"
+                };
+            } else {
+                const parts = paletteReference.trim().split(/\s+/);
+                const step = parts.pop();
+                const name = parts.join(' ');
+                jsonOutput[roleName] = { "$type": "color", "$value": `{palettes.${paletteKey(name, step)}}` };
+            }
         });
 
 // Include typography tokens (font family / weight / size / line-height / composite typography)
@@ -390,6 +432,12 @@ function generatePalette() {
             jsonOutput['spacing'][`space-${step}`] = { "$type": "spacing", "$value": `${step * spacingBaseUnit}px` };
         });
 
+// Wrap the token tree in a Penpot-importable file: one token Set plus $metadata
+        const fileOutput = {
+            "Global": tokens,
+            "$metadata": { "tokenSetOrder": ["Global"] }
+        };
+
 // Ensure JSON output element exists and update it
         let jsonOutputElem = document.getElementById('jsonOutput');
         if (!jsonOutputElem) {
@@ -399,7 +447,7 @@ function generatePalette() {
             jsonOutputElem.style.display = 'none';
             document.body.appendChild(jsonOutputElem);
         }
-        const fullJsonString = JSON.stringify(jsonOutput, null, 2);
+        const fullJsonString = JSON.stringify(fileOutput, null, 2);
         jsonOutputElem.textContent = fullJsonString;
         jsonOutputElem.dataset.fullJson = fullJsonString;
 
