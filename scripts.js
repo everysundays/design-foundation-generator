@@ -14,7 +14,7 @@ const colorRolesTemplate = {
     "On Primary Fixed": "Primary 10",
     "Primary Fixed Dim": "Primary 80",
     "On Primary Fixed Variant": "Primary 30",
-    
+
     "Secondary": "Secondary 40",
     "On Secondary": "Secondary 100",
     "Secondary Container": "Secondary 90",
@@ -23,7 +23,7 @@ const colorRolesTemplate = {
     "On Secondary Fixed": "Secondary 10",
     "Secondary Fixed Dim": "Secondary 80",
     "On Secondary Fixed Variant": "Secondary 30",
-    
+
     "Tertiary": "Tertiary 40",
     "On Tertiary": "Tertiary 100",
     "Tertiary Container": "Tertiary 90",
@@ -32,33 +32,33 @@ const colorRolesTemplate = {
     "On Tertiary Fixed": "Tertiary 10",
     "Tertiary Fixed Dim": "Tertiary 80",
     "On Tertiary Fixed Variant": "Tertiary 30",
-    
+
     "Error": "Error 40",
     "On Error": "Error 100",
     "Error Container": "Error 90",
     "On Error Container": "Error 10",
-    
+
     "Background": "Neutral 98",
     "On Background": "Neutral 10",
     "Surface": "Neutral 98",
     "On Surface": "Neutral 10",
     "Surface Variant": "Neutral Variant 90",
     "On Surface Variant": "Neutral Variant 30",
-    
+
     "Surface Container Highest": "Neutral 90",
     "Surface Container High": "Neutral 92",
     "Surface Container": "Neutral 94",
     "Surface Container Low": "Neutral 96",
     "Surface Container Lowest": "Neutral 100",
-    
+
     "Surface Bright": "Neutral 98",
     "Surface Dim": "Neutral 87",
-    
+
     "Outline": "Neutral Variant 50",
     "Outline Variant": "Neutral Variant 80",
     "Shadow": "Primary 0 45%",
     "Scrim": "Neutral 0 32%",
-    
+
     "Inverse Surface": "Neutral 20",
     "Inverse On Surface": "Neutral 95",
     "Inverse Primary": "Primary 80",
@@ -214,7 +214,7 @@ function createPalette(colors) {
     const palette = document.getElementById('palette');
     palette.innerHTML = '';
 
-    // Create header row with degrees
+// Create header row with degrees
     const headerRow = document.createElement('div');
     headerRow.className = 'color-row header-row';
 
@@ -245,7 +245,7 @@ function createPalette(colors) {
             return rgbToHex(rgb);
         });
 
-        // Create the visual palette rows
+// Create the visual palette rows
         const colorRow = document.createElement('div');
         colorRow.className = 'color-row';
 
@@ -263,7 +263,7 @@ function createPalette(colors) {
         });
         palette.appendChild(colorRow);
 
-        // Add each calculated color to the palette in the JSON output
+// Add each calculated color to the palette in the JSON output
         colorPalette.forEach((colorHex, index) => {
             jsonOutput["palettes"][`${name} ${steps[index]}`] = { "$type": "color", "$value": colorHex };
         });
@@ -273,16 +273,16 @@ function createPalette(colors) {
 }
 
 function positionLegends() {
-  const sample = document.querySelector('.sample');
-  const legendItems = document.querySelectorAll('.typography-name');
-  
-  sample.querySelectorAll('*').forEach((element, index) => {
-    if (index < legendItems.length) {
-      const rect = element.getBoundingClientRect();
-      const sampleRect = sample.getBoundingClientRect();
-      legendItems[index].style.top = `${rect.top - sampleRect.top}px`;
-  }
-});
+    const sample = document.querySelector('.sample');
+    const legendItems = document.querySelectorAll('.typography-name');
+
+    sample.querySelectorAll('*').forEach((element, index) => {
+        if (index < legendItems.length) {
+            const rect = element.getBoundingClientRect();
+            const sampleRect = sample.getBoundingClientRect();
+            legendItems[index].style.top = `${rect.top - sampleRect.top}px`;
+        }
+    });
 }
 
 // Function to generate the palette
@@ -295,13 +295,13 @@ function generatePalette() {
     if (colors.length) {
         const jsonOutput = createPalette(colors);
 
-        // Assign roles to reference colors from the palettes using the correct format
+// Assign roles to reference colors from the palettes using the correct format
         Object.keys(colorRolesTemplate).forEach(role => {
             const paletteReference = colorRolesTemplate[role];
             jsonOutput[role] = { "$type": "color", "$value": `{palettes.${paletteReference}}` };
         });
 
-        // Include typography settings
+// Include typography settings
         jsonOutput['typography'] = {
             baseFontSize: document.getElementById('baseFontSizeInput').value,
             baseLineHeight: document.getElementById('baseLineHeightInput').value,
@@ -313,7 +313,7 @@ function generatePalette() {
             displayFontWeight: document.getElementById('displayFontWeightSelector').value
         };
 
-        // Ensure JSON output element exists and update it
+// Ensure JSON output element exists and update it
         let jsonOutputElem = document.getElementById('jsonOutput');
         if (!jsonOutputElem) {
             jsonOutputElem = document.createElement('pre');
@@ -336,36 +336,36 @@ function generatePalette() {
 // Function to initialize color inputs
 function initializeColorInputs() {
     const colorInputsContainer = document.getElementById('colorInputs');
-    colorInputsContainer.innerHTML = ''; // Clear any existing inputs
+colorInputsContainer.innerHTML = ''; // Clear any existing inputs
 
-    Object.entries(defaultColors).forEach(([name, hex], i) => {
-        const colorRow = document.createElement('div');
-        colorRow.className = 'color-input-row';
+Object.entries(defaultColors).forEach(([name, hex], i) => {
+    const colorRow = document.createElement('div');
+    colorRow.className = 'color-input-row';
 
-        const colorNameInput = createInput('text', name, true);
-        colorNameInput.classList.add('read-only');
-        const hexInput = createInput('text', hex, false, `hexInput${i + 1}`);
-        const colorPicker = createInput('color', hex, false);
+    const colorNameInput = createInput('text', name, true);
+    colorNameInput.classList.add('read-only');
+    const hexInput = createInput('text', hex, false, `hexInput${i + 1}`);
+    const colorPicker = createInput('color', hex, false);
 
-        hexInput.addEventListener('input', () => {
-            // Sanitize and correct hex input before further processing
-            const sanitizedHex = sanitizeHexInput(hexInput.value);
-            hexInput.value = sanitizedHex;
+    hexInput.addEventListener('input', () => {
+// Sanitize and correct hex input before further processing
+        const sanitizedHex = sanitizeHexInput(hexInput.value);
+        hexInput.value = sanitizedHex;
 
-            if (sanitizedHex) {
-                syncColorInput(hexInput, colorPicker);
-            }
-        });
-
-        colorPicker.addEventListener('input', () => syncColorInput(colorPicker, hexInput));
-
-        const defaultButton = createIconButton('fas fa-redo', 'default-button', () => resetToDefaultColor(hexInput, colorPicker, name));
-        const randomButton = createIconButton('fas fa-random', 'random-button', () => randomizeColor(hexInput, colorPicker, name));
-        const lastColorButton = createIconButton('fas fa-arrow-left', 'last-button', () => revertToLastColor(hexInput, colorPicker, name));
-
-        colorRow.append(colorNameInput, hexInput, colorPicker, defaultButton, randomButton, lastColorButton);
-        colorInputsContainer.appendChild(colorRow);
+        if (sanitizedHex) {
+            syncColorInput(hexInput, colorPicker);
+        }
     });
+
+    colorPicker.addEventListener('input', () => syncColorInput(colorPicker, hexInput));
+
+    const defaultButton = createIconButton('fas fa-redo', 'default-button', () => resetToDefaultColor(hexInput, colorPicker, name));
+    const randomButton = createIconButton('fas fa-random', 'random-button', () => randomizeColor(hexInput, colorPicker, name));
+    const lastColorButton = createIconButton('fas fa-arrow-left', 'last-button', () => revertToLastColor(hexInput, colorPicker, name));
+
+    colorRow.append(colorNameInput, hexInput, colorPicker, defaultButton, randomButton, lastColorButton);
+    colorInputsContainer.appendChild(colorRow);
+});
 }
 
 // Function to create input fields
@@ -377,14 +377,14 @@ function createInput(type, value, readOnly = false, id = '') {
     if (id) input.id = id;
     input.className = 'form-control';
     if (type === 'text' && readOnly) {
-        input.style.width = '140px'; // Increased width for long names
-    } else {
-        input.style.width = '100px';
-    }
-    if (type === 'color') {
-        input.style.cursor = 'default'; // Skip changing cursor on color picker
-    }
-    return input;
+input.style.width = '140px'; // Increased width for long names
+} else {
+    input.style.width = '100px';
+}
+if (type === 'color') {
+input.style.cursor = 'default'; // Skip changing cursor on color picker
+}
+return input;
 }
 
 // Function to create icon-based buttons
@@ -395,7 +395,7 @@ function createIconButton(iconClass, className, onClick) {
     button.appendChild(icon);
     button.className = className;
     button.addEventListener('click', onClick);
-    // Set fixed dimensions
+// Set fixed dimensions
     button.style.width = '40px';
     button.style.height = '40px';
     button.style.borderRadius = '50%';
@@ -464,7 +464,7 @@ function openTab(tabId) {
     document.getElementById(tabId).classList.add('active');
     document.querySelector(`button[onclick="openTab('${tabId}')"]`).classList.add('active');
 
-    // Show or hide the Generate button based on the active tab
+// Show or hide the Generate button based on the active tab
     const generateButton = document.getElementById('generateButton');
     if (tabId === 'colorTab') {
         generateButton.style.display = 'inline-flex';
@@ -476,7 +476,7 @@ function openTab(tabId) {
 
 // Populate font selectors with font previews
 function populateFontSelectors() {
-    // For Display Text
+// For Display Text
     const displayFontSelector = document.getElementById('displayFontSelector');
     const displayFontWeightSelector = document.getElementById('displayFontWeightSelector');
     displayFonts.forEach(font => {
@@ -494,7 +494,7 @@ function populateFontSelectors() {
         displayFontWeightSelector.appendChild(option);
     });
 
-    // For Header and Base Text
+// For Header and Base Text
     ['headerFontSelector', 'baseFontSelector'].forEach(selectorId => {
         const fontSelector = document.getElementById(selectorId);
         sansSerifFonts.forEach(font => {
@@ -516,7 +516,7 @@ function populateFontSelectors() {
         });
     });
 
-    // Load fonts dynamically
+// Load fonts dynamically
     loadFontsDynamically();
 }
 
@@ -533,18 +533,18 @@ function loadFontsDynamically() {
 
 // Randomly select fonts for Display, Header, and Base text
 function randomizeFonts() {
-    // Randomly select a display font
+// Randomly select a display font
     const randomDisplayFont = displayFonts[Math.floor(Math.random() * displayFonts.length)];
     document.getElementById('displayFontSelector').value = randomDisplayFont;
 
-    // Randomly select header and base fonts (ensure they are different)
+// Randomly select header and base fonts (ensure they are different)
     const shuffledSansSerifFonts = sansSerifFonts.sort(() => 0.5 - Math.random());
     const [headerFont, baseFont] = shuffledSansSerifFonts.slice(0, 2);
 
     document.getElementById('headerFontSelector').value = headerFont;
     document.getElementById('baseFontSelector').value = baseFont;
 
-    // Set default font weights
+// Set default font weights
     document.getElementById('displayFontWeightSelector').value = '700';
     document.getElementById('headerFontWeightSelector').value = '600';
     document.getElementById('baseFontWeightSelector').value = '400';
@@ -553,7 +553,7 @@ function randomizeFonts() {
 // Function to get abbreviation
 function getAbbreviation(type) {
     const abbreviations = {
-        // T-shirt sizes (uppercase)
+// T-shirt sizes (uppercase)
         '8xl': '8xl',
         '7xl': '7xl',
         '6xl': '6xl',
@@ -565,27 +565,27 @@ function getAbbreviation(type) {
         'lg': 'lg',
         'md': 'md',
         'sm': 'sm',
-        // Paragraph variants (lowercase)
+// Paragraph variants (lowercase)
         'paragraph-regular': 'p',
         'paragraph-medium': 'pm',
         'paragraph-semibold': 'ps',
         'paragraph-bold': 'pb',
         'paragraph-italic': 'pi',
-        // Small text variants
+// Small text variants
         'small-regular': 'small',
         'small-medium': 'sm',
         'small-semibold': 'ss',
         'small-bold': 'sb',
         'small-italic': 'si',
-        // Code styles (lowercase)
+// Code styles (lowercase)
         'code-regular': 'code',
         'code-bold': 'cb',
         'code-italic': 'ci',
-        // Blockquote and links
+// Blockquote and links
         'blockquote': 'bq',
         'link': 'link',
         'link-hover': 'linkh',
-        // HTML types (as is)
+// HTML types (as is)
         'H1': 'H1',
         'H2': 'H2',
         'H3': 'H3',
@@ -612,7 +612,7 @@ function getEquivalentTypes(type) {
         'lg': ['H6'],
         'md': ['p'],
         'sm': ['small'],
-        // Add other mappings as needed
+// Add other mappings as needed
     };
     return equivalentsMap[type] || [];
 }
@@ -633,14 +633,14 @@ function createLegend(usedTypes, typographyStyles) {
         const listItem = document.createElement('li');
         listItem.className = 'legend-item';
 
-        // Create color boxes
+// Create color boxes
         const colorBoxes = document.createElement('div');
         colorBoxes.className = 'legend-color-boxes';
 
-        // Determine if it's a T-shirt size or HTML type
+// Determine if it's a T-shirt size or HTML type
         const isTShirtSize = ['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl'].includes(type);
 
-        // Add color boxes for type and its equivalents
+// Add color boxes for type and its equivalents
         const typeColorBox = document.createElement('span');
         typeColorBox.className = 'legend-color-box';
         typeColorBox.style.backgroundColor = isTShirtSize ? '#4CAF50' : '#FFA500';
@@ -654,19 +654,19 @@ function createLegend(usedTypes, typographyStyles) {
             colorBoxes.appendChild(eqColorBox);
         });
 
-        // Create label with abbreviations
+// Create label with abbreviations
         const abbreviations = [type, ...value.equivalents].map(t => getAbbreviation(t)).join(' / ');
 
         const typeLabel = document.createElement('span');
         typeLabel.textContent = ` ${abbreviations}`;
         typeLabel.style.fontSize = `${value.fontSize}px`;
-        typeLabel.style.fontWeight = 'normal'; // Consistent font weight
-        typeLabel.style.fontStyle = 'normal'; // Consistent font style
+typeLabel.style.fontWeight = 'normal'; // Consistent font weight
+typeLabel.style.fontStyle = 'normal'; // Consistent font style
 
-        listItem.appendChild(colorBoxes);
-        listItem.appendChild(typeLabel);
-        legendList.appendChild(listItem);
-    });
+listItem.appendChild(colorBoxes);
+listItem.appendChild(typeLabel);
+legendList.appendChild(listItem);
+});
 
     legendContainer.appendChild(legendList);
     return legendContainer;
@@ -676,138 +676,138 @@ function createLegend(usedTypes, typographyStyles) {
 
 // Update typography in real-time
 function updateTypography() {
-    // Base Text Settings
+// Base Text Settings
     const baseFontFamily = document.getElementById('baseFontSelector').value;
     const baseFontWeight = document.getElementById('baseFontWeightSelector').value;
     const baseFontSize = parseFloat(document.getElementById('baseFontSizeInput').value);
     const baseLineHeight = parseFloat(document.getElementById('baseLineHeightInput').value);
     const paragraphSpacing = parseFloat(document.getElementById('paragraphSpacingInput').value);
 
-    // Header Text Settings
+// Header Text Settings
     const headerFontFamily = document.getElementById('headerFontSelector').value;
     const headerFontWeight = document.getElementById('headerFontWeightSelector').value;
     const headerLineHeight = parseFloat(document.getElementById('headerLineHeightInput').value);
 
-    // Display Text Settings
+// Display Text Settings
     const displayFontFamily = document.getElementById('displayFontSelector').value;
     const displayFontWeight = document.getElementById('displayFontWeightSelector').value;
     const displayLineHeight = parseFloat(document.getElementById('displayLineHeightInput').value);
 
-    // Typography Scale Ratios
+// Typography Scale Ratios
     const scaleRatios = {
         'sm': 0.875,
-        'md': 1,      // Base size
-        'lg': 1.25,
-        'xl': 1.5,
-        '2xl': 1.65,
-        '3xl': 2,
-        '4xl': 2.5,
-        '5xl': 3,
-        '6xl': 3.5,
-        '7xl': 4,
-        '8xl': 4.5
-    };
+'md': 1,      // Base size
+'lg': 1.25,
+'xl': 1.5,
+'2xl': 1.65,
+'3xl': 2,
+'4xl': 2.5,
+'5xl': 3,
+'6xl': 3.5,
+'7xl': 4,
+'8xl': 4.5
+};
 
 // Generate Typography Styles
-    const typographyStyles = {};
+const typographyStyles = {};
 
-    Object.keys(scaleRatios).forEach(sizeKey => {
-        let fontSize = Math.round(baseFontSize * scaleRatios[sizeKey]);
-        let lineHeight = Math.round(baseLineHeight * scaleRatios[sizeKey]);
+Object.keys(scaleRatios).forEach(sizeKey => {
+    let fontSize = Math.round(baseFontSize * scaleRatios[sizeKey]);
+    let lineHeight = Math.round(baseLineHeight * scaleRatios[sizeKey]);
 
-        // Round line height to nearest multiple of 4
-        lineHeight = Math.ceil(lineHeight / 4) * 4;
+// Round line height to nearest multiple of 4
+    lineHeight = Math.ceil(lineHeight / 4) * 4;
 
-        typographyStyles[sizeKey] = {
-            fontSize: `${fontSize}px`,
-            lineHeight: `${lineHeight}px`,
-            fontFamily: baseFontFamily,
-            fontWeight: baseFontWeight,
-            marginBottom: `${paragraphSpacing}px`
-        };
-    });
-
-    // Apply specific fonts for Header and Display Text
-    ['lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl'].forEach(sizeKey => {
-        typographyStyles[sizeKey].fontFamily = headerFontFamily;
-        typographyStyles[sizeKey].fontWeight = headerFontWeight;
-                typographyStyles[sizeKey].lineHeight = `${headerLineHeight}px`;  // Header-specific line height
-
-    });
-
-    ['6xl', '7xl', '8xl'].forEach(sizeKey => {
-        typographyStyles[sizeKey].fontFamily = displayFontFamily;
-        typographyStyles[sizeKey].fontWeight = displayFontWeight;
-                typographyStyles[sizeKey].lineHeight = `${displayLineHeight}px`;  // Display-specific line height
-
-    });
-
-    // Update paragraph styles
-    ['paragraph-regular', 'paragraph-medium', 'paragraph-semibold', 'paragraph-bold', 'paragraph-italic'].forEach(style => {
-        typographyStyles[style] = {
-            ...typographyStyles['md'],
-            fontWeight: style.includes('medium') ? '500' : style.includes('semibold') ? '600' : style.includes('bold') ? '700' : baseFontWeight,
-            fontStyle: style.includes('italic') ? 'italic' : 'normal',
-            textDecoration: style.includes('underline') ? 'underline' : 'none',
-            marginBottom: `${paragraphSpacing}px`
-        };
-    });
-
-    // Small text variants
-    ['small-regular', 'small-medium', 'small-semibold', 'small-bold', 'small-italic'].forEach(style => {
-        typographyStyles[style] = {
-            ...typographyStyles['sm'],
-            fontWeight: style.includes('medium') ? '500' : style.includes('semibold') ? '600' : style.includes('bold') ? '700' : baseFontWeight,
-            fontStyle: style.includes('italic') ? 'italic' : 'normal',
-            textDecoration: style.includes('underline') ? 'underline' : 'none',
-            marginBottom: `${paragraphSpacing}px`
-        };
-    });
-
-    // Code styles
-    typographyStyles['code-regular'] = {
-        ...typographyStyles['sm'],
-        fontFamily: 'Courier New, monospace',
-        fontWeight: '400',
+    typographyStyles[sizeKey] = {
+        fontSize: `${fontSize}px`,
+        lineHeight: `${lineHeight}px`,
+        fontFamily: baseFontFamily,
+        fontWeight: baseFontWeight,
         marginBottom: `${paragraphSpacing}px`
     };
-    typographyStyles['code-bold'] = {
-        ...typographyStyles['sm'],
-        fontFamily: 'Courier New, monospace',
-        fontWeight: '700',
-        marginBottom: `${paragraphSpacing}px`
-    };
-    typographyStyles['code-italic'] = {
-        ...typographyStyles['sm'],
-        fontFamily: 'Courier New, monospace',
-        fontStyle: 'italic',
-        marginBottom: `${paragraphSpacing}px`
-    };
+});
 
-    // Blockquote
-    typographyStyles['blockquote'] = {
-        ...typographyStyles['lg'],
-        fontStyle: 'italic',
-        marginBottom: `${paragraphSpacing}px`
-    };
+// Apply specific fonts for Header and Display Text
+['lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl'].forEach(sizeKey => {
+    typographyStyles[sizeKey].fontFamily = headerFontFamily;
+    typographyStyles[sizeKey].fontWeight = headerFontWeight;
+typographyStyles[sizeKey].lineHeight = `${headerLineHeight}px`;  // Header-specific line height
 
-    // Link styles
-    typographyStyles['link'] = {
+});
+
+['6xl', '7xl', '8xl'].forEach(sizeKey => {
+    typographyStyles[sizeKey].fontFamily = displayFontFamily;
+    typographyStyles[sizeKey].fontWeight = displayFontWeight;
+typographyStyles[sizeKey].lineHeight = `${displayLineHeight}px`;  // Display-specific line height
+
+});
+
+// Update paragraph styles
+['paragraph-regular', 'paragraph-medium', 'paragraph-semibold', 'paragraph-bold', 'paragraph-italic'].forEach(style => {
+    typographyStyles[style] = {
         ...typographyStyles['md'],
-        color: '#1a0dab',
-        textDecoration: 'underline',
+        fontWeight: style.includes('medium') ? '500' : style.includes('semibold') ? '600' : style.includes('bold') ? '700' : baseFontWeight,
+        fontStyle: style.includes('italic') ? 'italic' : 'normal',
+        textDecoration: style.includes('underline') ? 'underline' : 'none',
         marginBottom: `${paragraphSpacing}px`
     };
-    typographyStyles['link-hover'] = {
-        ...typographyStyles['md'],
-        color: '#c61a09',
-        textDecoration: 'underline',
-        marginBottom: `${paragraphSpacing}px`
-    };
+});
 
-    // Update Samples
-    updateSample('desktopSample', typographyStyles, false);
-    updateSample('mobileSample', typographyStyles, true);
+// Small text variants
+['small-regular', 'small-medium', 'small-semibold', 'small-bold', 'small-italic'].forEach(style => {
+    typographyStyles[style] = {
+        ...typographyStyles['sm'],
+        fontWeight: style.includes('medium') ? '500' : style.includes('semibold') ? '600' : style.includes('bold') ? '700' : baseFontWeight,
+        fontStyle: style.includes('italic') ? 'italic' : 'normal',
+        textDecoration: style.includes('underline') ? 'underline' : 'none',
+        marginBottom: `${paragraphSpacing}px`
+    };
+});
+
+// Code styles
+typographyStyles['code-regular'] = {
+    ...typographyStyles['sm'],
+    fontFamily: 'Courier New, monospace',
+    fontWeight: '400',
+    marginBottom: `${paragraphSpacing}px`
+};
+typographyStyles['code-bold'] = {
+    ...typographyStyles['sm'],
+    fontFamily: 'Courier New, monospace',
+    fontWeight: '700',
+    marginBottom: `${paragraphSpacing}px`
+};
+typographyStyles['code-italic'] = {
+    ...typographyStyles['sm'],
+    fontFamily: 'Courier New, monospace',
+    fontStyle: 'italic',
+    marginBottom: `${paragraphSpacing}px`
+};
+
+// Blockquote
+typographyStyles['blockquote'] = {
+    ...typographyStyles['lg'],
+    fontStyle: 'italic',
+    marginBottom: `${paragraphSpacing}px`
+};
+
+// Link styles
+typographyStyles['link'] = {
+    ...typographyStyles['md'],
+    color: '#1a0dab',
+    textDecoration: 'underline',
+    marginBottom: `${paragraphSpacing}px`
+};
+typographyStyles['link-hover'] = {
+    ...typographyStyles['md'],
+    color: '#c61a09',
+    textDecoration: 'underline',
+    marginBottom: `${paragraphSpacing}px`
+};
+
+// Update Samples
+updateSample('desktopSample', typographyStyles, false);
+updateSample('mobileSample', typographyStyles, true);
 }
 
 // Function to update sample content
@@ -821,59 +821,59 @@ function updateSample(sampleId, typographyStyles, isMobile) {
         const type = element.getAttribute('data-typography');
         const style = typographyStyles[type];
 
-        if (!style) return; // Skip if style not defined
+if (!style) return; // Skip if style not defined
 
-        let fontSizeValue = parseFloat(style.fontSize);
-        let lineHeightValue = parseFloat(style.lineHeight);
+let fontSizeValue = parseFloat(style.fontSize);
+let lineHeightValue = parseFloat(style.lineHeight);
 
-        if (isMobile) {
-            fontSizeValue = Math.max(14, fontSizeValue * 0.875); // Reduce font size by 12.5%, minimum 14px
-            lineHeightValue = lineHeightValue * 0.875;
-        }
+if (isMobile) {
+fontSizeValue = Math.max(14, fontSizeValue * 0.875); // Reduce font size by 12.5%, minimum 14px
+lineHeightValue = lineHeightValue * 0.875;
+}
 
-        element.style.fontSize = `${fontSizeValue}px`;
-        element.style.lineHeight = `${lineHeightValue}px`; // Ensure line height is applied
-        element.style.fontFamily = style.fontFamily;
-        element.style.fontWeight = style.fontWeight || 'normal';
-        element.style.fontStyle = style.fontStyle || 'normal';
-        element.style.textDecoration = style.textDecoration || 'none';
-        element.style.color = style.color || 'inherit';
-        element.style.textAlign = 'left';
-        element.style.marginBottom = `${paragraphSpacing}px`; // Apply paragraph spacing to all elements
+element.style.fontSize = `${fontSizeValue}px`;
+element.style.lineHeight = `${lineHeightValue}px`; // Ensure line height is applied
+element.style.fontFamily = style.fontFamily;
+element.style.fontWeight = style.fontWeight || 'normal';
+element.style.fontStyle = style.fontStyle || 'normal';
+element.style.textDecoration = style.textDecoration || 'none';
+element.style.color = style.color || 'inherit';
+element.style.textAlign = 'left';
+element.style.marginBottom = `${paragraphSpacing}px`; // Apply paragraph spacing to all elements
 
-        // Add typography name badges inside the element
-        if (!isMobile && !element.querySelector('.typography-name-container')) {
-            const badgeContainer = document.createElement('span');
-            badgeContainer.className = 'typography-name-container';
+// Add typography name badges inside the element
+if (!isMobile && !element.querySelector('.typography-name-container')) {
+    const badgeContainer = document.createElement('span');
+    badgeContainer.className = 'typography-name-container';
 
-            // Get the abbreviations and determine if there are equivalents
-            const abbreviation = getAbbreviation(type);
-            const equivalents = getEquivalentTypes(type);
-            const isEquivalent = equivalents.length > 0;
+// Get the abbreviations and determine if there are equivalents
+    const abbreviation = getAbbreviation(type);
+    const equivalents = getEquivalentTypes(type);
+    const isEquivalent = equivalents.length > 0;
 
-            // Create the primary badge
-            const primaryBadge = document.createElement('span');
-            primaryBadge.className = 'typography-name';
-            primaryBadge.textContent = abbreviation;
-            primaryBadge.style.backgroundColor = '#4CAF50'; // Green color
+// Create the primary badge
+    const primaryBadge = document.createElement('span');
+    primaryBadge.className = 'typography-name';
+    primaryBadge.textContent = abbreviation;
+primaryBadge.style.backgroundColor = '#4CAF50'; // Green color
 
-            badgeContainer.appendChild(primaryBadge);
+badgeContainer.appendChild(primaryBadge);
 
-            // If there are equivalents, create additional badges
-            if (isEquivalent) {
-                equivalents.forEach(eqType => {
-                    const eqAbbreviation = getAbbreviation(eqType);
-                    const eqBadge = document.createElement('span');
-                    eqBadge.className = 'typography-name';
-                    eqBadge.textContent = eqAbbreviation;
-                    eqBadge.style.backgroundColor = '#FFA500'; // Orange color
-                    badgeContainer.appendChild(eqBadge);
-                });
-            }
+// If there are equivalents, create additional badges
+if (isEquivalent) {
+    equivalents.forEach(eqType => {
+        const eqAbbreviation = getAbbreviation(eqType);
+        const eqBadge = document.createElement('span');
+        eqBadge.className = 'typography-name';
+        eqBadge.textContent = eqAbbreviation;
+eqBadge.style.backgroundColor = '#FFA500'; // Orange color
+badgeContainer.appendChild(eqBadge);
+});
+}
 
-            element.appendChild(badgeContainer);
-        }
-    });
+element.appendChild(badgeContainer);
+}
+});
 }
 
 // Function to get sample content
@@ -911,8 +911,8 @@ function getSampleContent() {
 // Function to adjust font size for Mobile
 function adjustFontSize(fontSize) {
     const size = parseFloat(fontSize);
-    const mobileFontSize = Math.max(14, size * 0.875); // Reduce by 12.5%, minimum 14px
-    return `${mobileFontSize}px`;
+const mobileFontSize = Math.max(14, size * 0.875); // Reduce by 12.5%, minimum 14px
+return `${mobileFontSize}px`;
 }
 
 function adjustLineHeight(fontSize, lineHeight) {
@@ -924,9 +924,9 @@ function adjustLineHeight(fontSize, lineHeight) {
 function populateAbbreviationFooter() {
     const footer = document.getElementById('abbreviationFooter');
 
-    // Abbreviation matches
+// Abbreviation matches
     const abbreviationMatches = {
-        // T-shirt sizes and their HTML equivalents
+// T-shirt sizes and their HTML equivalents
         'H1' : '8xl',
         'H2' : '4xl',
         'H3' : '3xl',
@@ -935,14 +935,14 @@ function populateAbbreviationFooter() {
         'H6' : 'lg',
         'p' : 'md',
         'small' : 'sm',
-        // Add other matches if needed
+// Add other matches if needed
     };
 
-    // Create the content for the footer
+// Create the content for the footer
     let footerContent = '<h4>Abbreviation Matches</h4><ul class="abbreviation-list">';
 
     for (const [abbr, match] of Object.entries(abbreviationMatches)) {
-        // Use the exact letter case as defined in code
+// Use the exact letter case as defined in code
         footerContent += `<li><strong>${abbr}</strong> = ${match}</li>`;
     }
 
@@ -983,7 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadJson();
     });
 
-    // Trigger generatePalette when Enter key is pressed
+// Trigger generatePalette when Enter key is pressed
     document.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
             event.preventDefault();
@@ -1004,26 +1004,26 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener('input', updateTypography);
     });
 
-    // Add event listener for paragraph spacing input
+// Add event listener for paragraph spacing input
     document.getElementById('paragraphSpacingInput').addEventListener('input', updateTypography);
 
-    // Initialize the tabs
+// Initialize the tabs
     openTab('colorTab');
 
-    // Randomly select fonts on page load
+// Randomly select fonts on page load
     randomizeFonts();
 
-    // Initial typography update
+// Initial typography update
     updateTypography();
 
-    // Populate the abbreviation footer
+// Populate the abbreviation footer
     populateAbbreviationFooter();
 
-    
-    // Call this function after rendering the typography samples
+
+// Call this function after rendering the typography samples
     positionLegends();
 
-    // Also call it on window resize
+// Also call it on window resize
     window.addEventListener('resize', positionLegends);
 
 });
