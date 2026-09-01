@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
     <link id="dynamic-fonts" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <script src="tweakcn-presets.js"></script>
 </head>
 <body>
     <div class="container">
@@ -16,6 +18,7 @@
                 <button class="tab-button active" onclick="openTab('colorTab')">Color</button>
                 <button class="tab-button" onclick="openTab('typographyTab')">Typography</button>
                 <button class="tab-button" onclick="openTab('spacingTab')">Spacing</button>
+                <button class="tab-button" onclick="openTab('previewTab')">Preview</button>
             </div>
             <div class="header-buttons">
                 <button id="generateButton" class="header-icon-button">
@@ -31,7 +34,34 @@
             <div id="colorTab" class="tab-content active">
                 <div class="generator-container">
                     <h2>Color</h2>
+
+                    <div class="palette-toolbar">
+                        <label for="paletteSelector">Design System</label>
+                        <select id="paletteSelector" class="form-control"></select>
+                        <button id="importDesignMdButton" class="toolbar-button">Import DESIGN.md</button>
+                        <button id="savePaletteButton" class="toolbar-button">Save As&hellip;</button>
+                        <button id="deletePaletteButton" class="toolbar-button toolbar-button-danger">Delete</button>
+                    </div>
+
+                    <div class="palette-toolbar preset-toolbar">
+                        <label for="tweakcnPresetSelector">Start from a preset</label>
+                        <select id="tweakcnPresetSelector" class="form-control"></select>
+                        <button id="loadTweakcnButton" class="toolbar-button">Load Preset</button>
+                    </div>
+
+                    <div id="importPanel" class="import-panel" hidden>
+                        <p class="import-panel-hint">Paste a DESIGN.md file's contents (front matter + all), or choose a file. <code>name</code> and <code>colors</code> populate the rows here; <code>typography</code>, <code>rounded</code>, <code>spacing</code>, and <code>components</code> show up on the Preview tab.</p>
+                        <textarea id="designMdTextarea" class="import-textarea" placeholder="---&#10;name: Heritage&#10;colors:&#10;  primary: &quot;#1A1C1E&quot;&#10;  ...&#10;---"></textarea>
+                        <div class="import-panel-actions">
+                            <input type="file" id="designMdFileInput" accept=".md,.markdown,text/markdown">
+                            <button id="parseDesignMdButton" class="toolbar-button">Parse &amp; Add</button>
+                            <button id="cancelImportButton" class="toolbar-button">Cancel</button>
+                        </div>
+                        <p id="importError" class="import-error"></p>
+                    </div>
+
                     <div id="colorInputs"></div>
+                    <button id="addColorButton" class="toolbar-button add-color-button">+ Add color</button>
                     <div id="palette" class="display-area palette"></div>
                 </div>
             </div>
@@ -140,6 +170,22 @@
                         </div>
                     </div>
                     <div id="spacingScale" class="spacing-scale"></div>
+                    <h2>Border Radius</h2>
+                    <div id="radiusScale" class="spacing-scale"></div>
+                </div>
+            </div>
+
+            <div id="previewTab" class="tab-content">
+                <div class="generator-container">
+                    <h2>Preview</h2>
+                    <p class="preview-hint">A reflection of the active design system's own values: typography and components as its DESIGN.md defines them, or a standard layout built from whatever fundamentals are available.</p>
+                    <ul id="previewWarnings" class="preview-warnings" hidden></ul>
+
+                    <h3>Typography</h3>
+                    <div id="previewTypography" class="preview-typography-list"></div>
+
+                    <h3>Components</h3>
+                    <div id="previewComponents"></div>
                 </div>
             </div>
 </div>

@@ -9,6 +9,13 @@ let typescaleData = {
 // Spacing scale steps (multiples of the base unit, matching a 4-point grid)
 const spacingSteps = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64];
 
+// Border-radius scale: sm/md tied to the same base unit as spacing, full = pill
+const radiusSteps = [
+    { key: 'sm', multiplier: 1 },
+    { key: 'md', multiplier: 2 },
+    { key: 'full', px: 9999 }
+];
+
 const colorRolesTemplate = {
     "Primary": "Primary 40",
     "On Primary": "Primary 100",
@@ -151,6 +158,20 @@ const defaultColors = {
 
 const lastColors = {};
 
+// The M3 role system (colorRolesTemplate) hardcodes these six seed names -
+// rows for them always exist, in this order, and their name field is locked.
+// Any other color name (manual or imported from a DESIGN.md) is a free-form
+// "extra" row: still gets its own tonal scale, but isn't wired into M3 roles.
+const CANONICAL_ROLES = ["Primary", "Secondary", "Tertiary", "Error", "Neutral", "Neutral Variant"];
+
+// Library of named color sets ("design systems") selectable from the
+// palette dropdown. Custom entries persist to localStorage; "Material
+// Default" is the original built-in starting point and can't be deleted.
+const PALETTE_LIBRARY_STORAGE_KEY = 'designFoundationGenerator.paletteLibrary';
+const paletteLibrary = {
+    "Material Default": { colors: { ...defaultColors }, builtin: true }
+};
+
 const steps = [100, 99, 98, 96, 95, 94, 92, 90, 87, 80, 70, 60, 50, 40, 30, 20, 10, 0];
 
 // Updated font lists
@@ -232,6 +253,322 @@ function hslToRgb([h, s, l]) {
     const g = hue2rgb(p, q, h) * 255;
     const b = hue2rgb(p, q, h - 1/3) * 255;
     return [Math.round(r), Math.round(g), Math.round(b)];
+}
+
+// Normalize any valid CSS color string (hex, rgb(), hsl(), oklch(), named,
+// etc.) to a "#RRGGBB" hex string, using the browser's own color parser
+// rather than reimplementing one. Returns null if the value isn't a valid
+// CSS color the browser recognizes.
+//
+// Reads back the actual rendered pixel from a 1x1 canvas rather than a
+// computed-style string: newer browsers serialize getComputedStyle (and
+// canvas fillStyle itself) for oklch()/oklab()/lch()/lab()/color() by
+// echoing the original notation back rather than converting to rgb(), so
+// parsing that string breaks for exactly the color functions this is meant
+// to support. Actually painting and reading the pixel sidesteps the
+// serialization format entirely and always yields concrete sRGB bytes.
+function cssColorToHex(value) {
+    if (!cssColorToHex._ctx) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        cssColorToHex._ctx = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    const ctx = cssColorToHex._ctx;
+    const sentinel = '#010203'; // arbitrary value real input is vanishingly unlikely to serialize to
+    ctx.fillStyle = sentinel;
+    ctx.fillStyle = value;
+    if (ctx.fillStyle === sentinel) return null; // fillStyle setter silently no-ops on invalid input
+
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return rgbToHex([r, g, b]);
+}
+
+// design.md role keys, normalized (lowercased, spaces/hyphens/underscores
+// stripped) -> the canonical M3 seed name the generator already knows.
+const roleKeyAliases = {
+    primary: "Primary",
+    secondary: "Secondary",
+    tertiary: "Tertiary",
+    error: "Error",
+    neutral: "Neutral",
+    neutralvariant: "Neutral Variant"
+};
+
+function normalizeRoleKey(key) {
+    return key.trim().toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function titleCase(key) {
+    return key.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+}
+
+// Parse a DESIGN.md file's YAML front matter into { name, colors, raw }.
+//
+// `colors` maps row names (canonical M3 roles where recognized, else a
+// title-cased version of the front-matter key) to hex strings, for the
+// Color tab's rows. "on-*" keys are skipped there - those are foreground
+// colors the M3 role system derives on its own from the seed tones.
+//
+// `raw` keeps the front matter's own token tree - literal YAML keys, not
+// role-aliased - for the Preview tab, which renders the design system's
+// typography/components as themselves rather than through the M3 lens.
+function parseDesignMd(text) {
+    const fmMatch = text.replace(/^﻿/, '').match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(\r?\n|$)/);
+    if (!fmMatch) {
+        throw new Error('No YAML front matter found (expected the file to start with a "---" fenced block).');
+    }
+
+    let data;
+    try {
+        data = jsyaml.load(fmMatch[1]);
+    } catch (e) {
+        throw new Error(`Couldn't parse the front matter as YAML: ${e.message}`);
+    }
+    if (!data || typeof data !== 'object') {
+        throw new Error('Front matter did not parse to an object.');
+    }
+    if (!data.colors || typeof data.colors !== 'object') {
+        throw new Error('No "colors:" block found in the front matter.');
+    }
+
+    const colors = {};
+    const rawColors = {};
+    Object.entries(data.colors).forEach(([key, value]) => {
+        if (typeof value !== 'string') return;
+        const hex = cssColorToHex(value);
+        if (!hex) return;
+
+        rawColors[key] = hex; // literal key, for {colors.x} reference resolution
+
+        if (/^on[-_ ]/i.test(key) || /^on(?=[A-Z])/.test(key)) return;
+        const alias = roleKeyAliases[normalizeRoleKey(key)];
+        colors[alias || titleCase(key)] = hex;
+    });
+
+    const asObject = (value) => (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+
+    return {
+        name: (typeof data.name === 'string' && data.name.trim()) || null,
+        colors,
+        raw: {
+            colors: rawColors,
+            typography: asObject(data.typography),
+            rounded: asObject(data.rounded),
+            spacing: asObject(data.spacing),
+            components: asObject(data.components)
+        }
+    };
+}
+
+function ensureUniqueName(base) {
+    let name = base;
+    let i = 2;
+    while (paletteLibrary[name]) {
+        name = `${base} (${i++})`;
+    }
+    return name;
+}
+
+// Add (or overwrite, with confirmation) a palette parsed from DESIGN.md
+// text, persist it, and switch the generator to show it.
+function importDesignMd(text, fallbackName) {
+    const parsed = parseDesignMd(text);
+    if (Object.keys(parsed.colors).length === 0) {
+        throw new Error('No usable colors found under "colors:" in the front matter.');
+    }
+
+    let name = parsed.name || fallbackName || 'Imported Palette';
+    const existing = paletteLibrary[name];
+    if (existing && existing.builtin) {
+        name = ensureUniqueName(name);
+    } else if (existing && !confirm(`"${name}" already exists. Overwrite it?`)) {
+        name = ensureUniqueName(name);
+    }
+
+    // Any canonical M3 role the DESIGN.md doesn't define falls back to
+    // whatever's currently active (preserving hand-tuning across imports),
+    // and only to Material Default if nothing was ever set.
+    const currentColors = getCurrentColorsFromRows();
+    const colors = { ...parsed.colors };
+    CANONICAL_ROLES.forEach(role => {
+        if (!colors[role]) colors[role] = currentColors[role] || defaultColors[role];
+    });
+
+    paletteLibrary[name] = { colors, raw: parsed.raw, builtin: false };
+    savePaletteLibrary();
+    populatePaletteSelector();
+    document.getElementById('paletteSelector').value = name;
+    loadPalette(name);
+}
+
+// Add (or overwrite, with confirmation) a palette seeded from a vendored
+// tweakcn theme preset (see tweakcn-presets.js), resolving its oklch()
+// seed colors to hex via cssColorToHex - the same path importDesignMd
+// uses for arbitrary CSS color strings. Structurally mirrors importDesignMd.
+function importTweakcnPreset(preset) {
+    const currentColors = getCurrentColorsFromRows();
+    const colors = {};
+    CANONICAL_ROLES.forEach(role => {
+        const hex = cssColorToHex(preset.colors[role]);
+        colors[role] = hex || currentColors[role] || defaultColors[role];
+    });
+
+    let name = preset.title;
+    const existing = paletteLibrary[name];
+    if (existing && existing.builtin) {
+        name = ensureUniqueName(name);
+    } else if (existing && !confirm(`"${name}" already exists. Overwrite it?`)) {
+        name = ensureUniqueName(name);
+    }
+
+    paletteLibrary[name] = { colors, raw: null, builtin: false };
+    savePaletteLibrary();
+    populatePaletteSelector();
+    document.getElementById('paletteSelector').value = name;
+    loadPalette(name);
+}
+
+function populateTweakcnSelector() {
+    const selector = document.getElementById('tweakcnPresetSelector');
+    tweakcnPresets.forEach(preset => {
+        const option = document.createElement('option');
+        option.value = preset.name;
+        option.textContent = preset.title;
+        selector.appendChild(option);
+    });
+}
+
+function savePaletteLibrary() {
+    const customOnly = {};
+    Object.entries(paletteLibrary).forEach(([name, def]) => {
+        if (!def.builtin) customOnly[name] = { colors: def.colors, raw: def.raw || null };
+    });
+    localStorage.setItem(PALETTE_LIBRARY_STORAGE_KEY, JSON.stringify(customOnly));
+}
+
+function loadPaletteLibraryFromStorage() {
+    try {
+        const raw = localStorage.getItem(PALETTE_LIBRARY_STORAGE_KEY);
+        if (!raw) return;
+        const stored = JSON.parse(raw);
+        Object.entries(stored).forEach(([name, def]) => {
+            // Back-compat: an earlier version of this feature stored a bare
+            // { name: hex } colors map with no wrapper.
+            const hasWrapper = def && typeof def === 'object' && 'colors' in def;
+            paletteLibrary[name] = {
+                colors: hasWrapper ? def.colors : def,
+                raw: hasWrapper ? (def.raw || null) : null,
+                builtin: false
+            };
+        });
+    } catch (e) {
+        console.warn('Could not load saved palettes from localStorage:', e);
+    }
+}
+
+function populatePaletteSelector() {
+    const selector = document.getElementById('paletteSelector');
+    const current = selector.value;
+    selector.innerHTML = '';
+    Object.keys(paletteLibrary).forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        selector.appendChild(option);
+    });
+    if (paletteLibrary[current]) selector.value = current;
+}
+
+// Read the currently-rendered color rows into a plain { name: hex } map,
+// for "Save As..." (saving whatever the user has tuned, not just imports).
+function getCurrentColorsFromRows() {
+    const colors = {};
+    document.querySelectorAll('.color-input-row').forEach(row => {
+        const name = row.querySelector('input[type="text"]:first-child').value.trim();
+        const hex = row.querySelector('input[type="text"]:nth-child(2)').value.trim();
+        if (name && /^#[0-9A-F]{6}$/i.test(hex)) colors[name] = hex;
+    });
+    return colors;
+}
+
+// Name of the palette currently shown - the Preview tab reads this to find
+// the active design system's raw (unmapped) token tree.
+let currentPaletteName = 'Material Default';
+
+// Switch the generator to a saved palette by name: re-render the color rows
+// and immediately regenerate, so the switch is visible without another click.
+function loadPalette(name) {
+    const palette = paletteLibrary[name];
+    if (!palette) return;
+    currentPaletteName = name;
+    initializeColorInputs(palette.colors);
+    generatePalette();
+}
+
+// The active palette's raw, as-imported token tree (typography/rounded/
+// spacing/components with their original keys), or null if the active
+// palette wasn't imported from a DESIGN.md (e.g. "Material Default" or a
+// hand-saved color set).
+function getActiveRawDesignSystem() {
+    const entry = paletteLibrary[currentPaletteName];
+    return (entry && entry.raw) || null;
+}
+
+// Resolve a DESIGN.md component property value against that design
+// system's own raw token tree. A literal value passes through unchanged;
+// a "{group.key}" reference is looked up (following further indirection,
+// e.g. a reference to a reference) and reported as broken if it doesn't
+// resolve. Composite references (e.g. "{typography.label-md}" resolving
+// to a whole typography object) are supported, per the DESIGN.md spec.
+function resolveTokenRef(value, raw, depth = 0) {
+    if (typeof value !== 'string') return { value, error: null };
+
+    const match = value.match(/^\{([^}]+)\}$/);
+    if (!match) return { value, error: null };
+    if (depth > 5) return { value: null, error: `Reference nested too deep: ${value}` };
+
+    const path = match[1].trim();
+    const dot = path.indexOf('.');
+    if (dot === -1) return { value: null, error: `Malformed reference: ${value}` };
+
+    const group = path.slice(0, dot);
+    const key = path.slice(dot + 1);
+    const groupData = raw && raw[group];
+    if (!groupData || !(key in groupData)) {
+        return { value: null, error: `Broken reference: ${value}` };
+    }
+
+    return resolveTokenRef(groupData[key], raw, depth + 1);
+}
+
+// Resolve one of the generator's own M3 role tokens (e.g. "primary") from
+// the generated jsonOutput tree, following its "{palettes.name.step}"
+// references down to the actual hex value. Distinct from resolveTokenRef
+// because these tokens are wrapped as { $type, $value } objects.
+function resolveM3Token(roleName, tokens) {
+    let entry = tokens && tokens[roleName];
+    let depth = 0;
+    while (entry && typeof entry.$value === 'string' && /^\{[^}]+\}$/.test(entry.$value) && depth < 5) {
+        const path = entry.$value.slice(1, -1);
+        const dot = path.indexOf('.');
+        const group = path.slice(0, dot);
+        const key = path.slice(dot + 1);
+        entry = tokens[group] && tokens[group][key];
+        depth++;
+    }
+    return (entry && typeof entry.$value === 'string') ? entry.$value : null;
+}
+
+// True for a CSS length the generator is willing to apply as an inline
+// style (px/em/rem). DESIGN.md's "spacing" scale also allows bare,
+// unitless numbers (column counts, ratios) - those are informational,
+// not visual, so they're deliberately NOT treated as pixels here.
+function isCssLength(value) {
+    if (value === 0) return true;
+    return typeof value === 'string' && /^-?\d*\.?\d+(px|em|rem)$/.test(value.trim());
 }
 
 function createPalette(colors) {
@@ -321,6 +658,35 @@ function updateSpacingScale() {
         bar.style.width = `${Math.min(px, 400)}px`;
 
         row.append(label, value, bar);
+        container.appendChild(row);
+    });
+}
+
+// Render the live border-radius preview
+function updateRadiusScale() {
+    const baseUnit = parseFloat(document.getElementById('spacingBaseUnitInput').value) || 4;
+    const container = document.getElementById('radiusScale');
+    container.innerHTML = '';
+
+    radiusSteps.forEach(step => {
+        const px = step.px !== undefined ? step.px : step.multiplier * baseUnit;
+
+        const row = document.createElement('div');
+        row.className = 'spacing-row';
+
+        const label = document.createElement('div');
+        label.className = 'spacing-label';
+        label.textContent = `radius-${step.key}`;
+
+        const value = document.createElement('div');
+        value.className = 'spacing-value';
+        value.textContent = step.key === 'full' ? 'pill' : `${px}px`;
+
+        const swatch = document.createElement('div');
+        swatch.className = 'radius-swatch';
+        swatch.style.borderRadius = `${Math.min(px, 20)}px`;
+
+        row.append(label, value, swatch);
         container.appendChild(row);
     });
 }
@@ -432,6 +798,13 @@ function generatePalette() {
             jsonOutput['spacing'][`space-${step}`] = { "$type": "spacing", "$value": `${step * spacingBaseUnit}px` };
         });
 
+// Include border-radius tokens (sm/md tied to the base unit, full = pill)
+        jsonOutput['radius'] = {};
+        radiusSteps.forEach(step => {
+            const px = step.px !== undefined ? step.px : step.multiplier * spacingBaseUnit;
+            jsonOutput['radius'][`radius-${step.key}`] = { "$type": "borderRadius", "$value": `${px}px` };
+        });
+
 // Wrap the token tree in a Penpot-importable file: one token Set plus $metadata
         const fileOutput = {
             "Global": tokens,
@@ -458,18 +831,313 @@ function generatePalette() {
     paletteGenerated = true;
 }
 
-// Function to initialize color inputs
-function initializeColorInputs() {
-    const colorInputsContainer = document.getElementById('colorInputs');
-colorInputsContainer.innerHTML = ''; // Clear any existing inputs
+// --- Preview tab ------------------------------------------------------
+// Reflects the active design system as itself: typography and components
+// rendered from their own literal DESIGN.md values where available, with
+// every fallback or broken reference surfaced as a warning rather than
+// silently swallowed.
 
-Object.entries(defaultColors).forEach(([name, hex], i) => {
+function pickToken(rawMap, preferredKeys, tokens, tokenGroup, tokenFallbackKey) {
+    if (rawMap) {
+        for (const key of preferredKeys) {
+            const value = rawMap[key];
+            if (isCssLength(value)) return value;
+        }
+    }
+    const fallback = tokens && tokens[tokenGroup] && tokens[tokenGroup][tokenFallbackKey];
+    return fallback ? fallback.$value : null;
+}
+
+function pickTypography(rawTypography, matchers) {
+    if (!rawTypography) return null;
+    const entries = Object.entries(rawTypography);
+    for (const matcher of matchers) {
+        const found = entries.find(([key]) => matcher.test(key));
+        if (found) return found[1];
+    }
+    return null;
+}
+
+function applyTypographyStyle(el, style) {
+    if (!style || typeof style !== 'object') return;
+    if (style.fontFamily) el.style.fontFamily = style.fontFamily;
+    if (style.fontSize) el.style.fontSize = style.fontSize;
+    if (style.fontWeight !== undefined) el.style.fontWeight = style.fontWeight;
+    if (style.letterSpacing) el.style.letterSpacing = style.letterSpacing;
+    if (style.lineHeight !== undefined) el.style.lineHeight = String(style.lineHeight);
+}
+
+function getGeneratedTokens() {
+    try {
+        const fullJson = document.getElementById('jsonOutput').dataset.fullJson;
+        return fullJson ? (JSON.parse(fullJson).Global || {}) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function renderPreview() {
+    const raw = getActiveRawDesignSystem();
+    const warnings = [];
+
+    renderPreviewTypography(raw, warnings);
+    renderPreviewComponents(raw, warnings, getGeneratedTokens());
+    renderPreviewWarnings(warnings);
+}
+
+function renderPreviewWarnings(warnings) {
+    const container = document.getElementById('previewWarnings');
+    container.innerHTML = '';
+    container.hidden = warnings.length === 0;
+    warnings.forEach(message => {
+        const item = document.createElement('li');
+        item.className = 'preview-warning-item';
+        item.textContent = message;
+        container.appendChild(item);
+    });
+}
+
+function makeTypographySample(name, style) {
+    const row = document.createElement('div');
+    row.className = 'preview-typography-item';
+
+    const label = document.createElement('div');
+    label.className = 'preview-typography-label';
+    label.textContent = name;
+
+    const sample = document.createElement('div');
+    sample.className = 'preview-typography-sample';
+    sample.textContent = 'The quick brown fox jumps over the lazy dog';
+    applyTypographyStyle(sample, style);
+
+    row.append(label, sample);
+    return row;
+}
+
+function renderPreviewTypography(raw, warnings) {
+    const container = document.getElementById('previewTypography');
+    container.innerHTML = '';
+
+    const entries = raw && raw.typography ? Object.entries(raw.typography) : [];
+
+    if (!entries.length) {
+        warnings.push('No typography tokens in this design system - showing the generator\'s own type scale instead.');
+        [['Display (8xl)', currentTypographyStyles['8xl']], ['Header (4xl)', currentTypographyStyles['4xl']], ['Body', currentTypographyStyles['paragraph-regular']]]
+            .forEach(([label, style]) => {
+                if (style) container.appendChild(makeTypographySample(label, style));
+            });
+        return;
+    }
+
+    entries.forEach(([name, style]) => {
+        if (style && typeof style === 'object') container.appendChild(makeTypographySample(name, style));
+    });
+}
+
+// Render one entry from the DESIGN.md's own "components:" block, resolving
+// each property against that design system's raw token tree. Unresolvable
+// references are flagged on the box (and listed as warnings) rather than
+// silently applying nothing.
+function renderRawComponent(name, props, raw, warnings) {
+    const box = document.createElement('div');
+    box.className = 'preview-component-box';
+    box.textContent = name;
+
+    const errors = [];
+    const resolve = (value) => {
+        const resolved = resolveTokenRef(value, raw);
+        if (resolved.error) errors.push(resolved.error);
+        return resolved.error ? null : resolved.value;
+    };
+
+    if (props && typeof props === 'object') {
+        Object.entries(props).forEach(([prop, value]) => {
+            switch (prop) {
+                case 'backgroundColor': {
+                    const v = resolve(value);
+                    if (v) box.style.backgroundColor = v;
+                    break;
+                }
+                case 'textColor': {
+                    const v = resolve(value);
+                    if (v) box.style.color = v;
+                    break;
+                }
+                case 'rounded': {
+                    const v = resolve(value);
+                    if (isCssLength(v)) box.style.borderRadius = v;
+                    break;
+                }
+                case 'padding': {
+                    const v = resolve(value);
+                    if (isCssLength(v)) box.style.padding = v;
+                    break;
+                }
+                case 'width':
+                case 'height': {
+                    const v = resolve(value);
+                    if (isCssLength(v)) box.style[prop] = v;
+                    break;
+                }
+                case 'size': {
+                    const v = resolve(value);
+                    if (isCssLength(v)) { box.style.width = v; box.style.height = v; }
+                    break;
+                }
+                case 'typography': {
+                    const v = resolve(value);
+                    if (v && typeof v === 'object') applyTypographyStyle(box, v);
+                    break;
+                }
+                default:
+                    warnings.push(`"${name}": unknown component property "${prop}" (kept, not previewed)`);
+            }
+        });
+    }
+
+    if (errors.length) {
+        box.classList.add('has-error');
+        box.title = errors.join('\n');
+        errors.forEach(error => warnings.push(`"${name}": ${error}`));
+    }
+
+    return box;
+}
+
+// No "components:" block was imported - build the same standard Button /
+// Badge / Input / Card set penpot/build-components.js builds in Penpot,
+// styled from whatever rounded/spacing/typography WAS imported, falling
+// back per-value to the generator's own M3 roles / radius / spacing / type
+// scale (which always resolve, since those are generated, not imported).
+function renderFallbackLayout(raw, tokens) {
+    const roundedSm = pickToken(raw && raw.rounded, ['sm', 'xs'], tokens, 'radius', 'radius-sm');
+    const roundedFull = pickToken(raw && raw.rounded, ['full', 'pill'], tokens, 'radius', 'radius-full');
+    const roundedMd = pickToken(raw && raw.rounded, ['md'], tokens, 'radius', 'radius-md');
+
+    const spaceButtonV = pickToken(raw && raw.spacing, ['sm'], tokens, 'spacing', 'space-4');
+    const spaceButtonH = pickToken(raw && raw.spacing, ['md'], tokens, 'spacing', 'space-6');
+    const spaceBadgeV = pickToken(raw && raw.spacing, ['xs'], tokens, 'spacing', 'space-1');
+    const spaceBadgeH = pickToken(raw && raw.spacing, ['sm'], tokens, 'spacing', 'space-3');
+    const spaceInputV = pickToken(raw && raw.spacing, ['sm'], tokens, 'spacing', 'space-3');
+    const spaceInputH = pickToken(raw && raw.spacing, ['md'], tokens, 'spacing', 'space-4');
+    const spaceCard = pickToken(raw && raw.spacing, ['lg', 'xl'], tokens, 'spacing', 'space-6');
+
+    const bodyType = pickTypography(raw && raw.typography, [/body/i, /paragraph/i]) || currentTypographyStyles['paragraph-regular'];
+    const semiboldType = pickTypography(raw && raw.typography, [/label/i, /button/i]) || currentTypographyStyles['paragraph-semibold'] || bodyType;
+    const smallType = pickTypography(raw && raw.typography, [/small/i, /caption/i]) || currentTypographyStyles['small-semibold'] || bodyType;
+    const headingType = pickTypography(raw && raw.typography, [/h1|display|headline/i]) || currentTypographyStyles['lg'] || bodyType;
+
+    const makeButton = (label, bgRole, textRole) => {
+        const el = document.createElement('span');
+        el.className = 'preview-btn';
+        el.textContent = label;
+        el.style.backgroundColor = resolveM3Token(bgRole, tokens) || '#888';
+        el.style.color = resolveM3Token(textRole, tokens) || '#fff';
+        if (roundedSm) el.style.borderRadius = roundedSm;
+        if (spaceButtonV) { el.style.paddingTop = spaceButtonV; el.style.paddingBottom = spaceButtonV; }
+        if (spaceButtonH) { el.style.paddingLeft = spaceButtonH; el.style.paddingRight = spaceButtonH; }
+        applyTypographyStyle(el, semiboldType);
+        return el;
+    };
+
+    const makeBadge = (label, bgRole, textRole) => {
+        const el = document.createElement('span');
+        el.className = 'preview-badge';
+        el.textContent = label;
+        el.style.backgroundColor = resolveM3Token(bgRole, tokens) || '#888';
+        el.style.color = resolveM3Token(textRole, tokens) || '#fff';
+        if (roundedFull) el.style.borderRadius = roundedFull;
+        if (spaceBadgeV) { el.style.paddingTop = spaceBadgeV; el.style.paddingBottom = spaceBadgeV; }
+        if (spaceBadgeH) { el.style.paddingLeft = spaceBadgeH; el.style.paddingRight = spaceBadgeH; }
+        applyTypographyStyle(el, smallType);
+        return el;
+    };
+
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'preview-fallback-row';
+    buttonRow.append(
+        makeButton('Primary', 'primary', 'on-primary'),
+        makeButton('Secondary', 'secondary', 'on-secondary'),
+        makeButton('Danger', 'error', 'on-error')
+    );
+
+    const badgeRow = document.createElement('div');
+    badgeRow.className = 'preview-fallback-row';
+    badgeRow.append(
+        makeBadge('Info', 'tertiary-container', 'on-tertiary-container'),
+        makeBadge('Success', 'secondary-container', 'on-secondary-container'),
+        makeBadge('Danger', 'error-container', 'on-error-container')
+    );
+
+    const input = document.createElement('div');
+    input.className = 'preview-input';
+    input.textContent = 'Email address';
+    input.style.backgroundColor = resolveM3Token('surface', tokens) || '#fff';
+    input.style.color = resolveM3Token('on-surface-variant', tokens) || '#333';
+    input.style.borderColor = resolveM3Token('outline', tokens) || '#ccc';
+    if (roundedSm) input.style.borderRadius = roundedSm;
+    if (spaceInputV) { input.style.paddingTop = spaceInputV; input.style.paddingBottom = spaceInputV; }
+    if (spaceInputH) { input.style.paddingLeft = spaceInputH; input.style.paddingRight = spaceInputH; }
+    applyTypographyStyle(input, bodyType);
+
+    const cardTitle = document.createElement('div');
+    cardTitle.className = 'preview-card-title';
+    cardTitle.textContent = 'Card title';
+    cardTitle.style.color = resolveM3Token('on-surface', tokens) || '#111';
+    applyTypographyStyle(cardTitle, headingType);
+
+    const cardBody = document.createElement('div');
+    cardBody.className = 'preview-card-body';
+    cardBody.textContent = 'Supporting body copy for this card, styled entirely from available tokens.';
+    cardBody.style.color = resolveM3Token('on-surface-variant', tokens) || '#555';
+    applyTypographyStyle(cardBody, bodyType);
+
+    const card = document.createElement('div');
+    card.className = 'preview-card';
+    card.style.backgroundColor = resolveM3Token('surface-container', tokens) || '#f5f5f5';
+    if (roundedMd) card.style.borderRadius = roundedMd;
+    if (spaceCard) card.style.padding = spaceCard;
+    card.append(cardTitle, cardBody);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'preview-fallback';
+    wrap.append(buttonRow, badgeRow, input, card);
+    return wrap;
+}
+
+function renderPreviewComponents(raw, warnings, tokens) {
+    const container = document.getElementById('previewComponents');
+    container.innerHTML = '';
+
+    const componentEntries = raw && raw.components ? Object.entries(raw.components) : [];
+
+    if (!componentEntries.length) {
+        warnings.push('No components block in this design system - showing a standard Button / Badge / Input / Card layout built from the available tokens instead.');
+        container.appendChild(renderFallbackLayout(raw, tokens));
+        return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'preview-components-grid';
+    componentEntries.forEach(([name, props]) => {
+        grid.appendChild(renderRawComponent(name, props, raw, warnings));
+    });
+    container.appendChild(grid);
+}
+
+// Build a single color-input row. Canonical M3 roles get a locked name
+// field (the role system references them by exact name); anything else is
+// a free-form "extra" row with an editable name and a remove button.
+function createColorRow(name, hex, index) {
+    const isCanonical = CANONICAL_ROLES.includes(name);
+
     const colorRow = document.createElement('div');
     colorRow.className = 'color-input-row';
+    colorRow.dataset.defaultHex = hex; // this row's own reset target
 
-    const colorNameInput = createInput('text', name, true);
-    colorNameInput.classList.add('read-only');
-    const hexInput = createInput('text', hex, false, `hexInput${i + 1}`);
+    const colorNameInput = createInput('text', name, isCanonical);
+    if (isCanonical) colorNameInput.classList.add('read-only');
+    const hexInput = createInput('text', hex, false, `hexInput${index}`);
     const colorPicker = createInput('color', hex, false);
 
     hexInput.addEventListener('input', () => {
@@ -484,13 +1152,43 @@ Object.entries(defaultColors).forEach(([name, hex], i) => {
 
     colorPicker.addEventListener('input', () => syncColorInput(colorPicker, hexInput));
 
-    const defaultButton = createIconButton('fas fa-redo', 'default-button', () => resetToDefaultColor(hexInput, colorPicker, name));
-    const randomButton = createIconButton('fas fa-random', 'random-button', () => randomizeColor(hexInput, colorPicker, name));
-    const lastColorButton = createIconButton('fas fa-arrow-left', 'last-button', () => revertToLastColor(hexInput, colorPicker, name));
+    const nameFor = () => colorNameInput.value;
+    const defaultButton = createIconButton('fas fa-redo', 'default-button', () => resetToDefaultColor(hexInput, colorPicker, nameFor(), colorRow));
+    const randomButton = createIconButton('fas fa-random', 'random-button', () => randomizeColor(hexInput, colorPicker, nameFor()));
+    const lastColorButton = createIconButton('fas fa-arrow-left', 'last-button', () => revertToLastColor(hexInput, colorPicker, nameFor()));
 
     colorRow.append(colorNameInput, hexInput, colorPicker, defaultButton, randomButton, lastColorButton);
-    colorInputsContainer.appendChild(colorRow);
-});
+
+    if (!isCanonical) {
+        const removeButton = createIconButton('fas fa-trash', 'remove-button', () => colorRow.remove());
+        colorRow.appendChild(removeButton);
+    }
+
+    return colorRow;
+}
+
+// Function to initialize color inputs from a { name: hex } color set.
+// Canonical M3 roles always render first (falling back to Material
+// Default for any the set doesn't define), followed by any extra colors.
+function initializeColorInputs(colors = defaultColors) {
+    const colorInputsContainer = document.getElementById('colorInputs');
+    colorInputsContainer.innerHTML = ''; // Clear any existing inputs
+
+    const extraNames = Object.keys(colors).filter(name => !CANONICAL_ROLES.includes(name));
+
+    [...CANONICAL_ROLES, ...extraNames].forEach((name, i) => {
+        const hex = colors[name] || defaultColors[name] || '#888888';
+        colorInputsContainer.appendChild(createColorRow(name, hex, i + 1));
+    });
+}
+
+// Append one blank, editable "extra" color row without disturbing the
+// rows already on screen (used by the "+ Add color" button).
+function addCustomColorRow() {
+    const colorInputsContainer = document.getElementById('colorInputs');
+    const index = colorInputsContainer.children.length + 1;
+    const randomHex = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0').toUpperCase()}`;
+    colorInputsContainer.appendChild(createColorRow('New Color', randomHex, index));
 }
 
 // Function to create input fields
@@ -545,12 +1243,15 @@ function randomizeColor(input, picker, name) {
     picker.value = randomHex;
 }
 
-// Reset to default color
-function resetToDefaultColor(input, picker, name) {
+// Reset to this row's own default (the value it was loaded/imported with),
+// not always the hardcoded Material Default - so this works for any
+// palette in the library, not just the built-in one.
+function resetToDefaultColor(input, picker, name, row) {
     if (!lastColors[name]) lastColors[name] = [];
     lastColors[name].push(input.value);
-    input.value = defaultColors[name];
-    picker.value = defaultColors[name];
+    const defaultHex = (row && row.dataset.defaultHex) || defaultColors[name] || input.value;
+    input.value = defaultHex;
+    picker.value = defaultHex;
 }
 
 // Revert to last color
@@ -595,6 +1296,13 @@ function openTab(tabId) {
         generateButton.style.display = 'inline-flex';
     } else {
         generateButton.style.display = 'none';
+    }
+
+    if (tabId === 'previewTab') {
+        // Always regenerate so the preview reflects any hand-tuned colors,
+        // spacing, or typography made without clicking the sync button.
+        generatePalette();
+        renderPreview();
     }
 }
 
@@ -1100,10 +1808,102 @@ function downloadJson() {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
-    initializeColorInputs();
+    loadPaletteLibraryFromStorage();
+    populatePaletteSelector();
+    document.getElementById('paletteSelector').value = 'Material Default';
+// Render the initial rows only - preserves the original behavior of not
+// auto-generating a palette until the user clicks Generate or presses Enter.
+    initializeColorInputs(paletteLibrary['Material Default'].colors);
     populateFontSelectors();
 
     document.getElementById('generateButton').addEventListener('click', generatePalette);
+
+// Palette library: switch, import, save, delete
+    document.getElementById('paletteSelector').addEventListener('change', (e) => {
+        loadPalette(e.target.value);
+    });
+
+    document.getElementById('addColorButton').addEventListener('click', addCustomColorRow);
+
+    populateTweakcnSelector();
+    document.getElementById('loadTweakcnButton').addEventListener('click', () => {
+        const selector = document.getElementById('tweakcnPresetSelector');
+        const preset = tweakcnPresets.find(p => p.name === selector.value);
+        if (preset) importTweakcnPreset(preset);
+    });
+
+    document.getElementById('importDesignMdButton').addEventListener('click', () => {
+        document.getElementById('importPanel').hidden = false;
+    });
+
+    document.getElementById('cancelImportButton').addEventListener('click', () => {
+        document.getElementById('importPanel').hidden = true;
+        document.getElementById('importError').textContent = '';
+        document.getElementById('designMdTextarea').value = '';
+        document.getElementById('designMdFileInput').value = '';
+    });
+
+    document.getElementById('designMdFileInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            document.getElementById('designMdTextarea').value = reader.result;
+        };
+        reader.readAsText(file);
+    });
+
+    document.getElementById('parseDesignMdButton').addEventListener('click', () => {
+        const text = document.getElementById('designMdTextarea').value;
+        const errorEl = document.getElementById('importError');
+        errorEl.textContent = '';
+        const file = document.getElementById('designMdFileInput').files[0];
+        const fallbackName = file ? file.name.replace(/\.mdx?$/i, '') : null;
+
+        try {
+            importDesignMd(text, fallbackName);
+            document.getElementById('importPanel').hidden = true;
+            document.getElementById('designMdTextarea').value = '';
+            document.getElementById('designMdFileInput').value = '';
+        } catch (e) {
+            errorEl.textContent = e.message;
+        }
+    });
+
+    document.getElementById('savePaletteButton').addEventListener('click', () => {
+        const name = prompt('Save the current colors as a palette named:');
+        if (!name || !name.trim()) return;
+        let finalName = name.trim();
+
+        const existing = paletteLibrary[finalName];
+        if (existing && existing.builtin) {
+            alert('That name is reserved for the built-in default. Please choose another name.');
+            return;
+        }
+        if (existing && !confirm(`"${finalName}" already exists. Overwrite it?`)) {
+            finalName = ensureUniqueName(finalName);
+        }
+
+        paletteLibrary[finalName] = { colors: getCurrentColorsFromRows(), builtin: false };
+        savePaletteLibrary();
+        populatePaletteSelector();
+        document.getElementById('paletteSelector').value = finalName;
+    });
+
+    document.getElementById('deletePaletteButton').addEventListener('click', () => {
+        const selector = document.getElementById('paletteSelector');
+        const name = selector.value;
+        if (paletteLibrary[name] && paletteLibrary[name].builtin) {
+            alert("The built-in default palette can't be deleted.");
+            return;
+        }
+        if (!confirm(`Delete palette "${name}"?`)) return;
+
+        delete paletteLibrary[name];
+        savePaletteLibrary();
+        populatePaletteSelector();
+        loadPalette(document.getElementById('paletteSelector').value);
+    });
     document.getElementById('downloadButton').addEventListener('click', () => {
         if (!paletteGenerated) {
             generatePalette();
@@ -1137,6 +1937,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Update spacing scale in real-time
     document.getElementById('spacingBaseUnitInput').addEventListener('input', updateSpacingScale);
+    document.getElementById('spacingBaseUnitInput').addEventListener('input', updateRadiusScale);
 
 // Initialize the tabs
     openTab('colorTab');
@@ -1149,6 +1950,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Initial spacing scale render
     updateSpacingScale();
+    updateRadiusScale();
 
 // Populate the abbreviation footer
     populateAbbreviationFooter();

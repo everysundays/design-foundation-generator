@@ -2,8 +2,6 @@
 
 The Penpot-side half of the pipeline: importing `token-generator`'s `tokens.json` export and building components from it.
 
-Proven manually via MCP (`execute_code`) in an earlier session — export → Penpot **Tokens → TOOLS → Import** → apply tokens to shapes/components — but nothing from that run was saved as a reusable script yet. Still to add:
-
-- A `tokens.json` reference export from `token-generator/`.
-- The component-build script (Buttons, Badges, Input, Card — all token-driven).
-- A round-trip test checklist.
+- **[`tokens.example.json`](tokens.example.json)** — a real export from `token-generator/` with default values, for reference/diffing.
+- **[`build-components.js`](build-components.js)** — paste into a Penpot MCP `execute_code` call to build Buttons, Badges, Input, and Card, styled entirely from the imported tokens. See its STATUS note before trusting it blind — it hasn't had its first consolidated run yet.
+- **[`TESTING.md`](TESTING.md)** — the round-trip checklist: export → import → build → visually verify.
