@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Theme Editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script src="tweakcn-themes-full.js"></script>
+    <script src="tailwind-palette.js"></script>
+    <script src="atlassian-palette.js"></script>
+    <script src="templates/mail.js"></script>
+    <script src="templates/cards.js"></script>
+    <script src="templates/dashboard.js"></script>
+    <script src="templates/application.js"></script>
+    <script src="templates/marketing.js"></script>
+    <script src="templates/typography.js"></script>
+    <script src="templates/color-palette.js"></script>
+</head>
+<body>
+    <div class="app">
+        <header class="toolbar">
+            <div class="toolbar-group toolbar-group-left">
+                <div class="toolbar-group">
+                    <button id="themePickerButton" class="theme-picker-button">
+                        <span id="themeSwatchDots" class="theme-swatch-dots"></span>
+                        <span id="themeNameLabel">Default</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div id="themePickerMenu" class="theme-picker-menu" hidden>
+                        <input type="text" id="themeSearchInput" class="theme-search-input" placeholder="Search themes...">
+                        <div id="themePickerList" class="theme-picker-list"></div>
+                    </div>
+                </div>
+
+                <div class="toolbar-group">
+                    <button id="palettePickerButton" class="theme-picker-button" title="Swatch grid source">
+                        <i class="fas fa-swatchbook"></i>
+                        <span id="palettePickerLabel">Tailwind</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div id="palettePickerMenu" class="theme-picker-menu palette-picker-menu" hidden>
+                        <button class="theme-picker-row active" data-palette-source="tailwind">Tailwind</button>
+                        <button class="theme-picker-row" data-palette-source="atlassian">Atlassian</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="toolbar-group toolbar-group-right">
+                <button id="undoButton" class="toolbar-icon-button" title="Undo" disabled><i class="fas fa-rotate-left"></i></button>
+                <button id="redoButton" class="toolbar-icon-button" title="Redo" disabled><i class="fas fa-rotate-right"></i></button>
+                <span class="toolbar-divider"></span>
+                <button id="darkModeToggle" class="toolbar-icon-button" title="Toggle light/dark"><i class="fas fa-moon"></i></button>
+                <span class="toolbar-divider"></span>
+                <button id="resetButton" class="toolbar-button"><i class="fas fa-arrow-rotate-left"></i> Reset</button>
+                <button id="importButton" class="toolbar-button"><i class="fas fa-file-import"></i> Import</button>
+                <button id="saveButton" class="toolbar-button"><i class="fas fa-floppy-disk"></i> Save</button>
+                <button id="codeButton" class="toolbar-button"><i class="fas fa-code"></i> Code</button>
+            </div>
+        </header>
+
+        <div class="workspace">
+            <aside class="sidebar">
+                <nav class="sidebar-tabs">
+                    <button class="sidebar-tab active" data-sidebar-tab="colors">Colors</button>
+                    <button class="sidebar-tab" data-sidebar-tab="typography">Typography</button>
+                    <button class="sidebar-tab" data-sidebar-tab="element">Element</button>
+                </nav>
+
+                <div class="sidebar-panel active" data-sidebar-panel="colors">
+                    <input type="text" id="colorSearchInput" class="color-search-input" placeholder="Search colors...">
+                    <div id="colorGroups" class="color-groups"></div>
+                </div>
+
+                <div class="sidebar-panel" data-sidebar-panel="typography">
+                    <div class="field-group">
+                        <div class="field-group-label">Font Family</div>
+                        <label class="field-label" for="fontSansSelect">Sans-Serif</label>
+                        <select id="fontSansSelect" class="field-select"></select>
+                        <label class="field-label" for="fontSerifSelect">Serif</label>
+                        <select id="fontSerifSelect" class="field-select"></select>
+                        <label class="field-label" for="fontMonoSelect">Mono</label>
+                        <select id="fontMonoSelect" class="field-select"></select>
+                    </div>
+                    <div class="field-group">
+                        <div class="field-group-label">Letter Spacing</div>
+                        <div class="field-row">
+                            <input type="range" id="letterSpacingRange" min="-0.1" max="0.1" step="0.01" value="0" class="field-range">
+                            <input type="number" id="letterSpacingNumber" step="0.01" value="0" class="field-number">
+                            <span class="field-unit">em</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-panel" data-sidebar-panel="element">
+                    <div id="elementColorGroups" class="color-groups"></div>
+
+                    <div class="field-group">
+                        <div class="field-group-label">Radius</div>
+                        <label class="field-label" for="cardRadiusRange">Card</label>
+                        <div class="field-row">
+                            <input type="range" id="cardRadiusRange" min="0" max="5" step="0.05" value="0.5" class="field-range">
+                            <input type="number" id="cardRadiusNumber" step="0.05" value="0.5" class="field-number">
+                            <span class="field-unit">rem</span>
+                        </div>
+                        <label class="field-label" for="fieldRadiusRange">Form Field</label>
+                        <div class="field-row">
+                            <input type="range" id="fieldRadiusRange" min="0" max="5" step="0.05" value="0.5" class="field-range">
+                            <input type="number" id="fieldRadiusNumber" step="0.05" value="0.5" class="field-number">
+                            <span class="field-unit">rem</span>
+                        </div>
+                        <label class="field-label" for="buttonRadiusRange">Button</label>
+                        <div class="field-row">
+                            <input type="range" id="buttonRadiusRange" min="0" max="5" step="0.05" value="0.5" class="field-range">
+                            <input type="number" id="buttonRadiusNumber" step="0.05" value="0.5" class="field-number">
+                            <span class="field-unit">rem</span>
+                        </div>
+                    </div>
+
+                    <div class="field-group">
+                        <div class="field-group-label">Spacing</div>
+                        <div class="field-subgroup-label">Grid</div>
+                        <label class="field-label" for="paddingYRange">Padding Vertical</label>
+                        <div class="field-row">
+                            <input type="range" id="paddingYRange" min="0.1" max="1" step="0.01" value="0.25" class="field-range">
+                            <input type="number" id="paddingYNumber" step="0.01" value="0.25" class="field-number">
+                            <span class="field-unit">rem</span>
+                        </div>
+                        <label class="field-label" for="paddingXRange">Padding Horizontal</label>
+                        <div class="field-row">
+                            <input type="range" id="paddingXRange" min="0.1" max="1" step="0.01" value="0.25" class="field-range">
+                            <input type="number" id="paddingXNumber" step="0.01" value="0.25" class="field-number">
+                            <span class="field-unit">rem</span>
+                        </div>
+                        <label class="field-label" for="gapRange">Gap</label>
+                        <div class="field-row">
+                            <input type="range" id="gapRange" min="0.1" max="1" step="0.01" value="0.25" class="field-range">
+                            <input type="number" id="gapNumber" step="0.01" value="0.25" class="field-number">
+                            <span class="field-unit">rem</span>
+                        </div>
+                    </div>
+
+                    <details class="color-group" id="shadowGroup" open>
+                        <summary class="color-group-label"><span>Shadow</span></summary>
+                        <div class="color-group-body">
+                            <div class="field-row">
+                                <label class="field-label" style="width:60px">Color</label>
+                                <input type="text" id="shadowColorInput" class="color-field-input">
+                                <input type="color" id="shadowColorPicker" class="color-field-picker">
+                            </div>
+                            <label class="field-label" for="shadowOpacityRange">Opacity</label>
+                            <div class="field-row">
+                                <input type="range" id="shadowOpacityRange" min="0" max="1" step="0.01" value="0.1" class="field-range">
+                                <input type="number" id="shadowOpacityNumber" step="0.01" value="0.1" class="field-number">
+                            </div>
+                            <label class="field-label" for="shadowBlurRange">Blur</label>
+                            <div class="field-row">
+                                <input type="range" id="shadowBlurRange" min="0" max="40" step="1" value="3" class="field-range">
+                                <input type="number" id="shadowBlurNumber" step="1" value="3" class="field-number">
+                                <span class="field-unit">px</span>
+                            </div>
+                            <label class="field-label" for="shadowSpreadRange">Spread</label>
+                            <div class="field-row">
+                                <input type="range" id="shadowSpreadRange" min="-20" max="20" step="1" value="0" class="field-range">
+                                <input type="number" id="shadowSpreadNumber" step="1" value="0" class="field-number">
+                                <span class="field-unit">px</span>
+                            </div>
+                            <label class="field-label" for="shadowOffsetXRange">Offset X</label>
+                            <div class="field-row">
+                                <input type="range" id="shadowOffsetXRange" min="-20" max="20" step="1" value="0" class="field-range">
+                                <input type="number" id="shadowOffsetXNumber" step="1" value="0" class="field-number">
+                                <span class="field-unit">px</span>
+                            </div>
+                            <label class="field-label" for="shadowOffsetYRange">Offset Y</label>
+                            <div class="field-row">
+                                <input type="range" id="shadowOffsetYRange" min="-20" max="20" step="1" value="1" class="field-range">
+                                <input type="number" id="shadowOffsetYNumber" step="1" value="1" class="field-number">
+                                <span class="field-unit">px</span>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </aside>
+
+            <div id="sidebarResizeHandle" class="sidebar-resize-handle" title="Drag to resize"></div>
+
+            <main class="preview-area">
+                <nav class="preview-tabs">
+                    <button class="preview-tab active" data-preview="cards">Cards</button>
+                    <button class="preview-tab" data-preview="mail">Mail</button>
+                    <button class="preview-tab" data-preview="dashboard">Dashboard</button>
+                    <button class="preview-tab" data-preview="application">Application</button>
+                    <button class="preview-tab" data-preview="marketing">Marketing</button>
+                    <button class="preview-tab" data-preview="typography">Typography</button>
+                    <button class="preview-tab" data-preview="color-palette">Color Palette</button>
+                </nav>
+                <iframe id="previewFrame" class="preview-frame" title="Theme preview"></iframe>
+            </main>
+        </div>
+    </div>
+
+    <div id="colorPalettePopover" class="color-popover" hidden>
+        <div class="color-popover-header">
+            <span class="color-popover-logo">〜</span>
+            <span>Tailwind v4</span>
+            <div class="color-popover-view-toggle">
+                <button data-popover-view="list" title="List view"><i class="fas fa-list"></i></button>
+                <button data-popover-view="grid" class="active" title="Grid view"><i class="fas fa-table-cells"></i></button>
+            </div>
+        </div>
+        <div class="color-popover-specials"></div>
+        <div class="color-popover-grid"></div>
+    </div>
+
+    <div id="codeModal" class="modal" hidden>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Code</h2>
+                <button id="closeCodeModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
+            </div>
+            <pre id="codeOutput" class="code-output"></pre>
+            <button id="copyCodeButton" class="toolbar-button"><i class="fas fa-copy"></i> Copy</button>
+        </div>
+    </div>
+
+    <div id="importModal" class="modal" hidden>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Import</h2>
+                <button id="closeImportModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
+            </div>
+            <p class="import-hint">Paste a CSS block containing <code>--variable: value;</code> declarations (e.g. exported from this tool's own Code view, or from tweakcn).</p>
+            <textarea id="importTextarea" class="import-textarea" placeholder="--primary: oklch(0.6231 0.1880 259.8145);&#10;--background: #ffffff;&#10;..."></textarea>
+            <button id="applyImportButton" class="toolbar-button">Apply</button>
+            <p id="importError" class="import-error"></p>
+        </div>
+    </div>
+
+    <div id="saveModal" class="modal" hidden>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Save theme</h2>
+                <button id="closeSaveModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
+            </div>
+            <input type="text" id="saveNameInput" class="theme-search-input" placeholder="Theme name">
+            <button id="confirmSaveButton" class="toolbar-button">Save</button>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

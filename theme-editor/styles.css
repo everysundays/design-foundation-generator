@@ -1,0 +1,748 @@
+/* Theme Editor shell chrome. These tokens style ONLY this tool's own UI
+   (toolbar/sidebar/modals) - never the theme being edited. The live theme's
+   CSS variables live inside the preview <iframe>'s own document and cannot
+   reach anything in this stylesheet. That separation is what guarantees
+   editing a color never restyles the editor itself. */
+
+:root {
+  --ui-bg: #ffffff;
+  --ui-bg-subtle: #f7f7f8;
+  --ui-border: #e5e5e7;
+  --ui-text: #18181b;
+  --ui-text-muted: #71717a;
+  --ui-accent: #18181b;
+  --ui-accent-text: #ffffff;
+  --ui-danger: #dc2626;
+  --ui-radius: 8px;
+  --ui-radius-sm: 6px;
+  --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ui-toolbar-height: 52px;
+  /* Wide enough that the color-field-input on one line still shows the
+     longest value across all 42 vendored themes (30 chars, e.g.
+     "oklch(0.6333 0.0309 154.9039)") without clipping - measured live,
+     not guessed: at 300px that input clipped 136px of text. */
+  --ui-sidebar-width: 450px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--ui-font);
+  color: var(--ui-text);
+  background: var(--ui-bg-subtle);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* --- Toolbar --- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--ui-toolbar-height);
+  padding: 0 12px;
+  background: var(--ui-bg);
+  border-bottom: 1px solid var(--ui-border);
+  position: relative;
+  z-index: 20;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.toolbar-group-left {
+  gap: 10px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--ui-border);
+  margin: 0 4px;
+}
+
+.theme-picker-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.theme-picker-button:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.theme-swatch-dots {
+  display: inline-flex;
+}
+
+.theme-swatch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  margin-left: -4px;
+}
+
+.theme-swatch-dot:first-child {
+  margin-left: 0;
+}
+
+.theme-picker-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 320px;
+  max-height: 420px;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-picker-menu[hidden] {
+  display: none;
+}
+
+.theme-search-input,
+.color-search-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.theme-picker-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  border-radius: var(--ui-radius-sm);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ui-text);
+}
+
+.theme-picker-row:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.theme-picker-row.active {
+  background: var(--ui-bg-subtle);
+  font-weight: 600;
+}
+
+.theme-picker-row-name {
+  flex: 1;
+}
+
+.theme-picker-row-delete {
+  color: var(--ui-text-muted);
+  padding: 2px 4px;
+}
+
+.theme-picker-row-delete:hover {
+  color: var(--ui-danger);
+}
+
+.toolbar-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-text);
+  cursor: pointer;
+}
+
+.toolbar-icon-button:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.toolbar-icon-button:disabled {
+  color: var(--ui-border);
+  cursor: default;
+}
+
+.toolbar-icon-button:disabled:hover {
+  background: none;
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toolbar-button:hover {
+  background: var(--ui-bg-subtle);
+}
+
+/* --- Workspace layout --- */
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: var(--ui-sidebar-width);
+  min-width: 280px;
+  max-width: 640px;
+  flex-shrink: 0;
+  background: var(--ui-bg);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Full-height drag handle between sidebar and preview - a corner-only native
+   `resize` grip turned out too small to notice/grab reliably, so this is an
+   explicit, always-visible splitter instead (wired up in scripts.js). */
+.sidebar-resize-handle {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  position: relative;
+}
+
+.sidebar-resize-handle::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 2px;
+  width: 2px;
+  background: var(--ui-border);
+  transition: background 150ms;
+}
+
+.sidebar-resize-handle:hover::before,
+.sidebar-resize-handle.active::before {
+  background: var(--ui-accent);
+}
+
+body.resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.resizing-sidebar .preview-frame {
+  pointer-events: none;
+}
+
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--ui-border);
+  padding: 8px 8px 0;
+  gap: 4px;
+}
+
+.sidebar-tab {
+  border: none;
+  background: none;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0;
+}
+
+.sidebar-tab.active {
+  color: var(--ui-text);
+  font-weight: 600;
+  background: var(--ui-bg-subtle);
+}
+
+.sidebar-panel {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.sidebar-panel.active {
+  display: flex;
+}
+
+/* --- Color groups --- */
+
+.color-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.color-group {
+  border-bottom: 1px solid var(--ui-border);
+  padding: 6px 0;
+}
+
+.color-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  padding: 4px 2px;
+  list-style: none;
+}
+
+.color-group-label::-webkit-details-marker {
+  display: none;
+}
+
+.color-group-fold-swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* A visible border on every swatch, always - a white/near-white or
+   transparent value would otherwise blend invisibly into the panel's own
+   background and look like a rendering bug rather than "this is white". */
+.color-group-fold-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+}
+
+.color-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.color-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-field-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.color-field-label {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ui-text);
+}
+
+.color-field-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+.color-field-input:read-only {
+  cursor: pointer;
+  background: var(--ui-bg-subtle);
+  color: var(--ui-text-muted);
+}
+
+.color-field-palette-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: var(--ui-bg);
+  color: var(--ui-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.color-field-palette-btn:hover {
+  background: var(--ui-bg-subtle);
+  color: var(--ui-text);
+}
+
+.color-field-reset {
+  border: none;
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.color-field-reset:hover {
+  color: var(--ui-text);
+}
+
+/* --- Typography / Other fields --- */
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.field-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+
+.field-subgroup-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.field-select {
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-range {
+  flex: 1;
+}
+
+.field-number {
+  width: 60px;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-size: 12px;
+}
+
+.field-unit {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+/* --- Preview area --- */
+
+.preview-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  background: var(--ui-bg);
+  border-bottom: 1px solid var(--ui-border);
+  overflow-x: auto;
+}
+
+.preview-tab {
+  border: none;
+  background: none;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0;
+}
+
+.preview-tab.active {
+  color: var(--ui-text);
+  font-weight: 600;
+  background: var(--ui-bg-subtle);
+}
+
+.preview-frame {
+  flex: 1;
+  border: none;
+  width: 100%;
+}
+
+/* --- Palette-source switcher menu (reuses .theme-picker-menu positioning) --- */
+
+.palette-picker-menu {
+  width: 160px;
+}
+
+/* --- Color palette popover (Tailwind v4 / Atlassian swatch grid) --- */
+
+.color-popover {
+  position: fixed;
+  width: 320px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 10px;
+  z-index: 200;
+}
+
+.color-popover[hidden] {
+  display: none;
+}
+
+.color-popover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.color-popover-header span:nth-child(2) {
+  flex: 1;
+}
+
+.color-popover-logo {
+  color: var(--ui-text-muted);
+}
+
+.color-popover-view-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.color-popover-view-toggle button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+.color-popover-view-toggle button.active {
+  background: var(--ui-bg-subtle);
+  color: var(--ui-text);
+}
+
+.color-popover-specials {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.color-popover-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.color-popover-row {
+  display: flex;
+  gap: 3px;
+}
+
+.popover-swatch {
+  flex: 1;
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.popover-swatch:hover {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.popover-swatch-transparent {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+}
+
+.color-popover-grid.list-view .color-popover-row {
+  flex-direction: column;
+}
+
+.color-popover-grid.list-view .popover-swatch {
+  aspect-ratio: auto;
+  height: 22px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding-inline: 8px;
+}
+
+.popover-swatch-name {
+  display: none;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  /* Blend-mode contrast: reads dark on light swatches and light on dark ones
+     with zero luminance math, and keeps tracking the swatch if it ever changes. */
+  color: #fff;
+  mix-blend-mode: difference;
+}
+
+.color-popover-grid.list-view .popover-swatch-name {
+  display: block;
+}
+
+/* --- Modals --- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal-content {
+  background: var(--ui-bg);
+  border-radius: var(--ui-radius);
+  padding: 20px;
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-header h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.code-output {
+  background: var(--ui-bg-subtle);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  padding: 12px;
+  font-size: 12px;
+  overflow: auto;
+  max-height: 400px;
+  white-space: pre-wrap;
+}
+
+.import-hint {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+  margin: 0;
+}
+
+.import-textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.import-error {
+  color: var(--ui-danger);
+  font-size: 12px;
+  margin: 0;
+}
+
+.import-error:empty {
+  display: none;
+}
