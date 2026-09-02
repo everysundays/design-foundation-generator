@@ -621,6 +621,7 @@ body.resizing-sidebar .preview-frame {
 }
 
 .popover-swatch {
+  position: relative;
   flex: 1;
   aspect-ratio: 1;
   min-width: 0;
@@ -630,9 +631,41 @@ body.resizing-sidebar .preview-frame {
   padding: 0;
 }
 
+/* Marks whichever swatch the field's current value came from, re-applied
+   each time the popover opens (see openColorPalettePopover) - placed before
+   :hover in source order so hovering a different swatch still wins. */
+.popover-swatch-current {
+  outline: 2px solid var(--ui-text);
+  outline-offset: 1px;
+}
+
 .popover-swatch:hover {
   outline: 2px solid var(--ui-accent);
   outline-offset: 1px;
+}
+
+/* A shared element positioned in JS (see showSwatchTooltip), not a CSS
+   ::after on the swatch itself - the popover's overflow-y:auto clips any
+   descendant that lands outside its box, which cropped the tooltip for
+   edge swatches. position:fixed + viewport-clamped JS coordinates keeps it
+   uncropped regardless of which swatch or scroll position it's shown from.
+   No transition/animation here on purpose - the name+hex readout must show
+   the instant the pointer lands, not fade in after a delay. */
+.swatch-tooltip {
+  position: fixed;
+  background: var(--ui-text);
+  color: var(--ui-bg);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 300;
+}
+
+.swatch-tooltip[hidden] {
+  display: none;
 }
 
 .popover-swatch-transparent {

@@ -93,8 +93,6 @@
                 </div>
 
                 <div class="sidebar-panel" data-sidebar-panel="element">
-                    <div id="elementColorGroups" class="color-groups"></div>
-
                     <div class="field-group">
                         <div class="field-group-label">Radius</div>
                         <label class="field-label" for="cardRadiusRange">Card</label>
@@ -122,20 +120,26 @@
                         <div class="field-subgroup-label">Grid</div>
                         <label class="field-label" for="paddingYRange">Padding Vertical</label>
                         <div class="field-row">
-                            <input type="range" id="paddingYRange" min="0.1" max="1" step="0.01" value="0.25" class="field-range">
-                            <input type="number" id="paddingYNumber" step="0.01" value="0.25" class="field-number">
+                            <input type="range" id="paddingYRange" min="0" max="7" step="1" value="1" class="field-range">
+                            <input type="number" id="paddingYNumber" value="0.25" class="field-number" readonly>
                             <span class="field-unit">rem</span>
                         </div>
                         <label class="field-label" for="paddingXRange">Padding Horizontal</label>
                         <div class="field-row">
-                            <input type="range" id="paddingXRange" min="0.1" max="1" step="0.01" value="0.25" class="field-range">
-                            <input type="number" id="paddingXNumber" step="0.01" value="0.25" class="field-number">
+                            <input type="range" id="paddingXRange" min="0" max="7" step="1" value="1" class="field-range">
+                            <input type="number" id="paddingXNumber" value="0.25" class="field-number" readonly>
                             <span class="field-unit">rem</span>
                         </div>
-                        <label class="field-label" for="gapRange">Gap</label>
+                        <label class="field-label" for="gapYRange">Gap Vertical</label>
                         <div class="field-row">
-                            <input type="range" id="gapRange" min="0.1" max="1" step="0.01" value="0.25" class="field-range">
-                            <input type="number" id="gapNumber" step="0.01" value="0.25" class="field-number">
+                            <input type="range" id="gapYRange" min="0" max="7" step="1" value="1" class="field-range">
+                            <input type="number" id="gapYNumber" value="0.25" class="field-number" readonly>
+                            <span class="field-unit">rem</span>
+                        </div>
+                        <label class="field-label" for="gapXRange">Gap Horizontal</label>
+                        <div class="field-row">
+                            <input type="range" id="gapXRange" min="0" max="7" step="1" value="1" class="field-range">
+                            <input type="number" id="gapXNumber" value="0.25" class="field-number" readonly>
                             <span class="field-unit">rem</span>
                         </div>
                     </div>
@@ -211,6 +215,8 @@
         <div class="color-popover-specials"></div>
         <div class="color-popover-grid"></div>
     </div>
+
+    <div id="swatchTooltip" class="swatch-tooltip" hidden></div>
 
     <div id="codeModal" class="modal" hidden>
         <div class="modal-content">

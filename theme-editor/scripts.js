@@ -111,6 +111,26 @@ let state = {
 
 let activePaletteSource = 'tailwind';
 
+// The authoritative palette-token link for every color field, keyed by
+// mode then CSS var key: { source, name, hex }. Different palette sources -
+// and even different rows of the same source (Tailwind's zinc-50,
+// neutral-50 and mauve-50 are all #fafafa) - can share an exact hex, so a
+// hex value alone can't tell two different token names apart. Rather than
+// re-guessing a name from the hex on every render (ambiguous whenever a
+// collision like that exists, and liable to disagree with itself between
+// the field's label and the popover's "current swatch" highlight), every
+// palette-sourced field gets its link resolved once - immediately on pick,
+// or via snapVarsToPalette() at load/import time - and that resolved
+// {source, name} is treated as ground truth from then on: the var's stored
+// value is snapped to the link's exact swatch hex, so "what's linked" and
+// "what's applied" can never drift apart. See PALETTE_COLOR_KEYS below for
+// which var keys this covers.
+let tokenLinks = { light: {}, dark: {} };
+// Snapshot of tokenLinks at the moment a theme was loaded - lets the
+// per-field reset button restore the original link, not just the original
+// hex (which alone would leave the field's label to be re-guessed).
+let loadedTokenLinks = { light: {}, dark: {} };
+
 let undoStack = [];
 let redoStack = [];
 
@@ -122,11 +142,29 @@ function withRadiusFallback(vars) {
     return { 'radius-card': base, 'radius-field': base, 'radius-button': base, ...vars };
 }
 
-// Same idea for spacing: themes only define one "spacing" var - Gap/Padding
-// Vertical/Padding Horizontal are new, so all three start equal to it.
+// Same idea for spacing: themes only define one "spacing" var - Gap
+// Vertical/Gap Horizontal/Padding Vertical/Padding Horizontal are new, so all
+// four start equal to it.
 function withSpacingFallback(vars) {
     const base = vars.spacing || '0.25rem';
-    return { 'spacing-gap': base, 'spacing-padding-y': base, 'spacing-padding-x': base, ...vars };
+    return { 'spacing-gap-y': base, 'spacing-gap-x': base, 'spacing-padding-y': base, 'spacing-padding-x': base, ...vars };
+}
+
+// The Padding/Gap sliders pick from a fixed set of rem tokens rather than a
+// free decimal - same "resolve to a known reference" idea as the Colors
+// tab's palette restriction, just for the base spacing unit instead of a
+// color. Each slider's range input steps through indices into this array;
+// nearestSpacingTokenIndex maps a loaded/imported rem value back onto it.
+const SPACING_TOKENS = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+
+function nearestSpacingTokenIndex(remValue) {
+    let bestIndex = 0;
+    let bestDist = Infinity;
+    SPACING_TOKENS.forEach((token, i) => {
+        const dist = Math.abs(token - remValue);
+        if (dist < bestDist) { bestDist = dist; bestIndex = i; }
+    });
+    return bestIndex;
 }
 
 // No theme (including DEFAULT_THEME) is required to define shadow-* vars.
@@ -165,9 +203,20 @@ function loadTheme(name) {
     const flat = custom
         ? { light: withFallbacks({ ...custom.light }), dark: withFallbacks({ ...custom.dark }) }
         : flattenVars(theme || DEFAULT_THEME);
+    // Every palette-sourced field (PALETTE_COLOR_KEYS) gets linked and its
+    // value snapped to that link's exact swatch hex right away, rather than
+    // carrying the theme's raw value forward and re-guessing a name for it
+    // on every render - see the tokenLinks comment above for why that guess
+    // is unreliable whenever two palette entries share a hex.
+    const links = {
+        light: snapVarsToPalette(flat.light, activePaletteSource, PALETTE_COLOR_KEYS),
+        dark: snapVarsToPalette(flat.dark, activePaletteSource, PALETTE_COLOR_KEYS)
+    };
     state.themeName = name;
     state.vars = { light: { ...flat.light }, dark: { ...flat.dark } };
     state.loadedVars = { light: { ...flat.light }, dark: { ...flat.dark } };
+    tokenLinks = { light: { ...links.light }, dark: { ...links.dark } };
+    loadedTokenLinks = { light: { ...links.light }, dark: { ...links.dark } };
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -179,15 +228,23 @@ function currentVars() {
 }
 
 function pushUndo() {
-    undoStack.push(JSON.stringify(state.vars));
+    undoStack.push(JSON.stringify({ vars: state.vars, tokenLinks }));
     if (undoStack.length > 50) undoStack.shift();
     redoStack = [];
     updateUndoRedoButtons();
 }
 
-function setVar(key, value, { record = true } = {}) {
+// `link` (when passed) replaces the field's tokenLinks entry atomically
+// with the value write, both landing after pushUndo's snapshot - mutating
+// tokenLinks before calling setVar would let pushUndo capture the already-
+// updated link, which undo could never then roll back.
+function setVar(key, value, { record = true, link } = {}) {
     if (record) pushUndo();
     state.vars[state.mode][key] = value;
+    if (link !== undefined) {
+        if (link) tokenLinks[state.mode][key] = link;
+        else delete tokenLinks[state.mode][key];
+    }
     renderPreview();
     renderColorGroups();
 }
@@ -201,9 +258,11 @@ function updateUndoRedoButtons() {
 // Which groups are expanded, keyed by group.key - persists across
 // renderColorGroups() calls (which rebuild the DOM from scratch on every
 // edit) so tuning a color no longer re-folds the section you're working in.
-// Decorative colors, split into their own foldable sections (same pattern
-// as the signal-color groups above) rather than one flat list - shown in
-// the Element tab instead of the Colors tab.
+// Element-part colors (card, popover, border/input/ring, sidebar) get their
+// own foldable sections, same pattern as the signal-color groups above -
+// both live together in the Colors tab (ELEMENT_GROUPS below COLOR_GROUPS)
+// so every color-to-palette-token assignment sits in one place and the
+// preview updates are visible without switching tabs.
 const ELEMENT_GROUPS = [
     { key: 'card', label: 'Card', fields: [['card', 'Card'], ['card-foreground', 'Card Foreground']] },
     { key: 'popover', label: 'Popover', fields: [['popover', 'Popover'], ['popover-foreground', 'Popover Foreground']] },
@@ -216,14 +275,20 @@ const ELEMENT_GROUPS = [
     ] }
 ];
 
-const openGroups = new Set([...COLOR_GROUPS, ...ELEMENT_GROUPS].filter(g => g.open).map(g => g.key));
+const ALL_COLOR_GROUPS = [...COLOR_GROUPS, ...ELEMENT_GROUPS];
+
+// Every CSS var key that's editable through a palette-popover field (as
+// opposed to e.g. the Shadow group's native <input type="color">) - the set
+// tokenLinks/snapVarsToPalette resolve and keep snapped to a palette swatch.
+const PALETTE_COLOR_KEYS = ALL_COLOR_GROUPS.flatMap(g => g.fields.map(([key]) => key));
+
+const openGroups = new Set(ALL_COLOR_GROUPS.filter(g => g.open).map(g => g.key));
 
 // Renders one set of foldable color-groups (fold-preview swatches, persisted
 // open/close state) into a container - shared by the Colors tab's signal
-// colors and the Element tab's decorative colors. restrictToPalette=true
-// (Colors tab only) makes every field in the group palette-sourced-only, per
-// createColorFieldRow below.
-function renderFoldableGroups(groups, containerId, searchTerm, restrictToPalette) {
+// colors and the Element tab's decorative colors. Every field in every group
+// is palette-sourced-only, per createColorFieldRow below.
+function renderFoldableGroups(groups, containerId, searchTerm) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
     const vars = currentVars();
@@ -259,7 +324,7 @@ function renderFoldableGroups(groups, containerId, searchTerm, restrictToPalette
         const body = document.createElement('div');
         body.className = 'color-group-body';
 
-        visibleFields.forEach(([key, label]) => body.appendChild(createColorFieldRow(key, label, vars, restrictToPalette)));
+        visibleFields.forEach(([key, label]) => body.appendChild(createColorFieldRow(key, label, vars)));
 
         details.appendChild(body);
         container.appendChild(details);
@@ -268,22 +333,21 @@ function renderFoldableGroups(groups, containerId, searchTerm, restrictToPalette
 
 function renderColorGroups() {
     const search = document.getElementById('colorSearchInput').value.trim().toLowerCase();
-    renderFoldableGroups(COLOR_GROUPS, 'colorGroups', search, true);
+    renderFoldableGroups(ALL_COLOR_GROUPS, 'colorGroups', search);
 }
 
-// Builds one color field row (swatch, label, hex input, palette-picker
+// Builds one color field row (swatch, label, token-name input, palette-picker
 // button, reset button) - shared by the foldable Colors-tab groups and the
-// flat Element-tab color list.
-//
-// restrictToPalette (Colors tab): this is the semantic-color slot - primary,
-// accent, etc. - so only a palette swatch may set it, never typed free text.
-// The input becomes read-only, and always shows the active palette's
-// reference name for the current value (nearestPaletteMatch) instead of the
-// raw color string - this holds for any value, not just ones picked through
-// the popover, so a freshly loaded theme's colors resolve to names right
-// away too. Element tab fields (restrictToPalette false) keep the old
-// free-text + optional-palette-pick behavior and always show the raw value.
-function createColorFieldRow(key, label, vars, restrictToPalette) {
+// flat Element-tab color list. Every field here is a palette-sourced slot,
+// so only a palette swatch may set it, never typed free text: the input is
+// read-only, and shows the field's resolved tokenLinks entry - the actual
+// linked palette token, not a hex-based guess re-derived on every render
+// (see the tokenLinks comment near its declaration for why that guess is
+// unreliable whenever two palette entries share a hex). loadTheme/
+// snapVarsToPalette guarantee every key in PALETTE_COLOR_KEYS already has a
+// link by the time this renders, so the nearestPaletteMatch call here is
+// only a defensive fallback (e.g. a value set outside that path).
+function createColorFieldRow(key, label, vars) {
     const value = vars[key] || '';
     const hex = cssColorToHex(value) || '#000000';
 
@@ -298,23 +362,27 @@ function createColorFieldRow(key, label, vars, restrictToPalette) {
     fieldLabel.className = 'color-field-label';
     fieldLabel.textContent = label;
 
+    const link = tokenLinks[state.mode][key];
+    const linkMatchesSource = link && link.source === activePaletteSource;
+
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'color-field-input';
-    input.value = restrictToPalette ? (nearestPaletteMatch(hex) || value) : value;
+    input.value = linkMatchesSource ? link.name : (nearestPaletteMatch(hex) || value);
+    input.readOnly = true;
 
-    const openPicker = () => openColorPalettePopover(paletteBtn, (newHex) => {
-        // setVar re-renders the Colors tab, which re-derives the display
-        // name from newHex via nearestPaletteMatch - nothing to store here.
-        setVar(key, newHex);
+    // Only pass a currentName when the field's link belongs to the palette
+    // source currently on screen - a link picked under Atlassian has no
+    // corresponding swatch in the Tailwind grid to highlight as "current".
+    const openPicker = () => openColorPalettePopover(paletteBtn, linkMatchesSource ? link.name : null, (newHex, newName) => {
+        setVar(key, newHex, { link: { source: activePaletteSource, name: newName, hex: newHex.toLowerCase() } });
     });
-
-    if (restrictToPalette) {
-        input.readOnly = true;
-        input.addEventListener('click', openPicker);
-    } else {
-        input.addEventListener('change', () => setVar(key, input.value));
-    }
+    // stopPropagation is required, not cosmetic: the document-level
+    // outside-click handler that closes the popover checks e.target against
+    // it on the very same click, and this click's target (the input) is
+    // never inside the not-yet-open popover - without stopping it here, the
+    // bubbled click would close the popover the instant openPicker() opens it.
+    input.addEventListener('click', (e) => { e.stopPropagation(); openPicker(); });
 
     const paletteBtn = document.createElement('button');
     paletteBtn.className = 'color-field-palette-btn';
@@ -322,12 +390,7 @@ function createColorFieldRow(key, label, vars, restrictToPalette) {
     paletteBtn.innerHTML = '<i class="fas fa-swatchbook"></i>';
     paletteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (restrictToPalette) { openPicker(); return; }
-        openColorPalettePopover(paletteBtn, (newHex) => {
-            input.value = newHex;
-            swatch.style.backgroundColor = newHex;
-            setVar(key, newHex);
-        });
+        openPicker();
     });
 
     const resetBtn = document.createElement('button');
@@ -336,15 +399,12 @@ function createColorFieldRow(key, label, vars, restrictToPalette) {
     resetBtn.innerHTML = '<i class="fas fa-rotate-left"></i>';
     resetBtn.addEventListener('click', () => {
         const loaded = state.loadedVars[state.mode][key] || '';
-        setVar(key, loaded);
+        const loadedLink = loadedTokenLinks[state.mode][key];
+        setVar(key, loaded, { link: loadedLink ? { ...loadedLink } : null });
     });
 
     row.append(swatch, fieldLabel, input, paletteBtn, resetBtn);
     return row;
-}
-
-function renderElementColorFields() {
-    renderFoldableGroups(ELEMENT_GROUPS, 'elementColorGroups', '', false);
 }
 
 // --- Sidebar: Typography / Other ---
@@ -379,7 +439,6 @@ function renderTypographyTab() {
 }
 
 function renderElementTab() {
-    renderElementColorFields();
     const vars = currentVars();
 
     const cardRadius = parseFloat(vars['radius-card']) || 0.5;
@@ -394,11 +453,13 @@ function renderElementTab() {
     document.getElementById('buttonRadiusRange').value = buttonRadius;
     document.getElementById('buttonRadiusNumber').value = buttonRadius;
 
-    [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'], ['spacing-gap', 'gapRange', 'gapNumber']]
+    [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'],
+     ['spacing-gap-y', 'gapYRange', 'gapYNumber'], ['spacing-gap-x', 'gapXRange', 'gapXNumber']]
         .forEach(([key, rangeId, numberId]) => {
             const val = parseFloat(vars[key]) || 0.25;
-            document.getElementById(rangeId).value = val;
-            document.getElementById(numberId).value = val;
+            const tokenIndex = nearestSpacingTokenIndex(val);
+            document.getElementById(rangeId).value = tokenIndex;
+            document.getElementById(numberId).value = SPACING_TOKENS[tokenIndex];
         });
 
     const shadowHex = cssColorToHex(vars['shadow-color']) || '#000000';
@@ -495,44 +556,112 @@ function colorDistanceSq(hexA, hexB) {
     return (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2;
 }
 
-// The Colors tab shows a reference name for whatever the current value is,
-// not just for values picked through the popover - the palette is the
-// source of truth for every field's display, so this always resolves to the
-// closest swatch in the active source (distance 0 - i.e. an exact hex match -
-// for anything actually picked from that same palette).
-function nearestPaletteMatch(hex) {
+// Resolves a hex to its closest swatch in a given palette source, returning
+// both that swatch's reference name AND its exact hex (distance 0 - i.e. an
+// exact match - for anything actually picked from that same palette). Two
+// swatches - even across different families of the same source, e.g.
+// Tailwind's zinc-50/neutral-50/mauve-50, all #fafafa - can tie on hex, so
+// this always resolves the same way for a given hex: family order in
+// TAILWIND_PALETTE_FAMILIES/ATLASSIAN_PALETTE_FAMILIES is the fixed
+// tie-break, first match wins. That's a deterministic choice among equally
+// "correct" candidates, not a proof no ambiguity ever existed - see
+// tokenLinks above for why the result gets recorded once and reused rather
+// than re-derived (and thus liable to disagree with itself) on every render.
+function resolvePaletteEntry(hex, sourceKey) {
     let best = null;
     let bestDist = Infinity;
     POPOVER_SPECIALS.forEach(([swatchHex, name]) => {
         if (swatchHex === 'transparent') return;
         const dist = colorDistanceSq(hex, swatchHex);
-        if (dist < bestDist) { bestDist = dist; best = name; }
+        if (dist < bestDist) { bestDist = dist; best = { name, hex: swatchHex }; }
     });
-    const source = PALETTE_SOURCES[activePaletteSource];
+    const source = PALETTE_SOURCES[sourceKey];
     const names = source.names();
     source.rows().forEach((row, rowIndex) => {
         row.forEach((swatchHex, colIndex) => {
             const dist = colorDistanceSq(hex, swatchHex);
-            if (dist < bestDist) { bestDist = dist; best = names[rowIndex] && names[rowIndex][colIndex]; }
+            if (dist < bestDist) { bestDist = dist; best = { name: names[rowIndex] && names[rowIndex][colIndex], hex: swatchHex }; }
         });
     });
     return best;
+}
+
+// The Colors tab shows a reference name for whatever the current value is,
+// not just for values picked through the popover - the palette is the
+// source of truth for every field's display. Defensive fallback only -
+// PALETTE_COLOR_KEYS fields normally read their name from tokenLinks
+// instead (see createColorFieldRow), which is resolved once via
+// resolvePaletteEntry/snapVarsToPalette rather than re-guessed per render.
+function nearestPaletteMatch(hex) {
+    const entry = resolvePaletteEntry(hex, activePaletteSource);
+    return entry && entry.name;
+}
+
+// Links every key in `keys` to its nearest swatch in `sourceKey` (mutating
+// `vars[key]` to that swatch's exact hex, so the link and the applied color
+// can never drift apart) and returns the { key: {source, name, hex} } map
+// driving tokenLinks. Used at theme-load time and after a raw CSS import -
+// the only two paths that can hand a palette-sourced field a value that
+// didn't come from the popover itself.
+function snapVarsToPalette(vars, sourceKey, keys) {
+    const links = {};
+    keys.forEach(key => {
+        const raw = vars[key];
+        if (raw === undefined) return;
+        const hex = cssColorToHex(raw);
+        if (!hex) return;
+        const entry = resolvePaletteEntry(hex, sourceKey);
+        if (!entry) return;
+        vars[key] = entry.hex;
+        links[key] = { source: sourceKey, name: entry.name, hex: entry.hex };
+    });
+    return links;
+}
+
+// Not the native `title` attribute - browsers gate that behind a fixed hover
+// delay (~600ms-1s) that can't be shortened from CSS/JS. Also not a CSS
+// ::after on the swatch - the popover scrolls (overflow-y:auto), which crops
+// any descendant tooltip that lands outside its box. A single shared element,
+// repositioned in JS and appended outside the scrolling popover, shows
+// instantly (no transition) and clamps to the viewport so it's never cropped.
+function showSwatchTooltip(anchorEl, text) {
+    const tip = document.getElementById('swatchTooltip');
+    tip.textContent = text;
+    tip.hidden = false;
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const left = Math.max(4, Math.min(anchorRect.left + anchorRect.width / 2 - tipRect.width / 2, window.innerWidth - tipRect.width - 4));
+    const above = anchorRect.top - tipRect.height - 4;
+    const top = above < 4 ? anchorRect.bottom + 4 : above;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+}
+
+function hideSwatchTooltip() {
+    document.getElementById('swatchTooltip').hidden = true;
 }
 
 function makePopoverSwatch(popover, hex, name, extraClass) {
     const btn = document.createElement('button');
     btn.className = 'popover-swatch' + (extraClass ? ` ${extraClass}` : '');
     btn.style.backgroundColor = hex === 'transparent' ? '' : hex;
-    btn.title = name ? `${name} — ${hex}` : hex;
+    btn.dataset.hex = hex.toLowerCase();
+    if (name) btn.dataset.name = name;
+    const tooltipText = name ? `${name} — ${hex}` : hex;
+    btn.setAttribute('aria-label', tooltipText);
     if (name) {
         const label = document.createElement('span');
         label.className = 'popover-swatch-name';
         label.textContent = name;
         btn.appendChild(label);
     }
+    btn.addEventListener('mouseenter', () => showSwatchTooltip(btn, tooltipText));
+    btn.addEventListener('mouseleave', hideSwatchTooltip);
+    btn.addEventListener('focus', () => showSwatchTooltip(btn, tooltipText));
+    btn.addEventListener('blur', hideSwatchTooltip);
     btn.addEventListener('click', () => {
         if (popover._onSelect) popover._onSelect(hex, name);
-        popover.hidden = true;
+        closeColorPalettePopover();
     });
     return btn;
 }
@@ -550,6 +679,11 @@ function renderColorPopoverGrid() {
         grid.appendChild(rowEl);
     });
     popover.querySelector('.color-popover-header span:nth-child(2)').textContent = source.label;
+}
+
+function closeColorPalettePopover() {
+    document.getElementById('colorPalettePopover').hidden = true;
+    hideSwatchTooltip();
 }
 
 function buildColorPalettePopover() {
@@ -572,15 +706,33 @@ function buildColorPalettePopover() {
 
     document.addEventListener('click', (e) => {
         if (!popover.hidden && !popover.contains(e.target) && !e.target.closest('.color-field-palette-btn')) {
-            popover.hidden = true;
+            closeColorPalettePopover();
         }
     });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') popover.hidden = true;
+        if (e.key === 'Escape') closeColorPalettePopover();
+    });
+    // A click that lands inside the <iframe> preview never bubbles to this
+    // document (it's a separate browsing context) - so a click there could
+    // never reach the listener above and the popover would stay open
+    // forever. Clicking into the iframe does move focus into it though,
+    // which fires `blur` on the top window - close on that instead.
+    window.addEventListener('blur', () => {
+        if (!popover.hidden && document.activeElement === document.getElementById('previewFrame')) {
+            closeColorPalettePopover();
+        }
     });
 }
 
-function openColorPalettePopover(anchor, onSelect) {
+// currentName - not currentHex - because hex alone is ambiguous whenever
+// the palette has a same-hex collision (Tailwind's zinc-50/neutral-50/
+// mauve-50 all #fafafa): matching by hex would mark every one of those as
+// "current" for a single linked field, which is exactly the confusing
+// multi-highlight tokenLinks exists to avoid. Pass null when the field's
+// link (if any) belongs to a different palette source than the one this
+// popover is currently showing - nothing in this grid actually corresponds
+// to it, so nothing should be marked current.
+function openColorPalettePopover(anchor, currentName, onSelect) {
     const popover = document.getElementById('colorPalettePopover');
     const rect = anchor.getBoundingClientRect();
     popover.hidden = false;
@@ -589,6 +741,13 @@ function openColorPalettePopover(anchor, onSelect) {
     popover.style.top = `${rect.bottom + 6}px`;
     popover.style.left = `${Math.max(8, left)}px`;
     popover._onSelect = onSelect;
+
+    // Mark the one swatch the field is actually linked to, so re-opening
+    // the picker shows what's already applied, not just a blank grid.
+    popover.querySelectorAll('.popover-swatch-current').forEach(el => el.classList.remove('popover-swatch-current'));
+    if (currentName) {
+        popover.querySelectorAll(`.popover-swatch[data-name="${CSS.escape(currentName)}"]`).forEach(el => el.classList.add('popover-swatch-current'));
+    }
 }
 
 // --- localStorage ---
@@ -610,19 +769,15 @@ function loadCustomThemesFromStorage() {
 // theme keys below have something real to point at.
 // Tailwind's own default numeric spacing scale (v3/Play CDN doesn't expose
 // v4's single-`--spacing`-multiplier mechanism, so p-*/px-*/py-*/gap-* can't
-// be pulled from a CSS var just by editing tailwind.config). `gap` has its
-// own independent theme key, so it's a clean override. Padding doesn't - one
-// `theme.padding` scale drives every direction (p/px/py/pt/pb/pl/pr) at once,
-// so px-* and py-* can't point at different vars through config alone. Instead,
-// the padding utilities actually used across the templates (grepped, not
-// guessed) get a generated override stylesheet, each key keeping its normal
-// relative weight (N) but multiplied against our own --spacing-padding-x/-y.
+// be pulled from a CSS var just by editing tailwind.config). Neither `gap`
+// nor `padding` has independent per-axis theme keys - one scale drives every
+// direction at once (gap/gap-x/gap-y all share `theme.gap`; p/px/py/pt/pb/pl/pr
+// all share `theme.padding`) - so x and y can't point at different vars
+// through config alone. Instead, the gap/padding utilities actually used
+// across the templates (grepped, not guessed) each get a generated override
+// stylesheet, keeping their normal relative weight (N) but multiplied
+// against our own --spacing-gap-x/-y and --spacing-padding-x/-y.
 const SPACING_SCALE = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 96];
-
-function tailwindGapScale() {
-    const entries = SPACING_SCALE.map(n => `          '${n}': 'calc(var(--spacing-gap) * ${n})'`);
-    return `{\n${entries.join(',\n')}\n        }`;
-}
 
 // Generated once (pure function of the fixed scale, not of live var values -
 // only the vars it references change at runtime) and injected as a <style>
@@ -631,6 +786,19 @@ function tailwindGapScale() {
 // source order alone isn't reliable - this is overriding a third-party
 // framework's generated output, not a case the "never !important" component
 // rule is about.
+function buildGapOverrideCss() {
+    const rules = [];
+    SPACING_SCALE.forEach(n => {
+        const x = `calc(var(--spacing-gap-x) * ${n})`;
+        const y = `calc(var(--spacing-gap-y) * ${n})`;
+        const selector = `${n}`.replace('.', '\\.'); // e.g. gap-0.5 -> gap-0\.5 (a literal "." starts a new class selector otherwise)
+        rules.push(`.gap-${selector} { row-gap: ${y} !important; column-gap: ${x} !important; }`);
+        rules.push(`.gap-x-${selector} { column-gap: ${x} !important; }`);
+        rules.push(`.gap-y-${selector} { row-gap: ${y} !important; }`);
+    });
+    return rules.join('\n');
+}
+
 function buildPaddingOverrideCss() {
     // !important belongs INSIDE each declaration (before its own semicolon) -
     // appending it once after a multi-declaration block produces a dangling,
@@ -703,7 +871,6 @@ function buildPreviewDocument(vars, templateHtml) {
           lg: 'var(--radius-card)', xl: 'calc(var(--radius-card) + 4px)', '2xl': 'calc(var(--radius-card) + 8px)',
           btn: 'var(--radius-button)'
         },
-        gap: ${tailwindGapScale()},
         fontFamily: {
           sans: ['var(--font-sans)'], serif: ['var(--font-serif)'], mono: ['var(--font-mono)']
         },
@@ -731,6 +898,9 @@ ${cssVarBlockFor(vars)}
 </style>
 <style id="padding-override">
 ${buildPaddingOverrideCss()}
+</style>
+<style id="gap-override">
+${buildGapOverrideCss()}
 </style>
 </head>
 <body>
@@ -871,7 +1041,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('palettePickerLabel').textContent = PALETTE_SOURCES[activePaletteSource].label.replace(' v4', '');
             document.querySelectorAll('[data-palette-source]').forEach(b => b.classList.toggle('active', b === btn));
             renderColorPopoverGrid();
-            renderColorGroups(); // Colors-tab names are resolved against activePaletteSource - re-derive them
+            // Field names are resolved against activePaletteSource - re-derive them
+            renderColorGroups();
             document.getElementById('palettePickerMenu').hidden = true;
         });
     });
@@ -888,18 +1059,24 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAll();
     });
 
-    // Undo/redo
+    // Undo/redo - snapshots carry tokenLinks alongside vars (see pushUndo),
+    // so a field's displayed/linked palette token rolls back in lockstep
+    // with its value instead of staying on whatever was picked most recently.
     document.getElementById('undoButton').addEventListener('click', () => {
         if (!undoStack.length) return;
-        redoStack.push(JSON.stringify(state.vars));
-        state.vars = JSON.parse(undoStack.pop());
+        redoStack.push(JSON.stringify({ vars: state.vars, tokenLinks }));
+        const snap = JSON.parse(undoStack.pop());
+        state.vars = snap.vars;
+        tokenLinks = snap.tokenLinks;
         updateUndoRedoButtons();
         renderAll();
     });
     document.getElementById('redoButton').addEventListener('click', () => {
         if (!redoStack.length) return;
-        undoStack.push(JSON.stringify(state.vars));
-        state.vars = JSON.parse(redoStack.pop());
+        undoStack.push(JSON.stringify({ vars: state.vars, tokenLinks }));
+        const snap = JSON.parse(redoStack.pop());
+        state.vars = snap.vars;
+        tokenLinks = snap.tokenLinks;
         updateUndoRedoButtons();
         renderAll();
     });
@@ -908,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('resetButton').addEventListener('click', () => {
         pushUndo();
         state.vars = { light: { ...state.loadedVars.light }, dark: { ...state.loadedVars.dark } };
+        tokenLinks = { light: { ...loadedTokenLinks.light }, dark: { ...loadedTokenLinks.dark } };
         renderAll();
     });
 
@@ -941,16 +1119,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('buttonRadiusRange').addEventListener('input', (e) => syncButtonRadius(e.target.value));
     document.getElementById('buttonRadiusNumber').addEventListener('input', (e) => syncButtonRadius(e.target.value));
 
-    const makeSpacingSync = (key, rangeId, numberId) => (val) => {
-        document.getElementById(rangeId).value = val;
-        document.getElementById(numberId).value = val;
-        setVar(key, `${val}rem`);
+    // The range input's value is a SPACING_TOKENS index, not a rem amount -
+    // the paired number field is a readonly readout of the resolved token,
+    // not a free-text input, so only the range needs a listener.
+    const makeSpacingSync = (key, rangeId, numberId) => (tokenIndex) => {
+        const rem = SPACING_TOKENS[tokenIndex];
+        document.getElementById(numberId).value = rem;
+        setVar(key, `${rem}rem`);
     };
-    [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'], ['spacing-gap', 'gapRange', 'gapNumber']]
+    [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'],
+     ['spacing-gap-y', 'gapYRange', 'gapYNumber'], ['spacing-gap-x', 'gapXRange', 'gapXNumber']]
         .forEach(([key, rangeId, numberId]) => {
             const sync = makeSpacingSync(key, rangeId, numberId);
             document.getElementById(rangeId).addEventListener('input', (e) => sync(e.target.value));
-            document.getElementById(numberId).addEventListener('input', (e) => sync(e.target.value));
         });
 
     // Shadow fields
@@ -1002,6 +1183,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         pushUndo();
         matches.forEach(([, key, value]) => { state.vars[state.mode][key.trim()] = value.trim(); });
+        // Imported values (like a theme's own baked-in defaults) didn't come
+        // through the popover, so they need the same link-and-snap pass
+        // loadTheme gives every color - limited to the keys this import
+        // actually touched, so unrelated fields' existing links are untouched.
+        const importedKeys = PALETTE_COLOR_KEYS.filter(key => matches.some(([, k]) => k.trim() === key));
+        Object.assign(tokenLinks[state.mode], snapVarsToPalette(state.vars[state.mode], activePaletteSource, importedKeys));
         renderAll();
         document.getElementById('importModal').hidden = true;
         document.getElementById('importTextarea').value = '';
