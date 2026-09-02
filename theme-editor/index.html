@@ -9,6 +9,7 @@
     <script src="tweakcn-themes-full.js"></script>
     <script src="tailwind-palette.js"></script>
     <script src="atlassian-palette.js"></script>
+    <script src="templates/overview.js"></script>
     <script src="templates/mail.js"></script>
     <script src="templates/cards.js"></script>
     <script src="templates/dashboard.js"></script>
@@ -68,7 +69,10 @@
                 </nav>
 
                 <div class="sidebar-panel active" data-sidebar-panel="colors">
-                    <input type="text" id="colorSearchInput" class="color-search-input" placeholder="Search colors...">
+                    <div class="color-search-row">
+                        <input type="text" id="colorSearchInput" class="color-search-input" placeholder="Search colors...">
+                        <button id="toggleAllColorGroupsButton" class="toolbar-icon-button" title="Expand all"><i class="fas fa-chevron-down"></i></button>
+                    </div>
                     <div id="colorGroups" class="color-groups"></div>
                 </div>
 
@@ -117,7 +121,6 @@
 
                     <div class="field-group">
                         <div class="field-group-label">Spacing</div>
-                        <div class="field-subgroup-label">Grid</div>
                         <label class="field-label" for="paddingYRange">Padding Vertical</label>
                         <div class="field-row">
                             <input type="range" id="paddingYRange" min="0" max="7" step="1" value="1" class="field-range">
@@ -130,16 +133,10 @@
                             <input type="number" id="paddingXNumber" value="0.25" class="field-number" readonly>
                             <span class="field-unit">rem</span>
                         </div>
-                        <label class="field-label" for="gapYRange">Gap Vertical</label>
+                        <label class="field-label" for="gapRange">Gap</label>
                         <div class="field-row">
-                            <input type="range" id="gapYRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="number" id="gapYNumber" value="0.25" class="field-number" readonly>
-                            <span class="field-unit">rem</span>
-                        </div>
-                        <label class="field-label" for="gapXRange">Gap Horizontal</label>
-                        <div class="field-row">
-                            <input type="range" id="gapXRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="number" id="gapXNumber" value="0.25" class="field-number" readonly>
+                            <input type="range" id="gapRange" min="0" max="7" step="1" value="1" class="field-range">
+                            <input type="number" id="gapNumber" value="0.25" class="field-number" readonly>
                             <span class="field-unit">rem</span>
                         </div>
                     </div>
@@ -190,7 +187,8 @@
 
             <main class="preview-area">
                 <nav class="preview-tabs">
-                    <button class="preview-tab active" data-preview="cards">Cards</button>
+                    <button class="preview-tab active" data-preview="overview">Overview</button>
+                    <button class="preview-tab" data-preview="cards">Cards</button>
                     <button class="preview-tab" data-preview="mail">Mail</button>
                     <button class="preview-tab" data-preview="dashboard">Dashboard</button>
                     <button class="preview-tab" data-preview="application">Application</button>

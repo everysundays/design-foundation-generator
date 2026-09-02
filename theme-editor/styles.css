@@ -136,6 +136,26 @@ body {
   font-family: inherit;
 }
 
+.color-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-search-row .color-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.color-search-row .toolbar-icon-button {
+  flex-shrink: 0;
+}
+
+/* Rotates to point up once every group is open - see toggleAllColorGroupsButton */
+.color-search-row .toolbar-icon-button.expanded i {
+  transform: rotate(180deg);
+}
+
 .theme-picker-list {
   overflow-y: auto;
   display: flex;
@@ -400,6 +420,14 @@ body.resizing-sidebar .preview-frame {
   cursor: pointer;
   background: var(--ui-bg-subtle);
   color: var(--ui-text-muted);
+}
+
+/* Shown instead of a same-looking guessed name when a field's link belongs
+   to a palette source other than the one currently browsed - italic marks
+   it as "nothing assigned here", not a real token name, without needing a
+   second element. */
+.color-field-input-unlinked {
+  font-style: italic;
 }
 
 .color-field-palette-btn {

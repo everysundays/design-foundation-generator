@@ -106,7 +106,7 @@ let state = {
     mode: 'light',
     vars: { light: {}, dark: {} },
     loadedVars: { light: {}, dark: {} },
-    activePreview: 'cards'
+    activePreview: 'overview'
 };
 
 let activePaletteSource = 'tailwind';
@@ -142,12 +142,15 @@ function withRadiusFallback(vars) {
     return { 'radius-card': base, 'radius-field': base, 'radius-button': base, ...vars };
 }
 
-// Same idea for spacing: themes only define one "spacing" var - Gap
-// Vertical/Gap Horizontal/Padding Vertical/Padding Horizontal are new, so all
-// four start equal to it.
+// Same idea for spacing: themes only define one "spacing" var - Gap/Padding
+// Vertical/Padding Horizontal are new, so all three start equal to it. Gap
+// is a single value (not split into -x/-y) - unlike padding, every gap-N
+// usage across the templates is a plain single-axis flex/wrap gap, so a
+// split axis pair just meant one of the two sliders never visibly did
+// anything for most layouts. See buildGapOverrideCss below.
 function withSpacingFallback(vars) {
     const base = vars.spacing || '0.25rem';
-    return { 'spacing-gap-y': base, 'spacing-gap-x': base, 'spacing-padding-y': base, 'spacing-padding-x': base, ...vars };
+    return { 'spacing-gap': base, 'spacing-padding-y': base, 'spacing-padding-x': base, ...vars };
 }
 
 // The Padding/Gap sliders pick from a fixed set of rem tokens rather than a
@@ -304,6 +307,7 @@ function renderFoldableGroups(groups, containerId, searchTerm) {
         details.open = searchTerm ? true : openGroups.has(group.key);
         details.addEventListener('toggle', () => {
             if (details.open) openGroups.add(group.key); else openGroups.delete(group.key);
+            updateToggleAllColorGroupsButton();
         });
 
         const summary = document.createElement('summary');
@@ -334,6 +338,23 @@ function renderFoldableGroups(groups, containerId, searchTerm) {
 function renderColorGroups() {
     const search = document.getElementById('colorSearchInput').value.trim().toLowerCase();
     renderFoldableGroups(ALL_COLOR_GROUPS, 'colorGroups', search);
+    updateToggleAllColorGroupsButton();
+}
+
+// The Colors tab's collapse/expand-all button - label/icon reflects the
+// ACTION a click will take, not the current state: once every group is
+// open it reads "Collapse all", otherwise "Expand all" (so a partially-open
+// set of groups always offers "expand the rest" first).
+function updateToggleAllColorGroupsButton() {
+    const btn = document.getElementById('toggleAllColorGroupsButton');
+    const allOpen = ALL_COLOR_GROUPS.every(g => openGroups.has(g.key));
+    btn.title = allOpen ? 'Collapse all' : 'Expand all';
+    btn.classList.toggle('expanded', allOpen);
+}
+
+function setAllColorGroupsOpen(open) {
+    ALL_COLOR_GROUPS.forEach(g => { if (open) openGroups.add(g.key); else openGroups.delete(g.key); });
+    renderColorGroups();
 }
 
 // Builds one color field row (swatch, label, token-name input, palette-picker
@@ -341,12 +362,13 @@ function renderColorGroups() {
 // flat Element-tab color list. Every field here is a palette-sourced slot,
 // so only a palette swatch may set it, never typed free text: the input is
 // read-only, and shows the field's resolved tokenLinks entry - the actual
-// linked palette token, not a hex-based guess re-derived on every render
-// (see the tokenLinks comment near its declaration for why that guess is
-// unreliable whenever two palette entries share a hex). loadTheme/
-// snapVarsToPalette guarantee every key in PALETTE_COLOR_KEYS already has a
-// link by the time this renders, so the nearestPaletteMatch call here is
-// only a defensive fallback (e.g. a value set outside that path).
+// linked palette token, not a hex-based guess. A field linked under a
+// different source than the one currently browsed shows "No color" rather
+// than a same-looking nearest-match guess in the new source - the swatch
+// still shows the real applied color (switching sources never repaints
+// anything), but the label deliberately doesn't pretend to name it under a
+// palette it wasn't actually picked from. That's the cue to reassign it
+// from the source on screen if you want one.
 function createColorFieldRow(key, label, vars) {
     const value = vars[key] || '';
     const hex = cssColorToHex(value) || '#000000';
@@ -367,8 +389,8 @@ function createColorFieldRow(key, label, vars) {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.className = 'color-field-input';
-    input.value = linkMatchesSource ? link.name : (nearestPaletteMatch(hex) || value);
+    input.className = 'color-field-input' + (linkMatchesSource ? '' : ' color-field-input-unlinked');
+    input.value = linkMatchesSource ? link.name : 'No color';
     input.readOnly = true;
 
     // Only pass a currentName when the field's link belongs to the palette
@@ -454,7 +476,7 @@ function renderElementTab() {
     document.getElementById('buttonRadiusNumber').value = buttonRadius;
 
     [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'],
-     ['spacing-gap-y', 'gapYRange', 'gapYNumber'], ['spacing-gap-x', 'gapXRange', 'gapXNumber']]
+     ['spacing-gap', 'gapRange', 'gapNumber']]
         .forEach(([key, rangeId, numberId]) => {
             const val = parseFloat(vars[key]) || 0.25;
             const tokenIndex = nearestSpacingTokenIndex(val);
@@ -584,17 +606,6 @@ function resolvePaletteEntry(hex, sourceKey) {
         });
     });
     return best;
-}
-
-// The Colors tab shows a reference name for whatever the current value is,
-// not just for values picked through the popover - the palette is the
-// source of truth for every field's display. Defensive fallback only -
-// PALETTE_COLOR_KEYS fields normally read their name from tokenLinks
-// instead (see createColorFieldRow), which is resolved once via
-// resolvePaletteEntry/snapVarsToPalette rather than re-guessed per render.
-function nearestPaletteMatch(hex) {
-    const entry = resolvePaletteEntry(hex, activePaletteSource);
-    return entry && entry.name;
 }
 
 // Links every key in `keys` to its nearest swatch in `sourceKey` (mutating
@@ -776,7 +787,7 @@ function loadCustomThemesFromStorage() {
 // through config alone. Instead, the gap/padding utilities actually used
 // across the templates (grepped, not guessed) each get a generated override
 // stylesheet, keeping their normal relative weight (N) but multiplied
-// against our own --spacing-gap-x/-y and --spacing-padding-x/-y.
+// against our own --spacing-gap and --spacing-padding-x/-y.
 const SPACING_SCALE = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 96];
 
 // Generated once (pure function of the fixed scale, not of live var values -
@@ -785,16 +796,18 @@ const SPACING_SCALE = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11,
 // CDN script injects its utility stylesheet at a time we don't control, so
 // source order alone isn't reliable - this is overriding a third-party
 // framework's generated output, not a case the "never !important" component
-// rule is about.
+// rule is about. One shared --spacing-gap drives row-gap and column-gap
+// together (not a split -x/-y pair) - every gap-N in the templates sits on a
+// single-row/single-column flex or wrap, so only one axis is ever visually
+// relevant at a time and a second slider had nothing to actually show.
 function buildGapOverrideCss() {
     const rules = [];
     SPACING_SCALE.forEach(n => {
-        const x = `calc(var(--spacing-gap-x) * ${n})`;
-        const y = `calc(var(--spacing-gap-y) * ${n})`;
+        const g = `calc(var(--spacing-gap) * ${n})`;
         const selector = `${n}`.replace('.', '\\.'); // e.g. gap-0.5 -> gap-0\.5 (a literal "." starts a new class selector otherwise)
-        rules.push(`.gap-${selector} { row-gap: ${y} !important; column-gap: ${x} !important; }`);
-        rules.push(`.gap-x-${selector} { column-gap: ${x} !important; }`);
-        rules.push(`.gap-y-${selector} { row-gap: ${y} !important; }`);
+        rules.push(`.gap-${selector} { row-gap: ${g} !important; column-gap: ${g} !important; }`);
+        rules.push(`.gap-x-${selector} { column-gap: ${g} !important; }`);
+        rules.push(`.gap-y-${selector} { row-gap: ${g} !important; }`);
     });
     return rules.join('\n');
 }
@@ -825,11 +838,28 @@ function buildPaddingOverrideCss() {
     return rules.join('\n');
 }
 
+// Every PALETTE_COLOR_KEYS var gets a derived "R G B" channel companion
+// (--primary-rgb, etc.) alongside its normal value - preview-only, not part
+// of the exported Code view (buildCodeOutput reads state.vars directly,
+// never this function). This is what lets buildPreviewDocument's Tailwind
+// config below use the `rgb(var(--x-rgb) / <alpha-value>)` pattern instead
+// of a plain `var(--x)`: Tailwind can only blend a `/NN` opacity modifier
+// (bg-primary/40, text-primary/40, etc.) into a color it can decompose into
+// channels - a bare CSS-variable reference holding an arbitrary oklch()/hex
+// string isn't decomposable, so every opacity-modified utility on a theme
+// color silently generated NO rule at all (not a faded color - nothing).
+// cssColorToHex is the only reliable way to get channels out of whatever
+// format the value is actually in (see its own comment on why - modern
+// browsers echo oklch()/lab()/etc. back verbatim instead of normalizing).
 function cssVarBlockFor(vars) {
     const lines = Object.entries(vars).map(([k, v]) => `  --${k}: ${v};`);
     if (vars['shadow-color']) {
         lines.push(`  --shadow-color-a: rgb(from var(--shadow-color) r g b / var(--shadow-opacity, 1));`);
     }
+    PALETTE_COLOR_KEYS.forEach(key => {
+        const hex = cssColorToHex(vars[key]);
+        if (hex) lines.push(`  --${key}-rgb: ${hexToRgb(hex).join(' ')};`);
+    });
     return lines.join('\n');
 }
 
@@ -843,22 +873,29 @@ function buildPreviewDocument(vars, templateHtml) {
   tailwind.config = {
     theme: {
       extend: {
+        // rgb(var(--x-rgb) / <alpha-value>) - not a plain var(--x) - is what
+        // makes opacity-modified utilities (bg-primary/40, text-primary/40,
+        // hover:bg-primary/90, ...) actually blend instead of silently
+        // generating nothing. <alpha-value> is a real Tailwind placeholder:
+        // it's substituted with 1 for an unmodified utility (bg-primary) or
+        // the requested fraction for a modified one, so this is one pattern
+        // for both - see cssVarBlockFor above for where --x-rgb comes from.
         colors: {
-          background: 'var(--background)', foreground: 'var(--foreground)',
-          card: 'var(--card)', 'card-foreground': 'var(--card-foreground)',
-          popover: 'var(--popover)', 'popover-foreground': 'var(--popover-foreground)',
-          primary: 'var(--primary)', 'primary-foreground': 'var(--primary-foreground)',
-          secondary: 'var(--secondary)', 'secondary-foreground': 'var(--secondary-foreground)',
-          muted: 'var(--muted)', 'muted-foreground': 'var(--muted-foreground)',
-          accent: 'var(--accent)', 'accent-foreground': 'var(--accent-foreground)',
-          destructive: 'var(--destructive)', 'destructive-foreground': 'var(--destructive-foreground)',
-          border: 'var(--border)', input: 'var(--input)', ring: 'var(--ring)',
-          'chart-1': 'var(--chart-1)', 'chart-2': 'var(--chart-2)', 'chart-3': 'var(--chart-3)',
-          'chart-4': 'var(--chart-4)', 'chart-5': 'var(--chart-5)',
-          sidebar: 'var(--sidebar)', 'sidebar-foreground': 'var(--sidebar-foreground)',
-          'sidebar-primary': 'var(--sidebar-primary)', 'sidebar-primary-foreground': 'var(--sidebar-primary-foreground)',
-          'sidebar-accent': 'var(--sidebar-accent)', 'sidebar-accent-foreground': 'var(--sidebar-accent-foreground)',
-          'sidebar-border': 'var(--sidebar-border)', 'sidebar-ring': 'var(--sidebar-ring)'
+          background: 'rgb(var(--background-rgb) / <alpha-value>)', foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)',
+          card: 'rgb(var(--card-rgb) / <alpha-value>)', 'card-foreground': 'rgb(var(--card-foreground-rgb) / <alpha-value>)',
+          popover: 'rgb(var(--popover-rgb) / <alpha-value>)', 'popover-foreground': 'rgb(var(--popover-foreground-rgb) / <alpha-value>)',
+          primary: 'rgb(var(--primary-rgb) / <alpha-value>)', 'primary-foreground': 'rgb(var(--primary-foreground-rgb) / <alpha-value>)',
+          secondary: 'rgb(var(--secondary-rgb) / <alpha-value>)', 'secondary-foreground': 'rgb(var(--secondary-foreground-rgb) / <alpha-value>)',
+          muted: 'rgb(var(--muted-rgb) / <alpha-value>)', 'muted-foreground': 'rgb(var(--muted-foreground-rgb) / <alpha-value>)',
+          accent: 'rgb(var(--accent-rgb) / <alpha-value>)', 'accent-foreground': 'rgb(var(--accent-foreground-rgb) / <alpha-value>)',
+          destructive: 'rgb(var(--destructive-rgb) / <alpha-value>)', 'destructive-foreground': 'rgb(var(--destructive-foreground-rgb) / <alpha-value>)',
+          border: 'rgb(var(--border-rgb) / <alpha-value>)', input: 'rgb(var(--input-rgb) / <alpha-value>)', ring: 'rgb(var(--ring-rgb) / <alpha-value>)',
+          'chart-1': 'rgb(var(--chart-1-rgb) / <alpha-value>)', 'chart-2': 'rgb(var(--chart-2-rgb) / <alpha-value>)', 'chart-3': 'rgb(var(--chart-3-rgb) / <alpha-value>)',
+          'chart-4': 'rgb(var(--chart-4-rgb) / <alpha-value>)', 'chart-5': 'rgb(var(--chart-5-rgb) / <alpha-value>)',
+          sidebar: 'rgb(var(--sidebar-rgb) / <alpha-value>)', 'sidebar-foreground': 'rgb(var(--sidebar-foreground-rgb) / <alpha-value>)',
+          'sidebar-primary': 'rgb(var(--sidebar-primary-rgb) / <alpha-value>)', 'sidebar-primary-foreground': 'rgb(var(--sidebar-primary-foreground-rgb) / <alpha-value>)',
+          'sidebar-accent': 'rgb(var(--sidebar-accent-rgb) / <alpha-value>)', 'sidebar-accent-foreground': 'rgb(var(--sidebar-accent-foreground-rgb) / <alpha-value>)',
+          'sidebar-border': 'rgb(var(--sidebar-border-rgb) / <alpha-value>)', 'sidebar-ring': 'rgb(var(--sidebar-ring-rgb) / <alpha-value>)'
         },
         borderRadius: {
           // Every bg-card container across the templates uses rounded-lg/xl -
@@ -1016,6 +1053,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('colorSearchInput').addEventListener('input', renderColorGroups);
+    document.getElementById('toggleAllColorGroupsButton').addEventListener('click', () => {
+        const allOpen = ALL_COLOR_GROUPS.every(g => openGroups.has(g.key));
+        setAllColorGroupsOpen(!allOpen);
+    });
 
     // Theme picker
     document.getElementById('themePickerButton').addEventListener('click', () => {
@@ -1128,7 +1169,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setVar(key, `${rem}rem`);
     };
     [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'],
-     ['spacing-gap-y', 'gapYRange', 'gapYNumber'], ['spacing-gap-x', 'gapXRange', 'gapXNumber']]
+     ['spacing-gap', 'gapRange', 'gapNumber']]
         .forEach(([key, rangeId, numberId]) => {
             const sync = makeSpacingSync(key, rangeId, numberId);
             document.getElementById(rangeId).addEventListener('input', (e) => sync(e.target.value));
