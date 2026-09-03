@@ -1,0 +1,524 @@
+/* Preview-document chrome for the three pages. Imported by the host into
+   @layer pages (no @layer wrapper here, no !important). Everything colored or
+   sized reads a var: semantic colors (--background, --card, --border …), the
+   type sets (--type-<set>-*), the family tokens (--font-sans/mono) and the
+   --pg-* chrome scale below. The only literals are badge chrome (22px
+   circles, 10px/700 system-ui white labels, the amber "unlinked" flag) and
+   outline widths. */
+
+/* --- Chrome scale ---
+   Page chrome is spaced/rounded from the system's own scale. The theme-vars
+   block names scale vars after the active source (Tailwind: --space-4;
+   Atlassian: --space-200), so chrome reads them through this one mapping;
+   the fallbacks only fire for a source whose scale lacks the Tailwind name.
+   Change a value here, and every page follows. */
+body {
+  --pg-space-0-5: var(--space-0-5, 0.125rem);
+  --pg-space-1: var(--space-1, 0.25rem);
+  --pg-space-2: var(--space-2, 0.5rem);
+  --pg-space-3: var(--space-3, 0.75rem);
+  --pg-space-4: var(--space-4, 1rem);
+  --pg-space-5: var(--space-5, 1.25rem);
+  --pg-space-6: var(--space-6, 1.5rem);
+  --pg-space-8: var(--space-8, 2rem);
+  --pg-space-10: var(--space-10, 2.5rem);
+  --pg-space-12: var(--space-12, 3rem);
+  --pg-space-16: var(--space-16, 4rem);
+  --pg-space-24: var(--space-24, 6rem);
+  --pg-radius-sm: var(--radius-sm, 0.25rem);
+  --pg-radius-md: var(--radius-md, 0.375rem);
+  --pg-radius-lg: var(--radius-lg, 0.5rem);
+  --pg-radius-xl: var(--radius-xl, 0.75rem);
+  --pg-radius-2xl: var(--radius-2xl, 1rem);
+  --pg-radius-full: var(--radius-full, 9999px);
+  --pg-border-width: var(--border-width-1, 1px);
+  --pg-shadow-sm: var(--shadow-sm, none);
+  --pg-text-xs: var(--font-size-xs, 0.75rem);
+  --pg-text-sm: var(--font-size-sm, 0.875rem);
+  --pg-text-base: var(--font-size-base, 1rem);
+  --pg-leading-4: var(--font-leading-4, 1rem);
+  --pg-leading-5: var(--font-leading-5, 1.25rem);
+  --pg-leading-6: var(--font-leading-6, 1.5rem);
+}
+
+/* --- Routes --- */
+[data-page] { display: none; }
+body[data-route="foundation"] [data-page="foundation"],
+body[data-route="typography"] [data-page="typography"],
+body[data-route="elements"] [data-page="elements"] { display: block; }
+
+/* --- Document --- */
+body {
+  margin: 0;
+  min-block-size: 100svh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--pg-text-base);
+  line-height: var(--pg-leading-6);
+  letter-spacing: var(--tracking-normal, 0);
+}
+
+.page {
+  max-inline-size: 72rem;
+  margin-inline: auto;
+  padding: var(--pg-space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pg-space-10);
+}
+
+.page-header { display: flex; flex-direction: column; gap: var(--pg-space-2); }
+.page-title {
+  font-family: var(--type-heading-family);
+  font-size: var(--type-heading-size);
+  line-height: var(--type-heading-leading);
+  font-weight: var(--type-heading-weight);
+  letter-spacing: var(--type-heading-tracking, 0);
+}
+.page-lead { color: var(--muted-foreground); max-inline-size: 60ch; }
+.page-muted { color: var(--muted-foreground); font-size: var(--pg-text-sm); line-height: var(--pg-leading-5); }
+
+.fd-section,
+.tp-section,
+.gallery-section { display: flex; flex-direction: column; gap: var(--pg-space-4); }
+
+.fd-heading,
+.gallery-title {
+  font-family: var(--type-subheading-family);
+  font-size: var(--type-subheading-size);
+  line-height: var(--type-subheading-leading);
+  font-weight: var(--type-subheading-weight);
+  letter-spacing: var(--type-subheading-tracking, 0);
+}
+
+/* --- Foundation: palette ramp chooser --- */
+.fd-ramp-chips { display: flex; flex-wrap: wrap; gap: var(--pg-space-2); }
+.fd-ramp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pg-space-2);
+  padding: var(--pg-space-1) var(--pg-space-3) var(--pg-space-1) var(--pg-space-1);
+  border: var(--pg-border-width) solid var(--border);
+  border-radius: var(--pg-radius-full);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--pg-text-sm);
+  line-height: var(--pg-leading-5);
+  cursor: pointer;
+}
+.fd-ramp-chip:hover { border-color: var(--ring); }
+.fd-ramp-chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--ring);
+}
+.fd-ramp-mini {
+  inline-size: var(--pg-space-12);
+  block-size: var(--pg-space-4);
+  border-radius: var(--pg-radius-full);
+  background: var(--ramp);
+}
+.fd-ramp-chip[aria-pressed="false"] .fd-ramp-mini { opacity: 0.45; }
+
+/* --- Foundation: swatch rows --- */
+.fd-family-rows { display: flex; flex-direction: column; gap: var(--pg-space-4); }
+.fd-family-row { display: flex; flex-direction: column; gap: var(--pg-space-1); }
+.fd-family-label {
+  font-family: var(--font-mono);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+  color: var(--muted-foreground);
+}
+.fd-swatches { display: flex; gap: var(--pg-space-1); }
+.fd-swatch-cell { flex: 1 1 0; min-inline-size: 0; display: flex; flex-direction: column; gap: var(--pg-space-1); }
+/* The swatch grows with its badge stack so a step referenced by many roles
+   shows them all; the row's cells stretch to the tallest. */
+.fd-swatch {
+  position: relative;
+  flex: 1;
+  min-block-size: var(--pg-space-12);
+  padding: var(--pg-space-1);
+  border-radius: var(--pg-radius-md);
+  background: var(--swatch);
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+}
+.fd-swatch-badges { display: flex; flex-direction: column; align-items: flex-start; gap: var(--pg-space-0-5); }
+.fd-swatch-shade {
+  font-family: var(--font-mono);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+/* Badge chrome: legible on any swatch, so deliberately not theme colors. */
+.fd-badge {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font: 700 10px/1.5 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+.fd-mode-mark {
+  position: absolute;
+  inset-block-start: var(--pg-space-1);
+  inset-inline-end: var(--pg-space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.9);
+  color: #000;
+  font: 700 9px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+.fd-mode-mark-inline { position: static; vertical-align: middle; }
+
+/* --- Foundation: semantic table --- */
+.fd-table-wrap { overflow-x: auto; }
+.fd-semantic {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--pg-text-sm);
+  line-height: var(--pg-leading-5);
+}
+.fd-semantic th {
+  text-align: start;
+  padding: var(--pg-space-2) var(--pg-space-3);
+  color: var(--muted-foreground);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-block-end: var(--pg-border-width) solid var(--border);
+}
+.fd-semantic td { padding: var(--pg-space-2) var(--pg-space-3); border-block-end: var(--pg-border-width) solid var(--border); vertical-align: middle; }
+.fd-sem-group th { padding-block-start: var(--pg-space-4); border-block-end: 0; }
+.fd-sem-row { cursor: pointer; }
+.fd-sem-row:hover { background: var(--accent); color: var(--accent-foreground); }
+.fd-sem-role { display: flex; flex-direction: column; }
+.fd-sem-label { font-weight: 500; }
+.fd-sem-key,
+.fd-hex,
+.fd-sem-name { font-family: var(--font-mono); font-size: var(--pg-text-xs); line-height: var(--pg-leading-4); }
+.fd-sem-key,
+.fd-hex { color: var(--muted-foreground); }
+.fd-sem-cell { white-space: nowrap; }
+.fd-dot {
+  display: inline-block;
+  vertical-align: middle;
+  inline-size: var(--pg-space-4);
+  block-size: var(--pg-space-4);
+  margin-inline-end: var(--pg-space-2);
+  border-radius: var(--pg-radius-sm);
+  background: var(--swatch);
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+}
+.fd-sem-name { margin-inline-end: var(--pg-space-2); }
+/* Warning flag: editor chrome (the sidebar's --ui-warning amber), so it
+   reads as a warning whatever palette is being edited. */
+.fd-unlinked { color: #d97706; font-style: italic; margin-inline-end: var(--pg-space-2); }
+
+/* --- Foundation: scale rows (name · value · detail · sample · in-use) --- */
+.fd-scale {
+  display: grid;
+  grid-template-columns: max-content max-content max-content minmax(0, 1fr) max-content;
+  column-gap: var(--pg-space-4);
+  row-gap: var(--pg-space-2);
+  align-items: center;
+}
+.fd-scale-shadow { row-gap: var(--pg-space-6); }
+.fd-scale-row { display: contents; }
+.fd-scale-name { font-family: var(--font-mono); font-size: var(--pg-text-sm); line-height: var(--pg-leading-5); }
+.fd-scale-value {
+  font-family: var(--font-mono);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.fd-bar {
+  display: block;
+  block-size: var(--pg-space-3);
+  inline-size: calc(var(--px) * 1px);
+  border-radius: var(--pg-radius-sm);
+  background: var(--primary);
+}
+.fd-sample {
+  display: block;
+  inline-size: var(--pg-space-16);
+  block-size: var(--pg-space-10);
+  background: var(--card);
+}
+.fd-sample-radius { border-radius: var(--sample); background: var(--primary); }
+.fd-sample-border-width { border-style: solid; border-width: var(--sample); border-color: var(--foreground); }
+.fd-sample-border-style { border-style: var(--sample); border-width: var(--sample-width); border-color: var(--foreground); }
+.fd-sample-shadow { box-shadow: var(--sample); border-radius: var(--pg-radius-md); }
+.fd-inuse {
+  justify-self: start;
+  padding: 0 var(--pg-space-2);
+  border-radius: var(--pg-radius-full);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-5);
+  white-space: nowrap;
+}
+
+/* --- Type sets: private vars per set, consumed by .type-set / .type-badge ---
+   Font values and badge identity both come from the vars scripts.js emits
+   (--type-<set>-* in theme-vars, --type-<set>-badge/abbr/meta in type-meta),
+   so this sheet holds no copy of TYPE_SETS. */
+[data-set="display"] { --_family: var(--type-display-family); --_size: var(--type-display-size); --_leading: var(--type-display-leading); --_weight: var(--type-display-weight); --_tracking: var(--type-display-tracking, 0); --_badge: var(--type-display-badge, #888); --_abbr: var(--type-display-abbr, "?"); --_meta: var(--type-display-meta, ""); }
+[data-set="heading"] { --_family: var(--type-heading-family); --_size: var(--type-heading-size); --_leading: var(--type-heading-leading); --_weight: var(--type-heading-weight); --_tracking: var(--type-heading-tracking, 0); --_badge: var(--type-heading-badge, #888); --_abbr: var(--type-heading-abbr, "?"); --_meta: var(--type-heading-meta, ""); }
+[data-set="subheading"] { --_family: var(--type-subheading-family); --_size: var(--type-subheading-size); --_leading: var(--type-subheading-leading); --_weight: var(--type-subheading-weight); --_tracking: var(--type-subheading-tracking, 0); --_badge: var(--type-subheading-badge, #888); --_abbr: var(--type-subheading-abbr, "?"); --_meta: var(--type-subheading-meta, ""); }
+[data-set="body"] { --_family: var(--type-body-family); --_size: var(--type-body-size); --_leading: var(--type-body-leading); --_weight: var(--type-body-weight); --_tracking: var(--type-body-tracking, 0); --_badge: var(--type-body-badge, #888); --_abbr: var(--type-body-abbr, "?"); --_meta: var(--type-body-meta, ""); }
+[data-set="label"] { --_family: var(--type-label-family); --_size: var(--type-label-size); --_leading: var(--type-label-leading); --_weight: var(--type-label-weight); --_tracking: var(--type-label-tracking, 0); --_badge: var(--type-label-badge, #888); --_abbr: var(--type-label-abbr, "?"); --_meta: var(--type-label-meta, ""); }
+[data-set="caption"] { --_family: var(--type-caption-family); --_size: var(--type-caption-size); --_leading: var(--type-caption-leading); --_weight: var(--type-caption-weight); --_tracking: var(--type-caption-tracking, 0); --_badge: var(--type-caption-badge, #888); --_abbr: var(--type-caption-abbr, "?"); --_meta: var(--type-caption-meta, ""); }
+[data-set="code"] { --_family: var(--type-code-family); --_size: var(--type-code-size); --_leading: var(--type-code-leading); --_weight: var(--type-code-weight); --_tracking: var(--type-code-tracking, 0); --_badge: var(--type-code-badge, #888); --_abbr: var(--type-code-abbr, "?"); --_meta: var(--type-code-meta, ""); }
+
+.type-set {
+  font-family: var(--_family);
+  font-size: var(--_size);
+  line-height: var(--_leading);
+  font-weight: var(--_weight);
+  letter-spacing: var(--_tracking);
+}
+
+/* Badge chrome: fixed 22px circles, white label, set color from type-meta. */
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: 9999px;
+  background: var(--_badge);
+  color: #fff;
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: 0;
+}
+.type-badge::before { content: var(--_abbr); }
+
+/* --- Typography: ramps (name · px · sample · uses) --- */
+.tp-ramp {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  column-gap: var(--pg-space-4);
+  row-gap: var(--pg-space-3);
+  align-items: center;
+}
+.tp-specimen { display: contents; }
+.tp-specimen-name { font-family: var(--font-mono); font-size: var(--pg-text-sm); line-height: var(--pg-leading-5); }
+.tp-specimen-px { font-family: var(--font-mono); font-size: var(--pg-text-xs); line-height: var(--pg-leading-4); color: var(--muted-foreground); }
+.tp-specimen-sample {
+  font-size: var(--sample);
+  line-height: var(--sample-leading, normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-leading-sample {
+  justify-self: start;
+  line-height: var(--sample);
+  font-size: var(--pg-text-base);
+  padding-inline: var(--pg-space-2);
+  border-radius: var(--pg-radius-sm);
+  background: var(--muted);
+}
+.tp-specimen-uses { display: flex; gap: var(--pg-space-1); min-inline-size: 22px; }
+
+/* --- Typography: set cards --- */
+.tp-sets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+  gap: var(--pg-space-4);
+}
+.tp-set-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pg-space-3);
+  padding: var(--pg-space-4);
+  border: var(--pg-border-width) solid var(--border);
+  border-radius: var(--pg-radius-lg);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: var(--pg-shadow-sm);
+  min-inline-size: 0;
+}
+.tp-set-head { display: flex; align-items: center; gap: var(--pg-space-2); min-inline-size: 0; }
+.tp-set-label { font-weight: 600; }
+.tp-set-chain {
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-set-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--pg-space-3);
+  row-gap: var(--pg-space-1);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+}
+.tp-set-meta dt { color: var(--muted-foreground); }
+.tp-set-meta dd { min-inline-size: 0; overflow-wrap: anywhere; }
+.tp-raw,
+.tp-token,
+.tp-token-px { font-family: var(--font-mono); }
+.tp-raw { color: var(--muted-foreground); }
+.tp-token-px,
+.tp-arrow { color: var(--muted-foreground); }
+.tp-set-specimen {
+  padding-block-start: var(--pg-space-2);
+  border-block-start: var(--pg-border-width) solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+/* --- Typography: sample article --- */
+.type-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--pg-space-2) var(--pg-space-6);
+}
+.type-legend-row { display: flex; align-items: center; gap: var(--pg-space-2); font-size: var(--pg-text-xs); line-height: var(--pg-leading-5); min-inline-size: 0; }
+.type-legend-name { font-weight: 600; min-inline-size: var(--pg-space-24); }
+.type-legend-meta { font-family: var(--font-mono); color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.type-legend-meta::before { content: var(--_meta); }
+
+/* The "phone": a fixed-width screen pushed right by --gutter so the badges
+   have room outside its frame. */
+.tp-screen {
+  --gutter: var(--pg-space-16);
+  --screen-pad: var(--pg-space-5);
+  margin-inline-start: var(--gutter);
+  max-inline-size: 24rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pg-space-5);
+  padding: var(--screen-pad) var(--screen-pad) var(--pg-space-6);
+  border: var(--pg-border-width) solid var(--border);
+  border-radius: var(--pg-radius-2xl);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: var(--pg-shadow-sm);
+}
+.type-block { position: relative; }
+/* Badges hang left of the block: past the screen's padding plus a gap,
+   centered on the first line via the set's own leading. */
+.type-badges {
+  position: absolute;
+  inset-inline-end: calc(100% + var(--screen-pad) + var(--pg-space-3));
+  inset-block-start: calc((var(--_leading, 1.5rem) - 22px) / 2);
+  display: flex;
+  flex-direction: row-reverse;
+  gap: var(--pg-space-1);
+}
+.tp-muted { color: var(--muted-foreground); }
+.tp-split { display: flex; justify-content: space-between; gap: var(--pg-space-3); }
+.tp-code {
+  padding: var(--pg-space-3);
+  border-radius: var(--pg-radius-md);
+  background: var(--muted);
+  color: var(--foreground);
+  overflow-x: auto;
+}
+.tp-tip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pg-space-1);
+  padding: var(--pg-space-3);
+  border: var(--pg-border-width) solid var(--border);
+  border-radius: var(--pg-radius-lg);
+  background: var(--background);
+  color: var(--foreground);
+}
+.tp-tip-title { color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
+.tp-actions { display: flex; align-items: center; gap: var(--pg-space-3); }
+.tp-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--pg-space-2) var(--pg-space-4);
+  border-radius: var(--pg-radius-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.tp-btn-outline {
+  background: transparent;
+  color: inherit;
+  border: var(--pg-border-width) solid var(--border);
+}
+
+/* --- Elements gallery chrome (markup from components.js) --- */
+.gallery-section { padding-block: var(--pg-space-4); min-inline-size: 0; }
+/* First column = row labels, then one column per state. The matrix markup
+   says how many states it renders via `style="--gallery-columns: N"`
+   (default 5 = every state), so auto-placement keeps each variant on its
+   own row. */
+.gallery-matrix {
+  display: grid;
+  grid-template-columns: auto repeat(var(--gallery-columns, 5), minmax(0, 1fr));
+  gap: var(--pg-space-3) var(--pg-space-4);
+  align-items: center;
+  overflow-x: auto;
+  min-inline-size: 0;
+}
+.gallery-state-label {
+  color: var(--muted-foreground);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gallery-row-label {
+  color: var(--muted-foreground);
+  font-size: var(--pg-text-xs);
+  line-height: var(--pg-leading-4);
+}
+.gallery-cell {
+  min-inline-size: 10rem;
+  padding: var(--pg-space-3);
+  border-radius: var(--pg-radius-md);
+  outline: 1px dashed transparent;
+}
+.gallery-cell:hover { outline-color: var(--border); }
+
+/* --- Selection affordances (preview/frame.js sets data-hover / data-selected).
+   Outline, not border/box-shadow, so component styling is untouched. --- */
+[data-part] { cursor: pointer; }
+[data-part][data-hover] { outline: 1px dashed var(--ring); outline-offset: 2px; }
+[data-part][data-selected] { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* A block's heading/paragraph/pre takes the SET's font wholesale - the UA
+   sheet's h1 { font-size: 2em } would otherwise stack on top of the set size
+   (v1's Tailwind preflight used to neutralise this). */
+.type-block :is(h1, h2, h3, h4, p, pre) {
+  font: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+/* Wide compound elements (card, alert, popover) get a reading-width cap in
+   the gallery so their body copy wraps instead of stretching the matrix. */
+.gallery-cell > :is(.ds-card, .ds-alert, .ds-popover, .ds-table, .ds-tabs-list) { max-inline-size: 32rem; }
+.gallery-cell { min-inline-size: 0; }

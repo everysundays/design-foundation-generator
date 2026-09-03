@@ -1,0 +1,544 @@
+/* preview/components.css - the design system's own element CSS.
+ *
+ * Imported by the preview document into @layer components; do not wrap in a
+ * layer here. Every colour, size, radius, shadow, padding, and type value is
+ * read from a private custom property (--_bg, --_text-color, --_border-width,
+ * …) that the wiring sheet (components.js buildWiringCss) assigns per
+ * element / variant / state from the public token vars. Nothing below names
+ * a token or a literal design value; only structure (display, alignment,
+ * cursors, 1em icon sizing, proportional thumb geometry) lives here.
+ *
+ * Private var names: --_<part> for single-prop parts, --_<part>-<prop> for
+ * multi-prop parts, --_<part>-family|weight|size|leading|tracking for a
+ * `type` prop. See the header of components.js.
+ *
+ * Selectors are flat: one class (plus an attribute on that same element).
+ * Variant/state toggles that need to reach a child (checkbox mark, switch
+ * thumb, focus ring on an inner box) are expressed as state tokens set on
+ * the root and read by the child - never as a descendant selector.
+ */
+
+/* --- Shared: focus ring, disabled cursor, text-part typography ---------- */
+
+.ds-button:is(:focus-visible:not([data-state]), [data-state="focus"]),
+.ds-input:is(:focus-within:not([data-state]), [data-state="focus"]),
+.ds-select:is(:focus-visible:not([data-state]), [data-state="focus"]),
+.ds-textarea:is(:focus-within:not([data-state]), [data-state="focus"]),
+.ds-tab:is(:focus-visible:not([data-state]), [data-state="focus"]) {
+    outline: var(--_ring-width) solid var(--_ring-color);
+    outline-offset: 2px;
+}
+
+/* Inner boxes draw the ring through a state token set by their root. */
+.ds-checkbox:is(:focus-within:not([data-state]), [data-state="focus"]),
+.ds-radio:is(:focus-within:not([data-state]), [data-state="focus"]),
+.ds-switch:is(:focus-within:not([data-state]), [data-state="focus"]) {
+    --_ring-on: 1;
+}
+
+.ds-button:is(:disabled, [aria-disabled="true"]),
+.ds-input[aria-disabled="true"],
+.ds-select[aria-disabled="true"],
+.ds-textarea[aria-disabled="true"],
+.ds-checkbox[aria-disabled="true"],
+.ds-radio[aria-disabled="true"],
+.ds-switch[aria-disabled="true"],
+.ds-tab:is(:disabled, [aria-disabled="true"]),
+.ds-list-item[aria-disabled="true"] {
+    cursor: not-allowed;
+}
+
+/* Parts whose type set is the element's `text` part. */
+.ds-button,
+.ds-input,
+.ds-select,
+.ds-textarea,
+.ds-badge,
+.ds-tab,
+.ds-avatar,
+.ds-tooltip,
+.ds-popover,
+.ds-list-item {
+    color: var(--_text-color);
+    font-family: var(--_text-family);
+    font-weight: var(--_text-weight);
+    font-size: var(--_text-size);
+    line-height: var(--_text-leading);
+    letter-spacing: var(--_text-tracking);
+}
+
+/* Parts with their own {color,type}: label, title, description, body, meta. */
+.ds-checkbox-label,
+.ds-radio-label,
+.ds-switch-label {
+    color: var(--_label-color);
+    font-family: var(--_label-family);
+    font-weight: var(--_label-weight);
+    font-size: var(--_label-size);
+    line-height: var(--_label-leading);
+    letter-spacing: var(--_label-tracking);
+}
+
+.ds-card-title,
+.ds-alert-title {
+    margin: 0;
+    color: var(--_title-color);
+    font-family: var(--_title-family);
+    font-weight: var(--_title-weight);
+    font-size: var(--_title-size);
+    line-height: var(--_title-leading);
+    letter-spacing: var(--_title-tracking);
+}
+
+.ds-card-description,
+.ds-alert-description {
+    margin: 0;
+    color: var(--_description-color);
+    font-family: var(--_description-family);
+    font-weight: var(--_description-weight);
+    font-size: var(--_description-size);
+    line-height: var(--_description-leading);
+    letter-spacing: var(--_description-tracking);
+}
+
+.ds-card-body {
+    color: var(--_body-color);
+    font-family: var(--_body-family);
+    font-weight: var(--_body-weight);
+    font-size: var(--_body-size);
+    line-height: var(--_body-leading);
+    letter-spacing: var(--_body-tracking);
+}
+
+.ds-list-item-meta {
+    margin-inline-start: auto;
+    color: var(--_meta-color);
+    font-family: var(--_meta-family);
+    font-weight: var(--_meta-weight);
+    font-size: var(--_meta-size);
+    line-height: var(--_meta-leading);
+    letter-spacing: var(--_meta-tracking);
+}
+
+/* Motion, gated. */
+@media (prefers-reduced-motion: no-preference) {
+    .ds-button,
+    .ds-input,
+    .ds-select,
+    .ds-textarea,
+    .ds-checkbox-box,
+    .ds-radio-box,
+    .ds-switch-track,
+    .ds-tab,
+    .ds-table-row,
+    .ds-list-item {
+        transition: background-color 150ms, color 150ms, border-color 150ms, box-shadow 150ms, outline-color 150ms;
+    }
+    .ds-switch-thumb {
+        transition: translate 150ms;
+    }
+}
+
+/* --- Button ------------------------------------------------------------- */
+
+.ds-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--_gap);
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-button-text {
+    color: var(--_text-color);
+}
+
+.ds-button-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
+}
+
+/* Link is the only variant with static (non-token) state styling. */
+.ds-button[data-variant="link"]:is(:hover:not([data-state]), [data-state="hover"]) {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+}
+
+.ds-card-action {
+    align-self: flex-start;
+}
+
+/* --- Input / Textarea / Select ------------------------------------------ */
+
+.ds-input,
+.ds-textarea {
+    display: inline-flex;
+    inline-size: 100%;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+    cursor: text;
+}
+
+.ds-input-field,
+.ds-textarea-field {
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    cursor: inherit;
+}
+
+.ds-textarea-field {
+    resize: none;
+}
+
+.ds-input-field::placeholder,
+.ds-textarea-field::placeholder {
+    color: var(--_placeholder);
+    opacity: 1;
+}
+
+.ds-select {
+    display: inline-flex;
+    align-items: center;
+    inline-size: 100%;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-select-text {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--_text-color);
+}
+
+.ds-select-icon {
+    flex: none;
+    margin-inline-start: auto;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
+}
+
+/* --- Checkbox / Radio --------------------------------------------------- */
+
+.ds-checkbox,
+.ds-radio {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--_gap);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-checkbox[data-variant="checked"],
+.ds-radio[data-variant="checked"] {
+    --_mark-on: 1;
+}
+
+.ds-checkbox-box,
+.ds-radio-box {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--_size);
+    block-size: var(--_size);
+    background: var(--_box);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    color: var(--_mark);
+    outline: calc(var(--_ring-width) * var(--_ring-on, 0)) solid var(--_ring-color);
+    outline-offset: 2px;
+}
+
+.ds-checkbox-mark {
+    inline-size: 75%;
+    block-size: 75%;
+    opacity: var(--_mark-on, 0);
+}
+
+.ds-radio-mark {
+    inline-size: 50%;
+    block-size: 50%;
+    border-radius: var(--_radius);
+    background: var(--_mark);
+    opacity: var(--_mark-on, 0);
+}
+
+/* --- Switch ------------------------------------------------------------- */
+
+.ds-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--_gap);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-switch[data-variant="on"] {
+    --_thumb-shift: calc(var(--_width) - var(--_height));
+}
+
+.ds-switch-track {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    inline-size: var(--_width);
+    block-size: var(--_height);
+    background: var(--_track);
+    border-radius: var(--_radius);
+    outline: calc(var(--_ring-width) * var(--_ring-on, 0)) solid var(--_ring-color);
+    outline-offset: 2px;
+}
+
+/* Thumb is 80% of the track height, inset 10%; travel = width - height. */
+.ds-switch-thumb {
+    inline-size: calc(var(--_height) * 0.8);
+    block-size: calc(var(--_height) * 0.8);
+    margin-inline-start: calc(var(--_height) * 0.1);
+    background: var(--_thumb);
+    border-radius: var(--_radius);
+    translate: var(--_thumb-shift, 0) 0;
+}
+
+/* --- Badge -------------------------------------------------------------- */
+
+.ds-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    white-space: nowrap;
+}
+
+.ds-badge-text {
+    color: var(--_text-color);
+}
+
+/* --- Card --------------------------------------------------------------- */
+
+.ds-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    padding: var(--_padding);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+}
+
+/* --- Alert -------------------------------------------------------------- */
+
+.ds-alert {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "icon title" "icon description";
+    column-gap: var(--_gap);
+    row-gap: 0;
+    align-items: start;
+    padding: var(--_padding);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+}
+
+.ds-alert-icon {
+    grid-area: icon;
+    inline-size: 1em;
+    block-size: 1em;
+    font-size: var(--_title-size);
+    line-height: var(--_title-leading);
+    color: var(--_icon);
+}
+
+.ds-alert-title {
+    grid-area: title;
+}
+
+.ds-alert-description {
+    grid-area: description;
+}
+
+/* --- Tabs --------------------------------------------------------------- */
+
+.ds-tabs-list {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--_gap);
+    padding: var(--_padding);
+    background: var(--_bg);
+    border-radius: var(--_radius);
+}
+
+.ds-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: 0;
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-tab-text {
+    color: var(--_text-color);
+}
+
+/* --- Table -------------------------------------------------------------- */
+
+.ds-table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    text-align: start;
+}
+
+.ds-table-header {
+    padding: var(--_cell-padding-y) var(--_cell-padding-x);
+    background: var(--_header-color);
+    border-block-end: var(--_border-width) var(--_border-style) var(--_border-color);
+    text-align: start;
+    color: var(--_header-text);
+    font-family: var(--_header-family);
+    font-weight: var(--_header-weight);
+    font-size: var(--_header-size);
+    line-height: var(--_header-leading);
+    letter-spacing: var(--_header-tracking);
+}
+
+.ds-table-row {
+    background: var(--_bg);
+    border-block-end: var(--_border-width) var(--_border-style) var(--_border-color);
+}
+
+.ds-table-cell {
+    padding: var(--_cell-padding-y) var(--_cell-padding-x);
+    color: var(--_cell-color);
+    font-family: var(--_cell-family);
+    font-weight: var(--_cell-weight);
+    font-size: var(--_cell-size);
+    line-height: var(--_cell-leading);
+    letter-spacing: var(--_cell-tracking);
+}
+
+/* --- Avatar ------------------------------------------------------------- */
+
+.ds-avatar {
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--_size);
+    block-size: var(--_size);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    overflow: hidden;
+    user-select: none;
+}
+
+.ds-avatar-text {
+    color: var(--_text-color);
+}
+
+/* --- Tooltip ------------------------------------------------------------ */
+
+.ds-tooltip {
+    display: inline-block;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+    white-space: nowrap;
+}
+
+.ds-tooltip-text {
+    color: var(--_text-color);
+}
+
+/* --- Popover ------------------------------------------------------------ */
+
+.ds-popover {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    max-inline-size: 100%;
+    padding: var(--_padding);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+}
+
+.ds-popover-text {
+    margin: 0;
+    color: var(--_text-color);
+}
+
+/* --- List item ---------------------------------------------------------- */
+
+.ds-list-item {
+    display: flex;
+    align-items: center;
+    gap: var(--_gap);
+    inline-size: 100%;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border-radius: var(--_radius);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-list-item-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
+}
+
+.ds-list-item-text {
+    flex: 1;
+    min-inline-size: 0;
+    color: var(--_text-color);
+}
+
+/* --- Separator ---------------------------------------------------------- */
+
+.ds-separator {
+    inline-size: 100%;
+    block-size: var(--_width);
+    margin: 0;
+    border: 0;
+    background: var(--_line);
+}

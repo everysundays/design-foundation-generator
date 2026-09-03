@@ -1,0 +1,440 @@
+// dtcg.js - tokens.json export / import for Theme Editor v2.
+//
+// Writes and reads the Tokens Studio / Penpot importer dialect (see
+// penpot/tokens.example.json and ARCHITECTURE-v2.md "dtcg.js API"): a file
+// is a map of token SETS, each set a nested group tree whose leaves are
+// `{ "$type": ..., "$value": ... }`, plus `$metadata.tokenSetOrder` and
+// `$themes`. References are `{group.name}` strings that resolve across
+// every set enabled in a theme.
+//
+// Sets produced:
+//   global     palette.*, space.*, radius.*, border.width.*, border.style.*,
+//              shadow.*, font.family.*, font.size.*, font.lineHeight.*, type.*
+//              + $extensions["theme-editor"] = { version, name, source, families }
+//   light/dark color.<role> -> "{palette.<name>}" when linked into the active
+//              source, else the literal value
+//   component  component.<element>[.<variant>].<part>[.<prop>][-<state>] -> "{ref}"
+//
+// Naming rules worth knowing:
+// * Scale entries keep the source's OWN token name as a single flat key, so
+//   Atlassian's "space.100" is written as global.space["space.100"] and is
+//   referenced as "{space.space.100}" - exactly what parseRef/refToVar in
+//   foundation.js already produce. Tokens Studio flattens nested groups and
+//   dotted keys to the same path, so the importer reads both spellings.
+// * A state token would otherwise be the PARENT of nothing and the CHILD of
+//   a token (`button.primary.bg.color` is a token, `.hover` extends it), and
+//   a token object can't also be a group. So the state joins the last
+//   segment with "-": `button.primary.bg.color.hover` is emitted as
+//   component.button.primary.bg["color-hover"]. parseTokensJson reverses
+//   it: a leaf whose last "-<suffix>" is hover|focus|active|disabled is a
+//   state token. (No part/prop name ends in one of those words.)
+// * Lengths are exported in px (Penpot), the editor keeps rem (16px/rem).
+//   A type set's size/leading is a "{font.size.<name>}" ref when the rem
+//   sits exactly on a scale entry, else a px literal.
+
+const DTCG_COLOR_ROLES = [
+    'background', 'foreground', 'card', 'card-foreground', 'popover', 'popover-foreground',
+    'primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'muted', 'muted-foreground',
+    'accent', 'accent-foreground', 'destructive', 'destructive-foreground', 'border', 'input', 'ring',
+    'chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5',
+    'sidebar', 'sidebar-foreground', 'sidebar-primary', 'sidebar-primary-foreground',
+    'sidebar-accent', 'sidebar-accent-foreground', 'sidebar-border', 'sidebar-ring',
+    'shadow-color'
+];
+
+const DTCG_STATES = ['hover', 'focus', 'active', 'disabled'];
+const DTCG_FONT_KEYS = ['sans', 'serif', 'mono'];
+const DTCG_PALETTE_SPECIALS = [['white', '#ffffff'], ['black', '#000000'], ['transparent', 'transparent']];
+const DTCG_SET_ORDER = ['global', 'light', 'dark', 'component'];
+
+// parseRef kind -> DTCG/Tokens Studio $type.
+const DTCG_TYPE_OF_KIND = {
+    color: 'color', palette: 'color', space: 'spacing', radius: 'borderRadius',
+    borderWidth: 'strokeWidth', borderStyle: 'strokeStyle', shadow: 'boxShadow',
+    type: 'typography', typeSize: 'fontSizes', typeLeading: 'lineHeights', fontFamily: 'fontFamilies'
+};
+
+// --- small helpers ---
+
+function dtcgToken(type, value, extra) {
+    return Object.assign({ $type: type, $value: value }, extra || {});
+}
+
+function dtcgIsToken(node) {
+    return !!node && typeof node === 'object' && !Array.isArray(node) && Object.prototype.hasOwnProperty.call(node, '$value');
+}
+
+function dtcgIsGroup(node) {
+    return !!node && typeof node === 'object' && !Array.isArray(node) && !dtcgIsToken(node);
+}
+
+// "{a.b.c}" -> "a.b.c", anything else -> null.
+function dtcgRefOf(value) {
+    const m = typeof value === 'string' ? value.match(/^\{([^{}]+)\}$/) : null;
+    return m ? m[1] : null;
+}
+
+function dtcgRound(n, digits) {
+    const f = Math.pow(10, digits);
+    return Math.round(n * f) / f;
+}
+
+// Length of a scale entry as the exported px string ("16px"; radius "full"
+// has no px and keeps its own value, "9999px").
+function dtcgEntryPx(entry) {
+    return entry.px === null || entry.px === undefined ? entry.value : `${entry.px}px`;
+}
+
+function dtcgRemToPx(rem) {
+    return `${dtcgRound(rem * 16, 2)}px`;
+}
+
+function dtcgPxToRem(px) {
+    return `${dtcgRound(px / 16, 4)}rem`;
+}
+
+// "var(--font-sans)" -> "sans", else null.
+function dtcgFamilyVarKey(value) {
+    const m = typeof value === 'string' ? value.match(/^var\(--font-(sans|serif|mono)\)$/) : null;
+    return m ? m[1] : null;
+}
+
+// Every token leaf of a group as [name, token], name = path joined with ".",
+// so nested groups and flat dotted keys read the same way.
+function dtcgLeaves(group, prefix) {
+    const out = [];
+    if (!dtcgIsGroup(group)) return out;
+    Object.keys(group).forEach(key => {
+        if (key.startsWith('$')) return;
+        const node = group[key];
+        const name = prefix ? `${prefix}.${key}` : key;
+        if (dtcgIsToken(node)) out.push([name, node]);
+        else if (dtcgIsGroup(node)) out.push(...dtcgLeaves(node, name));
+    });
+    return out;
+}
+
+function dtcgHasTokens(set) {
+    return dtcgLeaves(set, '').length > 0;
+}
+
+// Type sets from the vars when the caller passes none: every `type-<set>-size`.
+function dtcgTypeSetsFromVars(vars) {
+    return Object.keys(vars || {})
+        .map(k => k.match(/^type-(.+)-size$/))
+        .filter(Boolean)
+        .map(m => ({ key: m[1] }));
+}
+
+// --- export ---
+
+function buildTokensJson(ctx) {
+    ctx = ctx || {};
+    const source = FOUNDATION[ctx.source] ? ctx.source : 'tailwind';
+    const families = Array.isArray(ctx.families) ? ctx.families.slice() : [];
+    const vars = { light: (ctx.vars && ctx.vars.light) || {}, dark: (ctx.vars && ctx.vars.dark) || {} };
+    const links = { light: (ctx.links && ctx.links.light) || {}, dark: (ctx.links && ctx.links.dark) || {} };
+    const components = ctx.components || {};
+    const typeSets = Array.isArray(ctx.typeSets) && ctx.typeSets.length ? ctx.typeSets : dtcgTypeSetsFromVars(vars.light);
+
+    const scaleGroup = (kind, type) => {
+        const group = {};
+        scaleEntries(source, kind).forEach(entry => { group[entry.name] = dtcgToken(type, dtcgEntryPx(entry)); });
+        return group;
+    };
+
+    // palette: the subset + specials + whatever a link still points at
+    // outside the subset, so no "{palette.x}" reference ever dangles.
+    const palette = {};
+    families.forEach(family => {
+        paletteFamilyEntries(source, family).forEach(entry => { palette[entry.name] = dtcgToken('color', entry.hex); });
+    });
+    DTCG_PALETTE_SPECIALS.forEach(([name, hex]) => { palette[name] = dtcgToken('color', hex); });
+    ['light', 'dark'].forEach(mode => {
+        Object.keys(links[mode]).forEach(key => {
+            const link = links[mode][key];
+            if (!link || link.source !== source || !DTCG_COLOR_ROLES.includes(key)) return;
+            if (palette[link.name]) return;
+            const entry = paletteEntryByName(source, link.name);
+            const hex = entry ? entry.hex : link.hex;
+            if (hex) palette[link.name] = dtcgToken('color', hex);
+        });
+    });
+
+    const shadow = {};
+    scaleEntries(source, 'shadow').forEach(entry => {
+        const layers = entry.layers || [];
+        const value = layers.map(([x, y, blur, spread]) => ({
+            x: `${x}px`, y: `${y}px`, blur: `${blur}px`, spread: `${spread}px`,
+            color: '{color.shadow-color}', type: 'dropShadow'
+        }));
+        const extra = layers.length ? { $description: `alpha ${layers.map(l => l[4]).join(', ')}` } : null;
+        shadow[entry.name] = dtcgToken('boxShadow', value, extra);
+    });
+
+    const fontFamily = {};
+    DTCG_FONT_KEYS.forEach(key => {
+        const value = vars.light[`font-${key}`];
+        if (typeof value === 'string' && value) fontFamily[key] = dtcgToken('fontFamilies', value);
+    });
+
+    // A type set is a typography composite: family/size/leading become refs
+    // when they sit on a token, weight and tracking are literals.
+    const lengthOrRef = (raw, kind, prefix) => {
+        if (typeof raw !== 'string') return null;
+        const remMatch = raw.match(/^(-?[\d.]+)rem$/);
+        const pxMatch = raw.match(/^(-?[\d.]+)px$/);
+        const rem = remMatch ? parseFloat(remMatch[1]) : pxMatch ? parseFloat(pxMatch[1]) / 16 : NaN;
+        if (Number.isNaN(rem)) return raw;
+        const entry = scaleEntryForRem(source, kind, rem);
+        return entry ? `{${prefix}.${entry.name}}` : dtcgRemToPx(rem);
+    };
+    const type = {};
+    typeSets.forEach(set => {
+        const key = set.key;
+        const get = prop => vars.light[`type-${key}-${prop}`];
+        if (['family', 'weight', 'size', 'leading', 'tracking'].every(p => get(p) === undefined)) return;
+        const value = {};
+        const family = get('family');
+        const familyKey = dtcgFamilyVarKey(family);
+        if (familyKey) value.fontFamily = `{font.family.${familyKey}}`;
+        else if (typeof family === 'string' && family) value.fontFamily = family;
+        if (get('weight') !== undefined) value.fontWeight = String(get('weight'));
+        const size = lengthOrRef(get('size'), 'typeSize', 'font.size');
+        if (size !== null) value.fontSize = size;
+        const leading = lengthOrRef(get('leading'), 'typeLeading', 'font.lineHeight');
+        if (leading !== null) value.lineHeight = leading;
+        if (get('tracking') !== undefined) value.letterSpacing = String(get('tracking'));
+        type[key] = dtcgToken('typography', value);
+    });
+
+    const global = {
+        palette,
+        space: scaleGroup('space', 'spacing'),
+        radius: scaleGroup('radius', 'borderRadius'),
+        border: {
+            width: scaleGroup('borderWidth', 'strokeWidth'),
+            style: scaleGroup('borderStyle', 'strokeStyle')
+        },
+        shadow,
+        font: {
+            family: fontFamily,
+            size: scaleGroup('typeSize', 'fontSizes'),
+            lineHeight: scaleGroup('typeLeading', 'lineHeights')
+        },
+        type,
+        $extensions: {
+            'theme-editor': { version: 2, name: ctx.name || 'Untitled', source, families: families.slice() }
+        }
+    };
+
+    const colorSet = mode => {
+        const color = {};
+        DTCG_COLOR_ROLES.forEach(role => {
+            const raw = vars[mode][role];
+            if (raw === undefined || raw === null) return;
+            const link = links[mode][role];
+            const linked = link && link.source === source && palette[link.name];
+            color[role] = dtcgToken('color', linked ? `{palette.${link.name}}` : String(raw));
+        });
+        return { color };
+    };
+
+    // component: nest by dotted id, state folded into the leaf (see header).
+    const component = {};
+    Object.keys(components).forEach(id => {
+        const ref = components[id];
+        const parsed = parseRef(ref);
+        if (!parsed) return;
+        const $type = DTCG_TYPE_OF_KIND[parsed.kind];
+        if (!$type) return;
+        const segments = id.split('.');
+        if (segments.length > 2 && DTCG_STATES.includes(segments[segments.length - 1])) {
+            const state = segments.pop();
+            segments[segments.length - 1] += `-${state}`;
+        }
+        let node = component;
+        for (let i = 0; i < segments.length - 1; i++) {
+            const seg = segments[i];
+            if (!dtcgIsGroup(node[seg])) node[seg] = {};
+            node = node[seg];
+        }
+        node[segments[segments.length - 1]] = dtcgToken($type, `{${ref}}`);
+    });
+
+    return {
+        global,
+        light: colorSet('light'),
+        dark: colorSet('dark'),
+        component: { component },
+        $metadata: { tokenSetOrder: DTCG_SET_ORDER.slice() },
+        $themes: [
+            { id: 'light', name: 'Light', group: 'mode', selectedTokenSets: { global: 'source', light: 'enabled', component: 'enabled' } },
+            { id: 'dark', name: 'Dark', group: 'mode', selectedTokenSets: { global: 'source', dark: 'enabled', component: 'enabled' } }
+        ]
+    };
+}
+
+// --- import ---
+
+// Which palette source the given palette names belong to (most matches wins,
+// Tailwind on a tie / no matches).
+function dtcgInferSource(names) {
+    let best = 'tailwind';
+    let bestCount = -1;
+    Object.keys(FOUNDATION).forEach(key => {
+        const known = new Set(FOUNDATION[key].color.names().flat());
+        const count = names.filter(n => known.has(n)).length;
+        if (count > bestCount) { best = key; bestCount = count; }
+    });
+    return best;
+}
+
+function dtcgInferFamilies(source, names) {
+    const present = new Set();
+    names.forEach(n => { const f = paletteFamilyOfName(source, n); if (f) present.add(f); });
+    return FOUNDATION[source].color.families().filter(f => present.has(f));
+}
+
+function parseTokensJson(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        throw new Error('Not a tokens file: expected a JSON object of token sets');
+    }
+    const setNames = Object.keys(obj).filter(k => !k.startsWith('$') && dtcgIsGroup(obj[k]) && dtcgHasTokens(obj[k]));
+    if (!setNames.length) {
+        throw new Error('Not a tokens file: no token set contains "$type"/"$value" tokens');
+    }
+    const declaredOrder = obj.$metadata && Array.isArray(obj.$metadata.tokenSetOrder) ? obj.$metadata.tokenSetOrder : [];
+    const order = declaredOrder.filter(n => setNames.includes(n)).concat(setNames.filter(n => !declaredOrder.includes(n)));
+
+    const globalName = setNames.includes('global') ? 'global' : (order.find(n => obj[n].palette) || order[0]);
+    const global = obj[globalName];
+    const colorSets = order.filter(n => n !== globalName && dtcgIsGroup(obj[n].color));
+    const lightName = setNames.includes('light') ? 'light' : (colorSets[0] || (dtcgIsGroup(global.color) ? globalName : null));
+    const darkName = setNames.includes('dark') ? 'dark' : (colorSets.find(n => n !== lightName) || null);
+    const componentName = setNames.includes('component') ? 'component' : order.find(n => dtcgIsGroup(obj[n].component));
+
+    const ext = (global.$extensions && global.$extensions['theme-editor']) || {};
+    const paletteLeaves = dtcgLeaves(global.palette, '');
+    const paletteNames = paletteLeaves.map(([name]) => name);
+    const source = FOUNDATION[ext.source] ? ext.source : dtcgInferSource(paletteNames);
+    const families = Array.isArray(ext.families) ? ext.families.slice() : dtcgInferFamilies(source, paletteNames);
+
+    const result = {
+        name: typeof ext.name === 'string' && ext.name ? ext.name : 'Imported tokens',
+        source,
+        families,
+        vars: { light: {}, dark: {} },
+        links: { light: {}, dark: {} },
+        components: {},
+        warnings: []
+    };
+
+    // Palette lookups: the source's own swatches, the specials, then any
+    // literal the file's palette group carries (custom ramps).
+    const fileHex = {};
+    paletteLeaves.forEach(([name, tok]) => { if (typeof tok.$value === 'string' && !dtcgRefOf(tok.$value)) fileHex[name] = tok.$value; });
+    const paletteHex = name => {
+        const entry = paletteEntryByName(source, name);
+        if (entry) return entry.hex;
+        const special = DTCG_PALETTE_SPECIALS.find(([n]) => n === name);
+        if (special) return special[1];
+        return fileHex[name] || null;
+    };
+
+    const readColorSet = (set, mode) => {
+        const leaves = dtcgLeaves(set && set.color, '');
+        const byRole = {};
+        leaves.forEach(([role, tok]) => { byRole[role] = tok; });
+        // Resolve a role's value, following {color.x} aliases inside the set
+        // and ending on a palette link or a literal.
+        const resolve = (role, depth) => {
+            const tok = byRole[role];
+            if (!tok) return null;
+            const value = tok.$value;
+            const ref = dtcgRefOf(value);
+            if (!ref) return { value: value, link: null };
+            if (ref.startsWith('palette.')) {
+                const name = ref.slice('palette.'.length);
+                const hex = paletteHex(name);
+                if (hex === null) {
+                    result.warnings.push(`${mode}.color.${role}: unknown palette token "${name}"`);
+                    return { value: value, link: null };
+                }
+                return { value: hex, link: { source, name, hex } };
+            }
+            if (ref.startsWith('color.') && depth < 8) {
+                const inner = resolve(ref.slice('color.'.length), depth + 1);
+                if (inner) return inner;
+            }
+            result.warnings.push(`${mode}.color.${role}: unresolved reference ${value}`);
+            return { value: value, link: null };
+        };
+        Object.keys(byRole).forEach(role => {
+            const r = resolve(role, 0);
+            if (!r || r.value === undefined) return;
+            result.vars[mode][role] = typeof r.value === 'string' ? r.value : String(r.value);
+            if (r.link) result.links[mode][role] = r.link;
+        });
+    };
+    if (lightName) readColorSet(obj[lightName], 'light');
+    if (darkName) readColorSet(obj[darkName], 'dark');
+    else {
+        result.vars.dark = Object.assign({}, result.vars.light);
+        result.links.dark = Object.assign({}, result.links.light);
+    }
+
+    // font.family.* -> font-sans|serif|mono in both modes
+    dtcgLeaves(global.font && global.font.family, '').forEach(([key, tok]) => {
+        if (!DTCG_FONT_KEYS.includes(key) || typeof tok.$value !== 'string') return;
+        result.vars.light[`font-${key}`] = tok.$value;
+        result.vars.dark[`font-${key}`] = tok.$value;
+    });
+
+    // type.<set> composite -> the five type-<set>-* vars in both modes
+    const remOf = (raw, kind, prefix) => {
+        if (typeof raw !== 'string') return null;
+        const ref = dtcgRefOf(raw);
+        if (ref) {
+            if (!ref.startsWith(`${prefix}.`)) return null;
+            const entry = findScaleEntry(source, kind, ref.slice(prefix.length + 1));
+            return entry && entry.rem !== null && entry.rem !== undefined ? `${entry.rem}rem` : null;
+        }
+        const px = raw.match(/^(-?[\d.]+)px$/);
+        if (px) return dtcgPxToRem(parseFloat(px[1]));
+        if (/^(-?[\d.]+)rem$/.test(raw)) return raw;
+        return null;
+    };
+    dtcgLeaves(global.type, '').forEach(([set, tok]) => {
+        const v = tok.$value;
+        if (!v || typeof v !== 'object') return;
+        const out = {};
+        const familyRef = dtcgRefOf(v.fontFamily);
+        if (familyRef && familyRef.startsWith('font.family.')) out.family = `var(--font-${familyRef.slice('font.family.'.length)})`;
+        else if (typeof v.fontFamily === 'string' && v.fontFamily) out.family = v.fontFamily;
+        if (v.fontWeight !== undefined) out.weight = String(v.fontWeight);
+        const size = remOf(v.fontSize, 'typeSize', 'font.size');
+        if (size) out.size = size;
+        const leading = remOf(v.lineHeight, 'typeLeading', 'font.lineHeight');
+        if (leading) out.leading = leading;
+        out.tracking = v.letterSpacing !== undefined ? String(v.letterSpacing) : '0em';
+        Object.keys(out).forEach(prop => {
+            result.vars.light[`type-${set}-${prop}`] = out[prop];
+            result.vars.dark[`type-${set}-${prop}`] = out[prop];
+        });
+    });
+
+    // component.* -> components[id] = ref, undoing the "-<state>" leaf rule
+    if (componentName) {
+        dtcgLeaves(obj[componentName].component, '').forEach(([path, tok]) => {
+            const ref = dtcgRefOf(tok.$value);
+            if (!ref || !parseRef(ref)) return;
+            const segments = path.split('.');
+            const m = segments[segments.length - 1].match(/^(.+)-(hover|focus|active|disabled)$/);
+            if (m) { segments[segments.length - 1] = m[1]; segments.push(m[2]); }
+            result.components[segments.join('.')] = ref;
+        });
+    }
+
+    return result;
+}

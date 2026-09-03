@@ -2,41 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Theme Editor</title>
+    <title>Design System Editor</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
     <script src="tweakcn-themes-full.js"></script>
     <script src="tailwind-palette.js"></script>
     <script src="atlassian-palette.js"></script>
-    <script src="templates/overview.js"></script>
-    <script src="templates/mail.js"></script>
-    <script src="templates/cards.js"></script>
-    <script src="templates/dashboard.js"></script>
-    <script src="templates/application.js"></script>
-    <script src="templates/marketing.js"></script>
-    <script src="templates/typography.js"></script>
-    <script src="templates/color-palette.js"></script>
-    <script src="templates/timebank.js"></script>
+    <script src="foundation.js"></script>
+    <script src="components.js"></script>
+    <script src="pages.js"></script>
+    <script src="dtcg.js"></script>
 </head>
 <body>
     <div class="app">
         <header class="toolbar">
             <div class="toolbar-group toolbar-group-left">
                 <div class="toolbar-group">
-                    <button id="themePickerButton" class="theme-picker-button">
+                    <button id="themePickerButton" class="theme-picker-button" title="Start from a theme or a saved system">
+                        <span class="theme-picker-prefix">Start from</span>
                         <span id="themeSwatchDots" class="theme-swatch-dots"></span>
                         <span id="themeNameLabel">Default</span>
                         <i class="fas fa-chevron-down"></i>
                     </button>
                     <div id="themePickerMenu" class="theme-picker-menu" hidden>
-                        <input type="text" id="themeSearchInput" class="theme-search-input" placeholder="Search themes...">
+                        <input type="text" id="themeSearchInput" class="theme-search-input" placeholder="Search themes and saved systems...">
                         <div id="themePickerList" class="theme-picker-list"></div>
                     </div>
                 </div>
 
                 <div class="toolbar-group">
-                    <button id="palettePickerButton" class="theme-picker-button" title="Swatch grid source">
+                    <button id="palettePickerButton" class="theme-picker-button" title="Foundation source (palette + scales)">
                         <i class="fas fa-swatchbook"></i>
                         <span id="palettePickerLabel">Tailwind</span>
                         <i class="fas fa-chevron-down"></i>
@@ -57,26 +54,35 @@
                 <button id="resetButton" class="toolbar-button"><i class="fas fa-arrow-rotate-left"></i> Reset</button>
                 <button id="importButton" class="toolbar-button"><i class="fas fa-file-import"></i> Import</button>
                 <button id="saveButton" class="toolbar-button"><i class="fas fa-floppy-disk"></i> Save</button>
-                <button id="codeButton" class="toolbar-button"><i class="fas fa-code"></i> Code</button>
+                <button id="exportButton" class="toolbar-button"><i class="fas fa-file-export"></i> Export</button>
             </div>
         </header>
 
         <div class="workspace">
             <aside class="sidebar">
                 <nav class="sidebar-tabs">
-                    <button class="sidebar-tab active" data-sidebar-tab="colors">Colors</button>
+                    <button class="sidebar-tab active" data-sidebar-tab="inspector">Inspector</button>
+                    <button class="sidebar-tab" data-sidebar-tab="colors">Colors</button>
                     <button class="sidebar-tab" data-sidebar-tab="typography">Typography</button>
-                    <button class="sidebar-tab" data-sidebar-tab="element">Element</button>
                 </nav>
 
-                <div class="sidebar-panel active" data-sidebar-panel="colors">
+                <div class="sidebar-panel active" data-sidebar-panel="inspector">
+                    <div class="field-group">
+                        <label class="field-label" for="inspectorElementSelect">Element</label>
+                        <select id="inspectorElementSelect" class="field-select"></select>
+                    </div>
+                    <div id="inspectorEmpty" class="inspector-empty">
+                        <p>Click any part of an element on the <strong>Elements</strong> page to edit it here - or pick an element above.</p>
+                        <p class="field-group-note">Every property offers only values that exist in the design system: semantic roles, palette steps, and the active foundation scales.</p>
+                    </div>
+                    <div id="inspectorPanel" class="inspector-panel" hidden></div>
+                </div>
+
+                <div class="sidebar-panel" data-sidebar-panel="colors">
                     <div class="color-search-row">
                         <input type="text" id="colorSearchInput" class="color-search-input" placeholder="Search colors...">
                         <button id="toggleAllColorGroupsButton" class="toolbar-icon-button" title="Expand all"><i class="fas fa-chevron-down"></i></button>
                     </div>
-                    <!-- "N of M colors linked" for the active mode - the one place to
-                         confirm every semantic color resolves to a palette token, without
-                         opening each group. The snap button only appears while N < M. -->
                     <div class="color-link-summary">
                         <span id="colorLinkSummaryText" class="color-link-summary-text"></span>
                         <button id="snapAllColorsButton" class="color-link-summary-button" hidden>Snap all to palette</button>
@@ -102,105 +108,11 @@
                             <span class="field-unit">em</span>
                         </div>
                     </div>
-                    <!-- One foldable group per typography set (display, heading, ...),
-                         built by buildTypeSetGroups from TYPE_SETS in scripts.js so the
-                         sidebar and the Typography preview share one definition. -->
                     <div class="field-group">
                         <div class="field-group-label">Type Sets</div>
                         <div class="field-group-note">set &rarr; family token &rarr; face &middot; size and line height snap to the active scale</div>
                     </div>
                     <div id="typeSetGroups" class="color-groups"></div>
-                </div>
-
-                <div class="sidebar-panel" data-sidebar-panel="element">
-                    <div class="field-group">
-                        <div class="field-group-label">Radius</div>
-                        <label class="field-label" for="cardRadiusRange">Card</label>
-                        <div class="field-row">
-                            <input type="range" id="cardRadiusRange" min="0" max="7" step="1" value="4" class="field-range">
-                            <input type="text" id="cardRadiusNumber" value="lg" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="cardRadiusReadout">8px</span>
-                        </div>
-                        <label class="field-label" for="fieldRadiusRange">Form Field</label>
-                        <div class="field-row">
-                            <input type="range" id="fieldRadiusRange" min="0" max="7" step="1" value="4" class="field-range">
-                            <input type="text" id="fieldRadiusNumber" value="lg" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="fieldRadiusReadout">8px</span>
-                        </div>
-                        <label class="field-label" for="buttonRadiusRange">Button</label>
-                        <div class="field-row">
-                            <input type="range" id="buttonRadiusRange" min="0" max="7" step="1" value="4" class="field-range">
-                            <input type="text" id="buttonRadiusNumber" value="lg" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="buttonRadiusReadout">8px</span>
-                        </div>
-                    </div>
-
-                    <div class="field-group">
-                        <div class="field-group-label">Spacing</div>
-                        <!-- Names the base unit the token names below are multiples of;
-                             renderElementTab rewrites it when the palette source switches. -->
-                        <div class="field-group-note" id="spacingUnitNote">Tailwind unit = 4px (0.25rem)</div>
-                        <label class="field-label" for="paddingYRange">Padding Vertical</label>
-                        <div class="field-row">
-                            <input type="range" id="paddingYRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="text" id="paddingYNumber" value="1" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="paddingYReadout">4px</span>
-                        </div>
-                        <label class="field-label" for="paddingXRange">Padding Horizontal</label>
-                        <div class="field-row">
-                            <input type="range" id="paddingXRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="text" id="paddingXNumber" value="1" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="paddingXReadout">4px</span>
-                        </div>
-                        <label class="field-label" for="gapRange">Gap</label>
-                        <div class="field-row">
-                            <input type="range" id="gapRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="text" id="gapNumber" value="1" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="gapReadout">4px</span>
-                        </div>
-                        <label class="field-label" for="gridRange">Grid</label>
-                        <div class="field-row">
-                            <input type="range" id="gridRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="text" id="gridNumber" value="1" class="field-number field-number-token" readonly>
-                            <span class="field-readout" id="gridReadout">4px</span>
-                        </div>
-                    </div>
-
-                    <details class="color-group" id="shadowGroup" open>
-                        <summary class="color-group-label"><span>Shadow</span></summary>
-                        <div class="color-group-body">
-                            <div id="shadowColorRow"></div>
-                            <label class="field-label" for="shadowOpacityRange">Opacity</label>
-                            <div class="field-row">
-                                <input type="range" id="shadowOpacityRange" min="0" max="1" step="0.01" value="0.1" class="field-range">
-                                <input type="number" id="shadowOpacityNumber" step="0.01" value="0.1" class="field-number">
-                            </div>
-                            <label class="field-label" for="shadowBlurRange">Blur</label>
-                            <div class="field-row">
-                                <input type="range" id="shadowBlurRange" min="0" max="40" step="1" value="3" class="field-range">
-                                <input type="number" id="shadowBlurNumber" step="1" value="3" class="field-number">
-                                <span class="field-unit">px</span>
-                            </div>
-                            <label class="field-label" for="shadowSpreadRange">Spread</label>
-                            <div class="field-row">
-                                <input type="range" id="shadowSpreadRange" min="-20" max="20" step="1" value="0" class="field-range">
-                                <input type="number" id="shadowSpreadNumber" step="1" value="0" class="field-number">
-                                <span class="field-unit">px</span>
-                            </div>
-                            <label class="field-label" for="shadowOffsetXRange">Offset X</label>
-                            <div class="field-row">
-                                <input type="range" id="shadowOffsetXRange" min="-20" max="20" step="1" value="0" class="field-range">
-                                <input type="number" id="shadowOffsetXNumber" step="1" value="0" class="field-number">
-                                <span class="field-unit">px</span>
-                            </div>
-                            <label class="field-label" for="shadowOffsetYRange">Offset Y</label>
-                            <div class="field-row">
-                                <input type="range" id="shadowOffsetYRange" min="-20" max="20" step="1" value="1" class="field-range">
-                                <input type="number" id="shadowOffsetYNumber" step="1" value="1" class="field-number">
-                                <span class="field-unit">px</span>
-                            </div>
-                        </div>
-                    </details>
                 </div>
             </aside>
 
@@ -208,17 +120,11 @@
 
             <main class="preview-area">
                 <nav class="preview-tabs">
-                    <button class="preview-tab active" data-preview="overview">Overview</button>
-                    <button class="preview-tab" data-preview="cards">Cards</button>
-                    <button class="preview-tab" data-preview="timebank">Timebank</button>
-                    <button class="preview-tab" data-preview="mail">Mail</button>
-                    <button class="preview-tab" data-preview="dashboard">Dashboard</button>
-                    <button class="preview-tab" data-preview="application">Application</button>
-                    <button class="preview-tab" data-preview="marketing">Marketing</button>
-                    <button class="preview-tab" data-preview="typography">Typography</button>
-                    <button class="preview-tab" data-preview="color-palette">Color Palette</button>
+                    <button class="preview-tab" data-page="foundation">Foundation</button>
+                    <button class="preview-tab" data-page="typography">Typography</button>
+                    <button class="preview-tab active" data-page="elements">Elements</button>
                 </nav>
-                <iframe id="previewFrame" class="preview-frame" title="Theme preview"></iframe>
+                <iframe id="previewFrame" class="preview-frame" title="Design system preview"></iframe>
             </main>
         </div>
     </div>
@@ -232,20 +138,29 @@
                 <button data-popover-view="grid" class="active" title="Grid view"><i class="fas fa-table-cells"></i></button>
             </div>
         </div>
+        <div class="color-popover-semantic" hidden></div>
         <div class="color-popover-specials"></div>
         <div class="color-popover-grid"></div>
     </div>
 
     <div id="swatchTooltip" class="swatch-tooltip" hidden></div>
 
-    <div id="codeModal" class="modal" hidden>
-        <div class="modal-content">
+    <div id="exportModal" class="modal" hidden>
+        <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h2>Code</h2>
-                <button id="closeCodeModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
+                <h2>Export</h2>
+                <button id="closeExportModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
             </div>
-            <pre id="codeOutput" class="code-output"></pre>
-            <button id="copyCodeButton" class="toolbar-button"><i class="fas fa-copy"></i> Copy</button>
+            <nav class="export-tabs">
+                <button class="export-tab active" data-export-tab="tokens">tokens.json</button>
+                <button class="export-tab" data-export-tab="css">design-system.css</button>
+                <button class="export-tab" data-export-tab="annotated">annotated CSS</button>
+            </nav>
+            <pre id="exportOutput" class="code-output"></pre>
+            <div class="modal-actions">
+                <button id="copyExportButton" class="toolbar-button"><i class="fas fa-copy"></i> Copy</button>
+                <button id="downloadExportButton" class="toolbar-button"><i class="fas fa-download"></i> Download</button>
+            </div>
         </div>
     </div>
 
@@ -255,8 +170,13 @@
                 <h2>Import</h2>
                 <button id="closeImportModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
             </div>
-            <p class="import-hint">Paste a CSS block containing <code>--variable: value;</code> declarations (e.g. exported from this tool's own Code view, or from tweakcn).</p>
-            <textarea id="importTextarea" class="import-textarea" placeholder="--primary: oklch(0.6231 0.1880 259.8145);&#10;--background: #ffffff;&#10;..."></textarea>
+            <p class="import-hint">Paste a <code>tokens.json</code> from this tool, a CSS block of <code>--variable: value;</code> declarations (this tool's annotated CSS, or tweakcn), or a <code>DESIGN.md</code> with YAML front matter - or load a file.</p>
+            <div class="import-file-row">
+                <label class="toolbar-button import-file-label"><i class="fas fa-folder-open"></i> Load file
+                    <input type="file" id="importFileInput" accept=".json,.css,.md,application/json,text/css,text/markdown" hidden>
+                </label>
+            </div>
+            <textarea id="importTextarea" class="import-textarea" placeholder="{ &quot;global&quot;: { ... } }&#10;or&#10;--primary: oklch(0.6231 0.1880 259.8145);&#10;--background: #ffffff;"></textarea>
             <button id="applyImportButton" class="toolbar-button">Apply</button>
             <p id="importError" class="import-error"></p>
         </div>
@@ -265,10 +185,11 @@
     <div id="saveModal" class="modal" hidden>
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Save theme</h2>
+                <h2>Save design system</h2>
                 <button id="closeSaveModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
             </div>
-            <input type="text" id="saveNameInput" class="theme-search-input" placeholder="Theme name">
+            <p class="import-hint">Saved in this browser (localStorage). Use Export &rarr; Download to keep it in a repo.</p>
+            <input type="text" id="saveNameInput" class="theme-search-input" placeholder="System name">
             <button id="confirmSaveButton" class="toolbar-button">Save</button>
         </div>
     </div>

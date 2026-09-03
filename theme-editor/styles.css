@@ -965,3 +965,300 @@ body.resizing-sidebar .preview-frame {
 .import-error:empty {
   display: none;
 }
+
+/* --- v2: "Start from" prefix on the theme picker --- */
+
+.theme-picker-prefix {
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+
+/* --- v2: Inspector --- */
+
+.inspector-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ui-text-muted);
+}
+
+.inspector-empty p {
+  margin: 0;
+}
+
+.inspector-empty[hidden],
+.inspector-panel[hidden] {
+  display: none;
+}
+
+.inspector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The full chain for the selected property - one mono line, ellipsised,
+   full text in the title tooltip. */
+.inspector-breadcrumb {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ui-text);
+  background: var(--ui-bg-subtle);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* State switch: segmented buttons; a dot marks states with their own values. */
+.inspector-states {
+  display: flex;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  overflow: hidden;
+}
+
+.inspector-state-btn {
+  flex: 1;
+  position: relative;
+  border: none;
+  background: var(--ui-bg);
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-inline-start: 1px solid var(--ui-border);
+}
+
+.inspector-state-btn:first-child {
+  border-inline-start: none;
+}
+
+.inspector-state-btn:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.inspector-state-btn.active {
+  background: var(--ui-accent);
+  color: var(--ui-accent-text);
+  font-weight: 600;
+}
+
+.inspector-state-btn.has-override::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-warning);
+}
+
+.inspector-part-count {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: ui-monospace, monospace;
+}
+
+.inspector-prop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspector-prop-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inspector-prop-label {
+  font-size: 12px;
+  color: var(--ui-text);
+  min-width: 70px;
+}
+
+.inspector-prop-chip {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ui-bg-subtle);
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-prop-inherit-note {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--ui-text-muted);
+}
+
+.inspector-prop-inherited .inspector-prop-chip {
+  border-style: dashed;
+}
+
+.inspector-inherit-btn {
+  margin-inline-start: auto;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--ui-radius-sm);
+  cursor: pointer;
+}
+
+.inspector-inherit-btn:hover {
+  color: var(--ui-text);
+  background: var(--ui-bg-subtle);
+}
+
+.inspector-prop-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inspector-select {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.inspector-color-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-subtle);
+  color: var(--ui-text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.inspector-color-btn:hover {
+  color: var(--ui-text);
+}
+
+.inspector-color-btn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Checkerboard for a transparent swatch (palette.transparent). */
+.color-field-swatch-transparent {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+}
+
+/* --- v2: popover semantic-role strip (component color pickers) --- */
+
+.color-popover-semantic {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.color-popover-semantic[hidden] {
+  display: none;
+}
+
+.popover-swatch-semantic {
+  aspect-ratio: auto;
+  height: 20px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding-inline: 8px;
+  flex: none;
+}
+
+.popover-swatch-semantic .popover-swatch-name {
+  display: block;
+}
+
+/* --- v2: edit-semantic jump from the Foundation page --- */
+
+@keyframes color-field-row-flash {
+  from { background: color-mix(in srgb, var(--ui-warning) 30%, transparent); }
+  to { background: transparent; }
+}
+
+.color-field-row-flash {
+  animation: color-field-row-flash 1s ease-out;
+  border-radius: var(--ui-radius-sm);
+}
+
+/* --- v2: export modal tabs / import file row --- */
+
+.modal-content-wide {
+  width: 720px;
+}
+
+.export-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.export-tab {
+  border: none;
+  background: none;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: ui-monospace, monospace;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0;
+}
+
+.export-tab.active {
+  color: var(--ui-text);
+  font-weight: 600;
+  background: var(--ui-bg-subtle);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.code-output {
+  max-height: 60vh;
+}
+
+.import-file-row {
+  display: flex;
+}
+
+.import-file-label {
+  cursor: pointer;
+}
