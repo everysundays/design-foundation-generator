@@ -17,6 +17,7 @@
     <script src="templates/marketing.js"></script>
     <script src="templates/typography.js"></script>
     <script src="templates/color-palette.js"></script>
+    <script src="templates/timebank.js"></script>
 </head>
 <body>
     <div class="app">
@@ -73,6 +74,13 @@
                         <input type="text" id="colorSearchInput" class="color-search-input" placeholder="Search colors...">
                         <button id="toggleAllColorGroupsButton" class="toolbar-icon-button" title="Expand all"><i class="fas fa-chevron-down"></i></button>
                     </div>
+                    <!-- "N of M colors linked" for the active mode - the one place to
+                         confirm every semantic color resolves to a palette token, without
+                         opening each group. The snap button only appears while N < M. -->
+                    <div class="color-link-summary">
+                        <span id="colorLinkSummaryText" class="color-link-summary-text"></span>
+                        <button id="snapAllColorsButton" class="color-link-summary-button" hidden>Snap all to palette</button>
+                    </div>
                     <div id="colorGroups" class="color-groups"></div>
                 </div>
 
@@ -94,6 +102,14 @@
                             <span class="field-unit">em</span>
                         </div>
                     </div>
+                    <!-- One foldable group per typography set (display, heading, ...),
+                         built by buildTypeSetGroups from TYPE_SETS in scripts.js so the
+                         sidebar and the Typography preview share one definition. -->
+                    <div class="field-group">
+                        <div class="field-group-label">Type Sets</div>
+                        <div class="field-group-note">set &rarr; family token &rarr; face &middot; size and line height snap to the active scale</div>
+                    </div>
+                    <div id="typeSetGroups" class="color-groups"></div>
                 </div>
 
                 <div class="sidebar-panel" data-sidebar-panel="element">
@@ -101,54 +117,59 @@
                         <div class="field-group-label">Radius</div>
                         <label class="field-label" for="cardRadiusRange">Card</label>
                         <div class="field-row">
-                            <input type="range" id="cardRadiusRange" min="0" max="5" step="0.05" value="0.5" class="field-range">
-                            <input type="number" id="cardRadiusNumber" step="0.05" value="0.5" class="field-number">
-                            <span class="field-unit">rem</span>
+                            <input type="range" id="cardRadiusRange" min="0" max="7" step="1" value="4" class="field-range">
+                            <input type="text" id="cardRadiusNumber" value="lg" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="cardRadiusReadout">8px</span>
                         </div>
                         <label class="field-label" for="fieldRadiusRange">Form Field</label>
                         <div class="field-row">
-                            <input type="range" id="fieldRadiusRange" min="0" max="5" step="0.05" value="0.5" class="field-range">
-                            <input type="number" id="fieldRadiusNumber" step="0.05" value="0.5" class="field-number">
-                            <span class="field-unit">rem</span>
+                            <input type="range" id="fieldRadiusRange" min="0" max="7" step="1" value="4" class="field-range">
+                            <input type="text" id="fieldRadiusNumber" value="lg" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="fieldRadiusReadout">8px</span>
                         </div>
                         <label class="field-label" for="buttonRadiusRange">Button</label>
                         <div class="field-row">
-                            <input type="range" id="buttonRadiusRange" min="0" max="5" step="0.05" value="0.5" class="field-range">
-                            <input type="number" id="buttonRadiusNumber" step="0.05" value="0.5" class="field-number">
-                            <span class="field-unit">rem</span>
+                            <input type="range" id="buttonRadiusRange" min="0" max="7" step="1" value="4" class="field-range">
+                            <input type="text" id="buttonRadiusNumber" value="lg" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="buttonRadiusReadout">8px</span>
                         </div>
                     </div>
 
                     <div class="field-group">
                         <div class="field-group-label">Spacing</div>
+                        <!-- Names the base unit the token names below are multiples of;
+                             renderElementTab rewrites it when the palette source switches. -->
+                        <div class="field-group-note" id="spacingUnitNote">Tailwind unit = 4px (0.25rem)</div>
                         <label class="field-label" for="paddingYRange">Padding Vertical</label>
                         <div class="field-row">
                             <input type="range" id="paddingYRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="number" id="paddingYNumber" value="0.25" class="field-number" readonly>
-                            <span class="field-unit">rem</span>
+                            <input type="text" id="paddingYNumber" value="1" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="paddingYReadout">4px</span>
                         </div>
                         <label class="field-label" for="paddingXRange">Padding Horizontal</label>
                         <div class="field-row">
                             <input type="range" id="paddingXRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="number" id="paddingXNumber" value="0.25" class="field-number" readonly>
-                            <span class="field-unit">rem</span>
+                            <input type="text" id="paddingXNumber" value="1" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="paddingXReadout">4px</span>
                         </div>
                         <label class="field-label" for="gapRange">Gap</label>
                         <div class="field-row">
                             <input type="range" id="gapRange" min="0" max="7" step="1" value="1" class="field-range">
-                            <input type="number" id="gapNumber" value="0.25" class="field-number" readonly>
-                            <span class="field-unit">rem</span>
+                            <input type="text" id="gapNumber" value="1" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="gapReadout">4px</span>
+                        </div>
+                        <label class="field-label" for="gridRange">Grid</label>
+                        <div class="field-row">
+                            <input type="range" id="gridRange" min="0" max="7" step="1" value="1" class="field-range">
+                            <input type="text" id="gridNumber" value="1" class="field-number field-number-token" readonly>
+                            <span class="field-readout" id="gridReadout">4px</span>
                         </div>
                     </div>
 
                     <details class="color-group" id="shadowGroup" open>
                         <summary class="color-group-label"><span>Shadow</span></summary>
                         <div class="color-group-body">
-                            <div class="field-row">
-                                <label class="field-label" style="width:60px">Color</label>
-                                <input type="text" id="shadowColorInput" class="color-field-input">
-                                <input type="color" id="shadowColorPicker" class="color-field-picker">
-                            </div>
+                            <div id="shadowColorRow"></div>
                             <label class="field-label" for="shadowOpacityRange">Opacity</label>
                             <div class="field-row">
                                 <input type="range" id="shadowOpacityRange" min="0" max="1" step="0.01" value="0.1" class="field-range">
@@ -189,6 +210,7 @@
                 <nav class="preview-tabs">
                     <button class="preview-tab active" data-preview="overview">Overview</button>
                     <button class="preview-tab" data-preview="cards">Cards</button>
+                    <button class="preview-tab" data-preview="timebank">Timebank</button>
                     <button class="preview-tab" data-preview="mail">Mail</button>
                     <button class="preview-tab" data-preview="dashboard">Dashboard</button>
                     <button class="preview-tab" data-preview="application">Application</button>

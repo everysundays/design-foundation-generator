@@ -13,6 +13,10 @@
   --ui-accent: #18181b;
   --ui-accent-text: #ffffff;
   --ui-danger: #dc2626;
+  /* "Needs attention, not broken" - marks a color field with no palette
+     link (e.g. after importing an off-palette hex). Deliberately not
+     --ui-danger: nothing is wrong with the value, it's just unaccounted for. */
+  --ui-warning: #d97706;
   --ui-radius: 8px;
   --ui-radius-sm: 6px;
   --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -391,12 +395,17 @@ body.resizing-sidebar .preview-frame {
   gap: 8px;
 }
 
+/* Grid, not a bare box, so the optional unlinked dot (below) centers over
+   the swatch instead of adding a column that would shift every other row's
+   label out of alignment with its linked neighbours. */
 .color-field-swatch {
   width: 16px;
   height: 16px;
   border-radius: 4px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
+  display: grid;
+  place-items: center;
 }
 
 .color-field-label {
@@ -423,11 +432,77 @@ body.resizing-sidebar .preview-frame {
 }
 
 /* Shown instead of a same-looking guessed name when a field's link belongs
-   to a palette source other than the one currently browsed - italic marks
-   it as "nothing assigned here", not a real token name, without needing a
+   to a palette source other than the one currently browsed ("No color"), or
+   when the field has no link at all ("Unlinked") - italic marks it as
+   "nothing assigned here", not a real token name, without needing a
    second element. */
 .color-field-input-unlinked {
   font-style: italic;
+}
+
+/* Sits in the swatch's spot only while the field has NO tokenLinks entry
+   (see createColorFieldRow) - the swatch itself still paints the applied
+   color, the dot is the "this hex isn't accounted for by any palette token"
+   flag the Colors tab summary line counts. */
+.color-field-unlinked-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-warning);
+  /* Ring in the panel background keeps the dot legible when the swatch it
+     sits on happens to be amber/orange itself. */
+  box-shadow: 0 0 0 2px var(--ui-bg);
+}
+
+/* --- Colors tab: link summary ("N of M colors linked" + snap button) --- */
+
+.color-link-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.color-link-summary-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Same amber as the per-row dot, so "3 unlinked" up here and the dots down
+   in the groups read as one signal. Set by renderColorLinkSummary. */
+.color-link-summary-text-warning {
+  color: var(--ui-warning);
+  font-weight: 600;
+}
+
+/* A compact sibling of .toolbar-button - same shape, sized down to sit
+   inside the sidebar's 12px text rather than the toolbar's 13px. */
+.color-link-summary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.color-link-summary-button:hover {
+  background: var(--ui-bg-subtle);
+}
+
+/* renderColorLinkSummary toggles the button with the `hidden` attribute;
+   the explicit display above would otherwise beat the UA's [hidden] rule
+   and keep "Snap all" on screen even at 33 of 33 linked. */
+.color-link-summary-button[hidden] {
+  display: none;
 }
 
 .color-field-palette-btn {
@@ -522,6 +597,89 @@ body.resizing-sidebar .preview-frame {
 .field-unit {
   font-size: 12px;
   color: var(--ui-text-muted);
+}
+
+/* Wide enough for the longer real token names (Atlassian's "space.025" vs
+   Tailwind's "0.5") - the resolved rem value moves to the field's title
+   tooltip instead of a trailing unit label, since the field no longer
+   shows a plain number+unit pair. See currentSpacingNames. */
+.field-number-token {
+  /* Wide enough for the longest token name in play, Atlassian's
+     "font.lineHeight.600" (19 chars at 11px mono) - a clipped name is
+     exactly the ambiguity the token field exists to remove. */
+  width: 150px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+/* The resolved measurement ("8px") beside a token field - always visible,
+   unlike the title tooltip, because the token NAME alone ("lg", "space.100")
+   is what the owner distrusts. Fixed min-width + tabular digits so the row
+   doesn't jitter between "4px" and "24px" as the slider moves. */
+.field-readout {
+  min-width: 36px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+}
+
+/* One-line note under a group label - the active design system's base
+   unit, so the token names in the fields have a visible measurement anchor. */
+.field-group-note {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--ui-text-muted);
+}
+
+/* --- Typography sets --- */
+
+.type-set-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* The same circular badge the Typography preview paints in its gutter, so
+   a set is recognisable by glyph+color across sidebar and preview. Its
+   color arrives as --type-badge-color from TYPE_SETS (editor chrome, never
+   a theme var) - the fallback only guards an element built without one. */
+.type-set-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--type-badge-color, var(--ui-text-muted));
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}
+
+/* Resolved "Sans->Inter · 2xl / 8 · 600" readout on the fold line. Sits in
+   the uppercase group label, so it opts back out of that styling; ellipsis
+   because a custom font stack can be arbitrarily long. */
+.type-set-fold-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ui-text-muted);
+}
+
+.type-custom-family {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
 }
 
 /* --- Preview area --- */

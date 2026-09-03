@@ -46,7 +46,7 @@ window.THEME_TEMPLATES['overview'] = `
        state instead of showing two fixed "Checked"/"Unchecked" copies. -->
   <h2 class="text-lg font-semibold mt-8 mb-1">Form Controls</h2>
   <p class="text-xs text-muted-foreground mb-3">Real inputs - hover, focus, and click to see the live states.</p>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
+  <div class="theme-grid-gap grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
     <div>
       <label class="text-sm font-medium">Default</label>
       <input class="mt-1.5 w-full px-3 py-2 rounded-md border border-input bg-background text-sm transition-colors hover:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring" placeholder="Type here">
@@ -94,7 +94,7 @@ window.THEME_TEMPLATES['overview'] = `
 
   <!-- Alerts -->
   <h2 class="text-lg font-semibold mt-8 mb-3">Alerts</h2>
-  <div class="flex flex-col gap-3 max-w-2xl">
+  <div class="theme-grid-gap flex flex-col gap-3 max-w-2xl">
     <div class="rounded-lg border border-border bg-card text-card-foreground p-4 text-sm">
       <div class="font-medium">Heads up</div>
       <div class="text-muted-foreground mt-0.5">A neutral, informational message using card colors.</div>
@@ -124,7 +124,7 @@ window.THEME_TEMPLATES['overview'] = `
 
   <!-- Popover & Tooltip -->
   <h2 class="text-lg font-semibold mt-8 mb-3">Popover &amp; Tooltip</h2>
-  <div class="flex items-start gap-6">
+  <div class="theme-grid-gap flex items-start gap-6">
     <div class="rounded-lg border border-border bg-popover text-popover-foreground p-4 shadow-sm text-sm max-w-xs">
       <div class="font-medium mb-1">Popover title</div>
       <div class="text-muted-foreground">Floating panel content, styled from the popover tokens.</div>

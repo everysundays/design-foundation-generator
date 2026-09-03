@@ -142,32 +142,160 @@ function withRadiusFallback(vars) {
     return { 'radius-card': base, 'radius-field': base, 'radius-button': base, ...vars };
 }
 
-// Same idea for spacing: themes only define one "spacing" var - Gap/Padding
-// Vertical/Padding Horizontal are new, so all three start equal to it. Gap
-// is a single value (not split into -x/-y) - unlike padding, every gap-N
-// usage across the templates is a plain single-axis flex/wrap gap, so a
-// split axis pair just meant one of the two sliders never visibly did
-// anything for most layouts. See buildGapOverrideCss below.
+// Same idea for spacing: themes only define one "spacing" var - Gap/Grid/
+// Padding Vertical/Padding Horizontal are new, so all four start equal to
+// it. Gap and Grid are each a single value (not split into -x/-y) - unlike
+// padding, every gap-N usage across the templates is a plain single-axis
+// flex/grid/wrap gap, so a split axis pair just meant one of the two
+// sliders never visibly did anything for most layouts. See
+// buildGapOverrideCss below for how Gap (flex contexts) and Grid (actual
+// CSS grid contexts) end up driving different elements from the same
+// gap-N/gap-x-N/gap-y-N classes.
 function withSpacingFallback(vars) {
     const base = vars.spacing || '0.25rem';
-    return { 'spacing-gap': base, 'spacing-padding-y': base, 'spacing-padding-x': base, ...vars };
+    return { 'spacing-gap': base, 'spacing-grid': base, 'spacing-padding-y': base, 'spacing-padding-x': base, ...vars };
 }
 
-// The Padding/Gap sliders pick from a fixed set of rem tokens rather than a
-// free decimal - same "resolve to a known reference" idea as the Colors
-// tab's palette restriction, just for the base spacing unit instead of a
-// color. Each slider's range input steps through indices into this array;
-// nearestSpacingTokenIndex maps a loaded/imported rem value back onto it.
-const SPACING_TOKENS = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+// The Padding/Gap/Grid sliders pick from a fixed set of rem tokens rather
+// than a free decimal - same "resolve to a known reference" idea as the
+// Colors tab's palette restriction, just for the base spacing unit instead
+// of a color - and, like the color palette, the token SET itself depends on
+// activePaletteSource: Tailwind and Atlassian each publish their own real
+// spacing scale, and the two don't line up (Tailwind's base unit is 4px/
+// 0.25rem; Atlassian's is 8px/0.5rem - https://atlassian.design/foundations/
+// spacing). Each slider's range input steps through indices into
+// currentSpacingTokens(); nearestSpacingTokenIndex maps a loaded/imported
+// rem value, or a value carried over from switching source, back onto it.
+const TAILWIND_SPACING_TOKENS = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+// Tailwind's OWN name for each of the values above isn't the rem number -
+// it's the multiplier that appears in the utility class itself (gap-0.5,
+// p-1, ...), i.e. remValue / 0.25rem. Shown in the field instead of the
+// resolved measurement, same reason the Colors tab shows "orange-600"
+// instead of a raw hex - the rem number is a derived value, not the token.
+const TAILWIND_SPACING_NAMES = ['0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4'];
+// Atlassian's own space.* tokens (space.0 through space.250) - not
+// Tailwind's numbers reused, real values off their spacing scale table.
+const ATLASSIAN_SPACING_TOKENS = [0, 0.125, 0.25, 0.375, 0.5, 0.75, 1, 1.25];
+const ATLASSIAN_SPACING_NAMES = ['space.0', 'space.025', 'space.050', 'space.075', 'space.100', 'space.150', 'space.200', 'space.250'];
+
+function currentSpacingTokens() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_SPACING_TOKENS : TAILWIND_SPACING_TOKENS;
+}
+
+function currentSpacingNames() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_SPACING_NAMES : TAILWIND_SPACING_NAMES;
+}
 
 function nearestSpacingTokenIndex(remValue) {
+    const tokens = currentSpacingTokens();
     let bestIndex = 0;
     let bestDist = Infinity;
-    SPACING_TOKENS.forEach((token, i) => {
+    tokens.forEach((token, i) => {
         const dist = Math.abs(token - remValue);
         if (dist < bestDist) { bestDist = dist; bestIndex = i; }
     });
     return bestIndex;
+}
+
+// Same real-token-scale idea as spacing, for the Card/Form Field/Button
+// Radius sliders - Tailwind's own default borderRadius scale
+// (none/sm/DEFAULT/md/lg/xl/2xl/3xl) and Atlassian's real radius.* tokens
+// (https://atlassian.design/foundations/radius). "full" (Tailwind's own
+// pill/circle value, and Atlassian's radius.full/radius.tile) is left out
+// of both - it's a qualitatively different "fully round" case, not a step
+// on the same linear scale as the rest, and doesn't make sense on a slider
+// alongside them.
+const TAILWIND_RADIUS_TOKENS = [0, 0.125, 0.25, 0.375, 0.5, 0.75, 1, 1.5];
+const TAILWIND_RADIUS_NAMES = ['none', 'sm', 'DEFAULT', 'md', 'lg', 'xl', '2xl', '3xl'];
+// Atlassian's radius.xsmall..radius.xxlarge (2/4/6/8/12/16px)
+const ATLASSIAN_RADIUS_TOKENS = [0.125, 0.25, 0.375, 0.5, 0.75, 1];
+const ATLASSIAN_RADIUS_NAMES = ['radius.xsmall', 'radius.small', 'radius.medium', 'radius.large', 'radius.xlarge', 'radius.xxlarge'];
+
+function currentRadiusTokens() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_RADIUS_TOKENS : TAILWIND_RADIUS_TOKENS;
+}
+
+function currentRadiusNames() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_RADIUS_NAMES : TAILWIND_RADIUS_NAMES;
+}
+
+function nearestRadiusTokenIndex(remValue) {
+    const tokens = currentRadiusTokens();
+    let bestIndex = 0;
+    let bestDist = Infinity;
+    tokens.forEach((token, i) => {
+        const dist = Math.abs(token - remValue);
+        if (dist < bestDist) { bestDist = dist; bestIndex = i; }
+    });
+    return bestIndex;
+}
+
+// The measurement keys the Element tab's sliders own. `radius`/`spacing`
+// themselves (the single vars every vendored theme ships) are deliberately
+// NOT in here: they're the untouched record of what the theme said, and
+// nothing in the preview reads them - only the derived per-part keys below
+// do (see withRadiusFallback/withSpacingFallback).
+const RADIUS_KEYS = ['radius-card', 'radius-field', 'radius-button'];
+const SPACING_KEYS = ['spacing-padding-y', 'spacing-padding-x', 'spacing-gap', 'spacing-grid'];
+
+// A stored measurement is a CSS length string ("0.5rem", "8px", "0rem").
+// parseFloat alone would read "8px" as 8rem, and `parseFloat(x) || fallback`
+// would turn a legitimate 0 (Tailwind "none", Atlassian space.0) into the
+// fallback - so this is the one place a stored value gets turned into a rem
+// number. px is converted at 16px/rem, the root font-size the preview iframe
+// runs at (it never sets its own), which is also what makes remToPx honest.
+function measurementToRem(raw, fallback) {
+    const num = parseFloat(raw);
+    if (!Number.isFinite(num)) return fallback;
+    return /px\s*$/.test(String(raw).trim()) ? num / 16 : num;
+}
+
+function remToPx(rem) {
+    return Math.round(rem * 16 * 100) / 100;
+}
+
+// What the active design system's spacing scale is actually built on -
+// shown as a header line above the Spacing sliders so the "1" / "space.100"
+// token names have a visible anchor to a real measurement.
+const SPACING_UNIT_NOTES = {
+    tailwind: 'Tailwind unit = 4px (0.25rem)',
+    atlassian: 'Atlassian unit = 8px (0.5rem)'
+};
+
+// Measurement counterpart of snapVarsToPalette: a loaded/imported theme (or
+// one carried across a Tailwind/Atlassian switch) can hold a radius or
+// spacing value that doesn't sit on the active token scale at all - tweakcn
+// themes routinely ship --radius: 0.625rem, which is no Tailwind step. The
+// sliders always DISPLAYED the nearest token for such a value, but the
+// stored var kept the off-scale number, so the preview rendered one thing
+// while the sidebar claimed another - exactly the "what's linked vs what's
+// applied" drift the color side closes by snapping to the swatch hex. This
+// rewrites each measurement key to its nearest token's exact rem so the two
+// can't disagree. Returns whether anything actually moved, so callers that
+// want an undo entry only push one when there's something to undo.
+function snapMeasurementsToScale(vars) {
+    let changed = false;
+    const snap = (keys, tokens, nearestIndex, fallback) => {
+        keys.forEach(key => {
+            if (vars[key] === undefined) return;
+            const rem = measurementToRem(vars[key], fallback);
+            const snapped = `${tokens[nearestIndex(rem)]}rem`;
+            if (vars[key] !== snapped) { vars[key] = snapped; changed = true; }
+        });
+    };
+    snap(RADIUS_KEYS, currentRadiusTokens(), nearestRadiusTokenIndex, 0.5);
+    snap(SPACING_KEYS, currentSpacingTokens(), nearestSpacingTokenIndex, 0.25);
+    // Type-set size and line-height are measurements on the same footing:
+    // Tailwind's text-lg (1.125rem) has no Atlassian font.size.* twin, so a
+    // Tailwind-authored set carried across the switch would otherwise keep
+    // rendering 18px while its field can only say "1.125rem" - the exact
+    // "sidebar names one thing, preview renders another" drift this snap
+    // exists to close. Same pass, same undo semantics as radius/spacing.
+    const sizeTokens = currentTypeSizeTokens();
+    const leadingTokens = currentTypeLeadingTokens();
+    snap(TYPE_SETS.map(set => typeVarKey(set.key, 'size')), sizeTokens, rem => nearestTypeTokenIndex(sizeTokens, rem), 1);
+    snap(TYPE_SETS.map(set => typeVarKey(set.key, 'leading')), leadingTokens, rem => nearestTypeTokenIndex(leadingTokens, rem), 1.5);
+    return changed;
 }
 
 // No theme (including DEFAULT_THEME) is required to define shadow-* vars.
@@ -188,8 +316,121 @@ function withShadowFallback(vars) {
     };
 }
 
+// --- Typography scale ---
+// Typography is edited as SETS (roles a designer actually assigns text to:
+// display, heading, ...), not as three bare font-family strings. Each set is
+// five CSS vars - --type-<key>-family/-weight/-size/-leading/-tracking - so a
+// template (or an exported theme) can style a role with one var each and
+// never repeat a magic size. A set's family deliberately references the
+// theme's family token (`var(--font-sans)`), not a face name: the chain is
+// set -> family token -> face, so switching Sans in the sidebar re-fonts
+// every set that leans on it instead of forcing seven separate edits. A set
+// can still break the chain and name a face (or a custom stack) directly.
+// `abbr`/`color` are the badge shown next to the set in the sidebar AND in
+// the Typography preview's gutter (the token-generator "typography-name"
+// idea) - editor chrome colors, deliberately not theme vars, so a badge is
+// always legible whatever palette is being edited.
+const TYPE_SETS = [
+    { key: 'display',    label: 'Display',    abbr: 'D',  color: '#7c3aed', family: 'sans', weight: '700', size: 2.25,  leading: 2.5,  tracking: '-0.025em' },
+    { key: 'heading',    label: 'Heading',    abbr: 'H',  color: '#2563eb', family: 'sans', weight: '600', size: 1.5,   leading: 2,    tracking: '-0.015em' },
+    { key: 'subheading', label: 'Subheading', abbr: 'SH', color: '#0891b2', family: 'sans', weight: '500', size: 1.125, leading: 1.75, tracking: '0em' },
+    { key: 'body',       label: 'Body',       abbr: 'B',  color: '#16a34a', family: 'sans', weight: '400', size: 1,     leading: 1.5,  tracking: '0em' },
+    { key: 'label',      label: 'Label',      abbr: 'L',  color: '#d97706', family: 'sans', weight: '500', size: 0.875, leading: 1.25, tracking: '0em' },
+    { key: 'caption',    label: 'Caption',    abbr: 'C',  color: '#db2777', family: 'sans', weight: '400', size: 0.75,  leading: 1,    tracking: '0em' },
+    { key: 'code',       label: 'Code',       abbr: 'M',  color: '#475569', family: 'mono', weight: '400', size: 0.875, leading: 1.25, tracking: '0em' }
+];
+
+const TYPE_WEIGHTS = [['300', '300 Light'], ['400', '400 Regular'], ['500', '500 Medium'], ['600', '600 Semibold'], ['700', '700 Bold'], ['800', '800 Extrabold']];
+
+// Same "pick from the active design system's real scale" rule as the
+// spacing/radius sliders above, for font size and line height. Tailwind's
+// own fontSize scale (text-xs..text-7xl) and Atlassian's font.size.* tokens
+// (https://atlassian.design/foundations/typography) - stored in rem for both
+// so a set's vars stay unit-consistent with --spacing-*/--radius-*, and
+// Atlassian's px values are just divided by 16.
+const TAILWIND_TYPE_SIZE_TOKENS = [0.75, 0.875, 1, 1.125, 1.25, 1.5, 1.875, 2.25, 3, 3.75, 4.5];
+const TAILWIND_TYPE_SIZE_NAMES = ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl'];
+// Tailwind pairs every size with a default line-height (text-xs is
+// 0.75rem/1rem, text-5xl and up are 1 = the size itself). Moving the size
+// slider drops the leading onto this pairing so the two never drift into an
+// off-scale combination by accident - leading stays independently editable
+// afterwards.
+const TAILWIND_TYPE_SIZE_LEADING = [1, 1.25, 1.5, 1.75, 1.75, 2, 2.25, 2.5, 3, 3.75, 4.5];
+// Tailwind v4's leading-<n> is any multiple of the 0.25rem base unit
+// (calc(var(--spacing) * n)), so 3..20 are all real, nameable tokens - and
+// 20 (5rem) is enough headroom above the largest size (7xl, 4.5rem).
+const TAILWIND_TYPE_LEADING_TOKENS = Array.from({ length: 18 }, (_, i) => (i + 3) * 0.25);
+const TAILWIND_TYPE_LEADING_NAMES = TAILWIND_TYPE_LEADING_TOKENS.map((_, i) => `${i + 3}`);
+
+const ATLASSIAN_TYPE_SIZE_TOKENS = [11, 12, 14, 16, 20, 24, 28, 32, 36].map(px => px / 16);
+const ATLASSIAN_TYPE_SIZE_NAMES = ['font.size.050', 'font.size.075', 'font.size.100', 'font.size.200', 'font.size.300', 'font.size.400', 'font.size.500', 'font.size.600', 'font.size.800'];
+// Atlassian's font.lineHeight.* pairing for each size above (their
+// body/heading tokens: 11-12px on 16, 14 on 20, 16-20 on 24, 24 on 28, ...).
+const ATLASSIAN_TYPE_SIZE_LEADING = [16, 16, 20, 24, 24, 28, 32, 40, 40].map(px => px / 16);
+const ATLASSIAN_TYPE_LEADING_TOKENS = [16, 20, 24, 28, 32, 40].map(px => px / 16);
+const ATLASSIAN_TYPE_LEADING_NAMES = ['font.lineHeight.100', 'font.lineHeight.200', 'font.lineHeight.300', 'font.lineHeight.400', 'font.lineHeight.500', 'font.lineHeight.600'];
+
+function currentTypeSizeTokens() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_TYPE_SIZE_TOKENS : TAILWIND_TYPE_SIZE_TOKENS;
+}
+
+function currentTypeSizeNames() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_TYPE_SIZE_NAMES : TAILWIND_TYPE_SIZE_NAMES;
+}
+
+function currentTypeSizeLeading() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_TYPE_SIZE_LEADING : TAILWIND_TYPE_SIZE_LEADING;
+}
+
+function currentTypeLeadingTokens() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_TYPE_LEADING_TOKENS : TAILWIND_TYPE_LEADING_TOKENS;
+}
+
+function currentTypeLeadingNames() {
+    return activePaletteSource === 'atlassian' ? ATLASSIAN_TYPE_LEADING_NAMES : TAILWIND_TYPE_LEADING_NAMES;
+}
+
+function nearestTypeTokenIndex(tokens, remValue) {
+    let bestIndex = 0;
+    let bestDist = Infinity;
+    tokens.forEach((token, i) => {
+        const dist = Math.abs(token - remValue);
+        if (dist < bestDist) { bestDist = dist; bestIndex = i; }
+    });
+    return bestIndex;
+}
+
+// The readout shown for a size/leading value: the nearest token's real name
+// when the value sits on the active scale, otherwise the raw rem - so an
+// imported off-scale value (say 1.3rem from another tool) is never
+// misreported as "xl" until the slider is actually moved onto it.
+function typeTokenLabel(tokens, names, remValue) {
+    const i = nearestTypeTokenIndex(tokens, remValue);
+    return Math.abs(tokens[i] - remValue) < 0.001 ? names[i] : `${remValue}rem`;
+}
+
+function typeVarKey(setKey, prop) {
+    return `type-${setKey}-${prop}`;
+}
+
+// No vendored theme defines --type-* vars (the concept is this editor's),
+// so every set starts from TYPE_SETS' defaults - same pattern as
+// withRadiusFallback/withSpacingFallback: only fill what's missing, never
+// override a value a theme/import actually carries.
+function withTypographyFallback(vars) {
+    const defaults = {};
+    TYPE_SETS.forEach(set => {
+        defaults[typeVarKey(set.key, 'family')] = `var(--font-${set.family})`;
+        defaults[typeVarKey(set.key, 'weight')] = set.weight;
+        defaults[typeVarKey(set.key, 'size')] = `${set.size}rem`;
+        defaults[typeVarKey(set.key, 'leading')] = `${set.leading}rem`;
+        defaults[typeVarKey(set.key, 'tracking')] = set.tracking;
+    });
+    return { ...defaults, ...vars };
+}
+
 function withFallbacks(vars) {
-    return withShadowFallback(withSpacingFallback(withRadiusFallback(vars)));
+    return withTypographyFallback(withShadowFallback(withSpacingFallback(withRadiusFallback(vars))));
 }
 
 function flattenVars(theme) {
@@ -206,15 +447,20 @@ function loadTheme(name) {
     const flat = custom
         ? { light: withFallbacks({ ...custom.light }), dark: withFallbacks({ ...custom.dark }) }
         : flattenVars(theme || DEFAULT_THEME);
-    // Every palette-sourced field (PALETTE_COLOR_KEYS) gets linked and its
+    // Every palette-sourced field (LINKABLE_COLOR_KEYS) gets linked and its
     // value snapped to that link's exact swatch hex right away, rather than
     // carrying the theme's raw value forward and re-guessing a name for it
     // on every render - see the tokenLinks comment above for why that guess
     // is unreliable whenever two palette entries share a hex.
     const links = {
-        light: snapVarsToPalette(flat.light, activePaletteSource, PALETTE_COLOR_KEYS),
-        dark: snapVarsToPalette(flat.dark, activePaletteSource, PALETTE_COLOR_KEYS)
+        light: snapVarsToPalette(flat.light, activePaletteSource, LINKABLE_COLOR_KEYS),
+        dark: snapVarsToPalette(flat.dark, activePaletteSource, LINKABLE_COLOR_KEYS)
     };
+    // Same treatment for the radius/spacing keys - before loadedVars is
+    // copied below, so the Reset button restores the on-scale value too,
+    // not the raw off-scale one the theme shipped with.
+    snapMeasurementsToScale(flat.light);
+    snapMeasurementsToScale(flat.dark);
     state.themeName = name;
     state.vars = { light: { ...flat.light }, dark: { ...flat.dark } };
     state.loadedVars = { light: { ...flat.light }, dark: { ...flat.dark } };
@@ -250,6 +496,20 @@ function setVar(key, value, { record = true, link } = {}) {
     }
     renderPreview();
     renderColorGroups();
+    // renderElementTab rebuilds the shadow-color row (createColorFieldRow),
+    // so a pick from ITS palette popover needs this to actually show up -
+    // renderColorGroups alone only covers the Colors tab. Scoped to
+    // Element-tab keys so an ordinary color-field edit (primary, etc.)
+    // doesn't pay for a redundant re-render.
+    if (key.startsWith('radius-') || key.startsWith('spacing-') || key.startsWith('shadow-')) {
+        renderElementTab();
+    }
+    // The type-set fold summaries ("Sans->Inter · 2xl · 600") resolve
+    // through the family tokens, so a Sans/Serif/Mono change has to refresh
+    // them too, not just a --type-* edit.
+    if (key.startsWith('type-') || key.startsWith('font-')) {
+        renderTypographyTab();
+    }
 }
 
 function updateUndoRedoButtons() {
@@ -280,10 +540,16 @@ const ELEMENT_GROUPS = [
 
 const ALL_COLOR_GROUPS = [...COLOR_GROUPS, ...ELEMENT_GROUPS];
 
-// Every CSS var key that's editable through a palette-popover field (as
-// opposed to e.g. the Shadow group's native <input type="color">) - the set
-// tokenLinks/snapVarsToPalette resolve and keep snapped to a palette swatch.
+// Every CSS var key that's editable through a palette-popover field in the
+// Colors tab - the set that drives that tab's rendering AND (via
+// cssVarBlockFor) gets a derived --key-rgb var so Tailwind's opacity
+// modifiers can blend it. shadow-color is ALSO a palette-popover field (see
+// createColorFieldRow in renderElementTab) but lives in the Element tab and
+// never goes through Tailwind's colors config, so it's kept out of this
+// array - LINKABLE_COLOR_KEYS below is the superset used for load/import
+// time linking, where both belong.
 const PALETTE_COLOR_KEYS = ALL_COLOR_GROUPS.flatMap(g => g.fields.map(([key]) => key));
+const LINKABLE_COLOR_KEYS = [...PALETTE_COLOR_KEYS, 'shadow-color'];
 
 const openGroups = new Set(ALL_COLOR_GROUPS.filter(g => g.open).map(g => g.key));
 
@@ -339,6 +605,39 @@ function renderColorGroups() {
     const search = document.getElementById('colorSearchInput').value.trim().toLowerCase();
     renderFoldableGroups(ALL_COLOR_GROUPS, 'colorGroups', search);
     updateToggleAllColorGroupsButton();
+    renderColorLinkSummary();
+}
+
+// Every palette-sourced key whose ACTIVE-mode tokenLinks entry is missing.
+// Counts LINKABLE_COLOR_KEYS (not just the Colors-tab PALETTE_COLOR_KEYS) so
+// shadow-color - the one linkable field that lives in the Element tab -
+// can't quietly stay unlinked while the Colors tab reports "all linked".
+// A link picked under the OTHER palette source still counts as linked: the
+// point of the check is "exactly one palette token accounts for this hex",
+// and a cross-source link satisfies that (its row shows "No color" only
+// because nothing in the grid on screen corresponds to it).
+function unlinkedColorKeys() {
+    return LINKABLE_COLOR_KEYS.filter(key => !tokenLinks[state.mode][key]);
+}
+
+// The "N of M colors linked" line above the groups - the owner's single
+// glance answer to "is every semantic color pinned to a palette token in
+// this mode?". Re-rendered from renderColorGroups so every path that can
+// change a link (pick, reset, undo/redo, import, mode switch via renderAll)
+// keeps it honest without separate wiring.
+function renderColorLinkSummary() {
+    const unlinked = unlinkedColorKeys();
+    const total = LINKABLE_COLOR_KEYS.length;
+    const linked = total - unlinked.length;
+    const text = document.getElementById('colorLinkSummaryText');
+    const modeLabel = state.mode === 'dark' ? 'dark' : 'light';
+    text.textContent = `${linked} of ${total} colors linked (${modeLabel})`;
+    text.classList.toggle('color-link-summary-text-warning', unlinked.length > 0);
+    // Name the offenders in the tooltip - shadow-color isn't in any Colors-
+    // tab group, so a count alone could send someone hunting for a dot that
+    // isn't on this tab.
+    text.title = unlinked.length ? `Unlinked: ${unlinked.join(', ')}` : 'Every color resolves to a palette token';
+    document.getElementById('snapAllColorsButton').hidden = unlinked.length === 0;
 }
 
 // The Colors tab's collapse/expand-all button - label/icon reflects the
@@ -387,11 +686,28 @@ function createColorFieldRow(key, label, vars) {
     const link = tokenLinks[state.mode][key];
     const linkMatchesSource = link && link.source === activePaletteSource;
 
+    // Three distinct states, because they call for different fixes: linked
+    // under the source on screen (show the token name); linked under the
+    // OTHER source ("No color" - switch source, or reassign); no link at all
+    // ("Unlinked" + amber dot - the hex came from an Import or a theme value
+    // no swatch matched, and nothing accounts for it until it's picked or
+    // snapped). Only the last one counts against the Colors-tab summary.
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'color-field-input' + (linkMatchesSource ? '' : ' color-field-input-unlinked');
-    input.value = linkMatchesSource ? link.name : 'No color';
+    input.value = linkMatchesSource ? link.name : (link ? 'No color' : 'Unlinked');
+    input.title = linkMatchesSource
+        ? `${PALETTE_SOURCES[activePaletteSource].label} ${link.name}`
+        : (link
+            ? `Linked to ${PALETTE_SOURCES[link.source].label} ${link.name} - not in the ${PALETTE_SOURCES[activePaletteSource].label} grid on screen`
+            : 'Not linked to any palette token - pick a swatch, or use "Snap all to palette"');
     input.readOnly = true;
+    if (!link) {
+        const dot = document.createElement('span');
+        dot.className = 'color-field-unlinked-dot';
+        dot.title = input.title;
+        swatch.appendChild(dot);
+    }
 
     // Only pass a currentName when the field's link belongs to the palette
     // source currently on screen - a link picked under Atlassian has no
@@ -458,35 +774,347 @@ function renderTypographyTab() {
     const tracking = parseFloat(vars['tracking-normal']) || 0;
     document.getElementById('letterSpacingRange').value = tracking;
     document.getElementById('letterSpacingNumber').value = tracking;
+
+    renderTypeSetGroups(vars);
+}
+
+// Which of FONT_OPTIONS' faces are served by Google Fonts (the rest are
+// system/generic names that need no download). Only these ever get a
+// fonts.googleapis.com request - see googleFontsHref.
+const GOOGLE_FONTS = new Set(['Inter', 'Roboto', 'Open Sans', 'Poppins', 'Work Sans', 'Source Serif 4', 'Playfair Display', 'JetBrains Mono', 'Fira Code']);
+
+// First family of a CSS font-family list, unquoted: "'Playfair Display',
+// serif" -> "Playfair Display". Same parse the pool selects above use.
+function firstFamily(value) {
+    return (value || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
+}
+
+// A set's family var is one of three shapes, and the sidebar select has to
+// show which: a reference to a theme family token (`var(--font-sans)`), a
+// face straight out of FONT_OPTIONS, or anything else (custom stack).
+function typeFamilySelection(value) {
+    const ref = (value || '').match(/^var\(--font-(sans|serif|mono)\)$/);
+    if (ref) return ref[1];
+    const face = firstFamily(value);
+    return Object.values(FONT_OPTIONS).some(list => list.includes(face)) ? face : 'custom';
+}
+
+// Follow a set's family var through the token chain to the face that
+// actually renders - what the fold summary, the preview legend and the
+// Google Fonts request all need, since `var(--font-sans)` on its own names
+// nothing.
+function resolveTypeFace(vars, setKey) {
+    const value = vars[typeVarKey(setKey, 'family')] || '';
+    const ref = value.match(/^var\(--font-(sans|serif|mono)\)$/);
+    return firstFamily(ref ? vars[`font-${ref[1]}`] : value);
+}
+
+// One-line readout for a set: the resolved face (with the token it came
+// through, so the chain stays visible), then size/leading as scale token
+// names and the weight - the same string the preview legend shows.
+function typeSetSummary(vars, set) {
+    const familyValue = vars[typeVarKey(set.key, 'family')] || '';
+    const ref = familyValue.match(/^var\(--font-(sans|serif|mono)\)$/);
+    const face = resolveTypeFace(vars, set.key) || '?';
+    const family = ref ? `${ref[1][0].toUpperCase()}${ref[1].slice(1)}→${face}` : face;
+    const size = typeTokenLabel(currentTypeSizeTokens(), currentTypeSizeNames(), parseFloat(vars[typeVarKey(set.key, 'size')]) || set.size);
+    const leading = typeTokenLabel(currentTypeLeadingTokens(), currentTypeLeadingNames(), parseFloat(vars[typeVarKey(set.key, 'leading')]) || set.leading);
+    const weight = vars[typeVarKey(set.key, 'weight')] || set.weight;
+    return `${family} · ${size} / ${leading} · ${weight}`;
+}
+
+// Builds the per-set foldable groups ONCE into #typeSetGroups - unlike
+// renderColorGroups, which rebuilds its DOM on every edit, the set groups
+// keep their DOM (so a <details> stays open/closed on its own and a
+// half-typed custom family isn't wiped mid-keystroke) and only have their
+// values refreshed by renderTypeSetGroups. Listeners are wired here, at
+// build time, for the same reason.
+function buildTypeSetGroups() {
+    const container = document.getElementById('typeSetGroups');
+    const el = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
+    const option = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
+
+    TYPE_SETS.forEach(set => {
+        const details = el('details', 'color-group type-set-group');
+        details.dataset.set = set.key;
+        if (set.key === 'display' || set.key === 'body') details.open = true;
+
+        const summary = el('summary', 'color-group-label');
+        const title = el('span', 'type-set-title');
+        const badge = el('span', 'type-set-badge', { textContent: set.abbr });
+        // Raw data in, styling in CSS: the badge color is a per-set editor
+        // constant, so it travels as a custom property the stylesheet reads.
+        badge.style.setProperty('--type-badge-color', set.color);
+        title.append(badge, document.createTextNode(set.label));
+        const meta = el('span', 'type-set-fold-meta', { id: `typeMeta-${set.key}` });
+        summary.append(title, meta);
+
+        const body = el('div', 'color-group-body');
+
+        // Family: theme tokens first (the default - keeps the chain), then
+        // the concrete pools, then custom.
+        const familyLabel = el('label', 'field-label', { textContent: 'Font', htmlFor: `typeFamily-${set.key}` });
+        const familySelect = el('select', 'field-select', { id: `typeFamily-${set.key}` });
+        const tokenGroup = Object.assign(document.createElement('optgroup'), { label: 'Theme family tokens' });
+        tokenGroup.append(option('sans', 'Sans (font-sans)'), option('serif', 'Serif (font-serif)'), option('mono', 'Mono (font-mono)'));
+        familySelect.append(tokenGroup);
+        Object.entries(FONT_OPTIONS).forEach(([pool, faces]) => {
+            const group = Object.assign(document.createElement('optgroup'), { label: `${pool[0].toUpperCase()}${pool.slice(1)} faces` });
+            faces.forEach(face => group.append(option(face, face)));
+            familySelect.append(group);
+        });
+        familySelect.append(option('custom', 'Custom…'));
+        const customInput = el('input', 'field-select type-custom-family', { id: `typeCustom-${set.key}`, type: 'text', placeholder: "'My Face', sans-serif", hidden: true });
+
+        const weightLabel = el('label', 'field-label', { textContent: 'Weight', htmlFor: `typeWeight-${set.key}` });
+        const weightSelect = el('select', 'field-select', { id: `typeWeight-${set.key}` });
+        TYPE_WEIGHTS.forEach(([value, text]) => weightSelect.append(option(value, text)));
+
+        // Size / line height: same index-into-real-token-scale sliders as the
+        // Element tab's spacing, readout in the readonly token field, rem in
+        // its title (see renderTypeSetGroups / the input handlers below).
+        const sizeLabel = el('label', 'field-label', { textContent: 'Size', htmlFor: `typeSize-${set.key}` });
+        const sizeRow = el('div', 'field-row');
+        const sizeRange = el('input', 'field-range', { id: `typeSize-${set.key}`, type: 'range', min: 0, step: 1 });
+        const sizeName = el('input', 'field-number field-number-token', { id: `typeSizeName-${set.key}`, type: 'text', readOnly: true });
+        const sizeReadout = el('span', 'field-readout', { id: `typeSizeReadout-${set.key}` });
+        sizeRow.append(sizeRange, sizeName, sizeReadout);
+
+        const leadingLabel = el('label', 'field-label', { textContent: 'Line Height', htmlFor: `typeLeading-${set.key}` });
+        const leadingRow = el('div', 'field-row');
+        const leadingRange = el('input', 'field-range', { id: `typeLeading-${set.key}`, type: 'range', min: 0, step: 1 });
+        const leadingName = el('input', 'field-number field-number-token', { id: `typeLeadingName-${set.key}`, type: 'text', readOnly: true });
+        const leadingReadout = el('span', 'field-readout', { id: `typeLeadingReadout-${set.key}` });
+        leadingRow.append(leadingRange, leadingName, leadingReadout);
+
+        const trackingLabel = el('label', 'field-label', { textContent: 'Letter Spacing', htmlFor: `typeTracking-${set.key}` });
+        const trackingRow = el('div', 'field-row');
+        const trackingRange = el('input', 'field-range', { id: `typeTracking-${set.key}`, type: 'range', min: -0.1, max: 0.1, step: 0.005 });
+        const trackingNumber = el('input', 'field-number', { id: `typeTrackingNumber-${set.key}`, type: 'number', step: 0.005 });
+        const trackingUnit = el('span', 'field-unit', { textContent: 'em' });
+        trackingRow.append(trackingRange, trackingNumber, trackingUnit);
+
+        body.append(familyLabel, familySelect, customInput, weightLabel, weightSelect, sizeLabel, sizeRow, leadingLabel, leadingRow, trackingLabel, trackingRow);
+        details.append(summary, body);
+        container.append(details);
+
+        // --- wiring ---
+        familySelect.addEventListener('change', () => {
+            const choice = familySelect.value;
+            customInput.hidden = choice !== 'custom';
+            if (choice === 'custom') {
+                // Seed the text box with what the set currently resolves to,
+                // then let the user type - nothing is written until they do.
+                customInput.value = currentVars()[typeVarKey(set.key, 'family')] || '';
+                customInput.focus();
+                return;
+            }
+            if (choice === 'sans' || choice === 'serif' || choice === 'mono') {
+                setVar(typeVarKey(set.key, 'family'), `var(--font-${choice})`);
+                return;
+            }
+            // A concrete face gets its pool's generic as a fallback, so the
+            // exported var is a complete font-family value on its own.
+            const pool = Object.keys(FONT_OPTIONS).find(p => FONT_OPTIONS[p].includes(choice)) || 'sans';
+            const generic = { sans: 'sans-serif', serif: 'serif', mono: 'monospace' }[pool];
+            const quoted = /\s/.test(choice) ? `'${choice}'` : choice;
+            setVar(typeVarKey(set.key, 'family'), `${quoted}, ${generic}`);
+        });
+        customInput.addEventListener('input', () => {
+            if (customInput.value.trim()) setVar(typeVarKey(set.key, 'family'), customInput.value.trim());
+        });
+        weightSelect.addEventListener('change', () => setVar(typeVarKey(set.key, 'weight'), weightSelect.value));
+
+        sizeRange.addEventListener('input', () => {
+            const i = Number(sizeRange.value);
+            const rem = currentTypeSizeTokens()[i];
+            // One undo step for the pair: the size write records, the paired
+            // leading follows with record:false so undo restores both at once.
+            setVar(typeVarKey(set.key, 'size'), `${rem}rem`);
+            setVar(typeVarKey(set.key, 'leading'), `${currentTypeSizeLeading()[i]}rem`, { record: false });
+        });
+        leadingRange.addEventListener('input', () => {
+            setVar(typeVarKey(set.key, 'leading'), `${currentTypeLeadingTokens()[Number(leadingRange.value)]}rem`);
+        });
+
+        const syncTracking = (val) => {
+            trackingRange.value = val;
+            trackingNumber.value = val;
+            setVar(typeVarKey(set.key, 'tracking'), `${val}em`);
+        };
+        trackingRange.addEventListener('input', () => syncTracking(trackingRange.value));
+        trackingNumber.addEventListener('input', () => syncTracking(trackingNumber.value));
+    });
+}
+
+// Refreshes every set group's inputs from vars. Slider maxes are set here
+// (not at build time) because the token set is activePaletteSource-
+// dependent - switching Tailwind<->Atlassian re-snaps each slider onto the
+// nearest value in the new scale, same as the Element tab.
+function renderTypeSetGroups(vars) {
+    const container = document.getElementById('typeSetGroups');
+    if (!container) return;
+    if (!container.children.length) buildTypeSetGroups();
+
+    const sizeTokens = currentTypeSizeTokens();
+    const sizeNames = currentTypeSizeNames();
+    const leadingTokens = currentTypeLeadingTokens();
+    const leadingNames = currentTypeLeadingNames();
+
+    TYPE_SETS.forEach(set => {
+        const familyValue = vars[typeVarKey(set.key, 'family')] || '';
+        const selection = typeFamilySelection(familyValue);
+        const familySelect = document.getElementById(`typeFamily-${set.key}`);
+        const customInput = document.getElementById(`typeCustom-${set.key}`);
+        familySelect.value = selection;
+        customInput.hidden = selection !== 'custom';
+        // Don't clobber the field while it's being typed into - setVar
+        // re-renders on every keystroke.
+        if (selection === 'custom' && document.activeElement !== customInput) customInput.value = familyValue;
+
+        document.getElementById(`typeWeight-${set.key}`).value = vars[typeVarKey(set.key, 'weight')] || set.weight;
+
+        const size = parseFloat(vars[typeVarKey(set.key, 'size')]) || set.size;
+        const sizeIndex = nearestTypeTokenIndex(sizeTokens, size);
+        const sizeRange = document.getElementById(`typeSize-${set.key}`);
+        sizeRange.max = sizeTokens.length - 1;
+        sizeRange.value = sizeIndex;
+        const sizeName = document.getElementById(`typeSizeName-${set.key}`);
+        sizeName.value = typeTokenLabel(sizeTokens, sizeNames, size);
+        sizeName.title = `${sizeTokens[sizeIndex]}rem`;
+        // Readout shows the value actually applied (not the snapped token),
+        // so an off-scale import reads honestly until the slider moves.
+        document.getElementById(`typeSizeReadout-${set.key}`).textContent = `${Math.round(size * 16)}px`;
+
+        const leading = parseFloat(vars[typeVarKey(set.key, 'leading')]) || set.leading;
+        const leadingIndex = nearestTypeTokenIndex(leadingTokens, leading);
+        const leadingRange = document.getElementById(`typeLeading-${set.key}`);
+        leadingRange.max = leadingTokens.length - 1;
+        leadingRange.value = leadingIndex;
+        const leadingName = document.getElementById(`typeLeadingName-${set.key}`);
+        leadingName.value = typeTokenLabel(leadingTokens, leadingNames, leading);
+        leadingName.title = `${leadingTokens[leadingIndex]}rem`;
+        document.getElementById(`typeLeadingReadout-${set.key}`).textContent = `${Math.round(leading * 16)}px`;
+
+        const tracking = parseFloat(vars[typeVarKey(set.key, 'tracking')]) || 0;
+        document.getElementById(`typeTracking-${set.key}`).value = tracking;
+        document.getElementById(`typeTrackingNumber-${set.key}`).value = tracking;
+
+        document.getElementById(`typeMeta-${set.key}`).textContent = typeSetSummary(vars, set);
+    });
+}
+
+// Only the families that actually render in the preview get requested:
+// the three theme family tokens (body text and every template's font-sans/
+// serif/mono utilities use them) plus any face a set names directly. Fixed
+// 400/500/600/700 - every GOOGLE_FONTS face carries all four, whereas a
+// weight one face lacks makes the Google CSS API reject the WHOLE request.
+function googleFontsHref(vars) {
+    const faces = new Set(['font-sans', 'font-serif', 'font-mono'].map(k => firstFamily(vars[k])));
+    TYPE_SETS.forEach(set => faces.add(resolveTypeFace(vars, set.key)));
+    const wanted = [...faces].filter(f => GOOGLE_FONTS.has(f)).sort();
+    if (!wanted.length) return '';
+    return `https://fonts.googleapis.com/css2?${wanted.map(f => `family=${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;500;600;700`).join('&')}&display=swap`;
+}
+
+// Preview-only companions to the --type-* vars (not exported; buildCodeOutput
+// reads state.vars directly): per-set badge color/abbreviation and the
+// resolved summary string, so templates/typography.js can paint its gutter
+// badges and legend purely from CSS (`content: var(--type-heading-abbr)`)
+// and keep TYPE_SETS as the single source for both sidebar and preview.
+function typeMetaCss(vars) {
+    return TYPE_SETS.map(set =>
+        `  --type-${set.key}-badge: ${set.color};\n` +
+        `  --type-${set.key}-abbr: "${set.abbr}";\n` +
+        `  --type-${set.key}-meta: "${typeSetSummary(vars, set).replace(/"/g, "'")}";`
+    ).join('\n');
+}
+
+// The <head> fragment buildPreviewDocument injects for typography, and what
+// syncPreviewTypeHead keeps current on the in-place (no reload) edit path.
+function buildTypeHeadHtml(vars) {
+    const href = googleFontsHref(vars);
+    return `<link id="google-fonts" rel="stylesheet"${href ? ` href="${href}"` : ''}>
+<style id="type-meta">
+  :root {
+${typeMetaCss(vars)}
+  }
+</style>`;
+}
+
+function syncPreviewTypeHead(doc, vars) {
+    const link = doc.getElementById('google-fonts');
+    const href = googleFontsHref(vars);
+    // Only touch the href when it actually changed - re-setting it makes the
+    // browser re-fetch and briefly fall back to the generic family.
+    if (link && link.getAttribute('href') !== href) {
+        if (href) link.setAttribute('href', href);
+        else link.removeAttribute('href');
+    }
+    const meta = doc.getElementById('type-meta');
+    if (meta) meta.textContent = `:root {\n${typeMetaCss(vars)}\n}`;
+}
+
+// tailwind.config fragments so any template can use a set as a utility:
+// font-heading (family) and text-heading (size + line-height + tracking +
+// weight, Tailwind's tuple fontSize form) - optional for templates, but it
+// means a template never has to spell out five var() references by hand.
+function typeFontFamilyConfig() {
+    return TYPE_SETS.map(set => `${set.key}: ['var(--type-${set.key}-family)']`).join(', ');
+}
+
+function typeFontSizeConfig() {
+    return TYPE_SETS.map(set =>
+        `${set.key}: ['var(--type-${set.key}-size)', { lineHeight: 'var(--type-${set.key}-leading)', letterSpacing: 'var(--type-${set.key}-tracking)', fontWeight: 'var(--type-${set.key}-weight)' }]`
+    ).join(',\n          ');
 }
 
 function renderElementTab() {
     const vars = currentVars();
 
-    const cardRadius = parseFloat(vars['radius-card']) || 0.5;
-    document.getElementById('cardRadiusRange').value = cardRadius;
-    document.getElementById('cardRadiusNumber').value = cardRadius;
-
-    const fieldRadius = parseFloat(vars['radius-field']) || 0.5;
-    document.getElementById('fieldRadiusRange').value = fieldRadius;
-    document.getElementById('fieldRadiusNumber').value = fieldRadius;
-
-    const buttonRadius = parseFloat(vars['radius-button']) || 0.5;
-    document.getElementById('buttonRadiusRange').value = buttonRadius;
-    document.getElementById('buttonRadiusNumber').value = buttonRadius;
-
-    [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'],
-     ['spacing-gap', 'gapRange', 'gapNumber']]
-        .forEach(([key, rangeId, numberId]) => {
-            const val = parseFloat(vars[key]) || 0.25;
-            const tokenIndex = nearestSpacingTokenIndex(val);
-            document.getElementById(rangeId).value = tokenIndex;
-            document.getElementById(numberId).value = SPACING_TOKENS[tokenIndex];
+    // The token name goes in the readonly field, the resolved measurement in
+    // the readout span beside it ("lg" + "8px", "space.100" + "8px") - both
+    // visible at once, since a title tooltip alone hides the one number the
+    // owner actually wants certainty about. measurementToRem (not bare
+    // parseFloat-or-fallback) so a real 0 ("none", space.0) isn't mistaken
+    // for a missing value and shown as the fallback token.
+    const radiusTokens = currentRadiusTokens();
+    const radiusNames = currentRadiusNames();
+    [['radius-card', 'cardRadiusRange', 'cardRadiusNumber', 'cardRadiusReadout'], ['radius-field', 'fieldRadiusRange', 'fieldRadiusNumber', 'fieldRadiusReadout'],
+     ['radius-button', 'buttonRadiusRange', 'buttonRadiusNumber', 'buttonRadiusReadout']]
+        .forEach(([key, rangeId, numberId, readoutId]) => {
+            const val = measurementToRem(vars[key], 0.5);
+            const tokenIndex = nearestRadiusTokenIndex(val);
+            const rangeEl = document.getElementById(rangeId);
+            rangeEl.max = radiusTokens.length - 1;
+            rangeEl.value = tokenIndex;
+            const numberEl = document.getElementById(numberId);
+            numberEl.value = radiusNames[tokenIndex];
+            numberEl.title = `${radiusTokens[tokenIndex]}rem`;
+            document.getElementById(readoutId).textContent = `${remToPx(radiusTokens[tokenIndex])}px`;
         });
 
-    const shadowHex = cssColorToHex(vars['shadow-color']) || '#000000';
-    document.getElementById('shadowColorInput').value = vars['shadow-color'] || shadowHex;
-    document.getElementById('shadowColorPicker').value = shadowHex;
+    document.getElementById('spacingUnitNote').textContent = SPACING_UNIT_NOTES[activePaletteSource] || SPACING_UNIT_NOTES.tailwind;
+    const spacingTokens = currentSpacingTokens();
+    const spacingNames = currentSpacingNames();
+    [['spacing-padding-y', 'paddingYRange', 'paddingYNumber', 'paddingYReadout'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber', 'paddingXReadout'],
+     ['spacing-gap', 'gapRange', 'gapNumber', 'gapReadout'], ['spacing-grid', 'gridRange', 'gridNumber', 'gridReadout']]
+        .forEach(([key, rangeId, numberId, readoutId]) => {
+            const val = measurementToRem(vars[key], 0.25);
+            const tokenIndex = nearestSpacingTokenIndex(val);
+            const rangeEl = document.getElementById(rangeId);
+            rangeEl.max = spacingTokens.length - 1;
+            rangeEl.value = tokenIndex;
+            const numberEl = document.getElementById(numberId);
+            numberEl.value = spacingNames[tokenIndex];
+            numberEl.title = `${spacingTokens[tokenIndex]}rem`;
+            document.getElementById(readoutId).textContent = `${remToPx(spacingTokens[tokenIndex])}px`;
+        });
+
+    // Same palette-sourced field as every Colors-tab entry - not a native
+    // <input type="color"> - so the shadow color is a real, nameable
+    // Tailwind/Atlassian token like everything else, not an arbitrary hex.
+    document.getElementById('shadowColorRow').replaceChildren(createColorFieldRow('shadow-color', 'Color', vars));
     const shadowFields = [
         ['shadow-opacity', 'shadowOpacityRange', 'shadowOpacityNumber', 0.1],
         ['shadow-blur', 'shadowBlurRange', 'shadowBlurNumber', 3],
@@ -608,12 +1236,35 @@ function resolvePaletteEntry(hex, sourceKey) {
     return best;
 }
 
+// Exact-name lookup, the inverse of resolvePaletteEntry: given a token name
+// that claims to belong to `sourceKey`, return that swatch's {name, hex} or
+// null if no such name exists there. Used by Import to honor a token map
+// carried in from a previous Code export (see buildCodeOutput) - a carried
+// name is only trusted once it's found in the real palette, and the hex
+// applied is the palette's own, never the one written in the file.
+function findPaletteEntryByName(sourceKey, name) {
+    const special = POPOVER_SPECIALS.find(([, specialName]) => specialName === name);
+    if (special) return { name: special[1], hex: special[0] };
+    const source = PALETTE_SOURCES[sourceKey];
+    if (!source) return null;
+    const names = source.names();
+    const rows = source.rows();
+    for (let rowIndex = 0; rowIndex < names.length; rowIndex++) {
+        const colIndex = (names[rowIndex] || []).indexOf(name);
+        if (colIndex !== -1 && rows[rowIndex] && rows[rowIndex][colIndex]) {
+            return { name, hex: rows[rowIndex][colIndex] };
+        }
+    }
+    return null;
+}
+
 // Links every key in `keys` to its nearest swatch in `sourceKey` (mutating
 // `vars[key]` to that swatch's exact hex, so the link and the applied color
 // can never drift apart) and returns the { key: {source, name, hex} } map
-// driving tokenLinks. Used at theme-load time and after a raw CSS import -
-// the only two paths that can hand a palette-sourced field a value that
-// didn't come from the popover itself.
+// driving tokenLinks. Used at theme-load time, after a raw CSS import, and
+// by the Colors tab's "Snap all to palette" button - the only paths that
+// can hand a palette-sourced field a value that didn't come from the
+// popover itself.
 function snapVarsToPalette(vars, sourceKey, keys) {
     const links = {};
     keys.forEach(key => {
@@ -796,20 +1447,62 @@ const SPACING_SCALE = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11,
 // CDN script injects its utility stylesheet at a time we don't control, so
 // source order alone isn't reliable - this is overriding a third-party
 // framework's generated output, not a case the "never !important" component
-// rule is about. One shared --spacing-gap drives row-gap and column-gap
-// together (not a split -x/-y pair) - every gap-N in the templates sits on a
-// single-row/single-column flex or wrap, so only one axis is ever visually
-// relevant at a time and a second slider had nothing to actually show.
-function buildGapOverrideCss() {
-    const rules = [];
-    SPACING_SCALE.forEach(n => {
-        const g = `calc(var(--spacing-gap) * ${n})`;
-        const selector = `${n}`.replace('.', '\\.'); // e.g. gap-0.5 -> gap-0\.5 (a literal "." starts a new class selector otherwise)
-        rules.push(`.gap-${selector} { row-gap: ${g} !important; column-gap: ${g} !important; }`);
-        rules.push(`.gap-x-${selector} { column-gap: ${g} !important; }`);
-        rules.push(`.gap-y-${selector} { row-gap: ${g} !important; }`);
+// rule is about.
+//
+// Grid vs Gap is a SEMANTIC split (does this gap sit between separate
+// cards/sections, or between parts within one component), not a syntactic
+// one - it can't be inferred from whether the container happens to be
+// display:flex or display:grid. The templates use flex for both: cards.js
+// stacks its "Total Revenue" and "Upgrade" cards with `flex flex-col gap-4`
+// (between cards - should be Grid) right alongside a checkbox's icon+label
+// on `flex items-center gap-2` (within one control - should be Gap). And
+// they use grid for both directions too: dashboard.js's 3 stat cards are a
+// `grid ... gap-4` (between cards - Grid), while cards.js's Name/Email
+// fields inside the Upgrade card are ALSO a `grid ... gap-3` (within one
+// card - should be Gap). So every container that's genuinely "between
+// cards" carries an explicit `theme-grid-gap` marker class in the template
+// (grepped case by case, not inferred) and gets --spacing-grid; every
+// gap-N/gap-x-N/gap-y-N WITHOUT that marker - the default, and the common
+// case - gets --spacing-gap.
+//
+// Responsive variants: the templates also use `lg:p-6` (dashboard.js) and
+// `md:pt-14`/`md:px-16` (marketing.js). Tailwind compiles those to the same
+// utility inside a min-width media query WITHOUT !important, so a base
+// `.p-4 { ... !important }` override silently beat `lg:p-6` at every width -
+// the responsive step just stopped happening. Every override is therefore
+// emitted again per screen prefix, inside the matching media query: same
+// !important, same specificity, and source order (base first, wider screens
+// last) then decides exactly the way Tailwind's own stylesheet does.
+// Tailwind's default screens (https://tailwindcss.com/docs/screens).
+const RESPONSIVE_SCREENS = [['sm', '640px'], ['md', '768px'], ['lg', '1024px'], ['xl', '1280px']];
+
+// `build(sel)` produces one stylesheet body; `sel('p-0.5')` hands it the
+// escaped class selector for the current variant (".p-0\.5", ".lg\:p-0\.5").
+// A literal "." or ":" would otherwise start a new class / pseudo-class.
+function withResponsiveVariants(build) {
+    const escape = cls => cls.replace(/\./g, '\\.');
+    const blocks = [build(cls => `.${escape(cls)}`)];
+    RESPONSIVE_SCREENS.forEach(([prefix, minWidth]) => {
+        blocks.push(`@media (min-width: ${minWidth}) {\n${build(cls => `.${prefix}\\:${escape(cls)}`)}\n}`);
     });
-    return rules.join('\n');
+    return blocks.join('\n');
+}
+
+function buildGapOverrideCss() {
+    return withResponsiveVariants(sel => {
+        const rules = [];
+        SPACING_SCALE.forEach(n => {
+            const grid = `calc(var(--spacing-grid) * ${n})`;
+            const flex = `calc(var(--spacing-gap) * ${n})`;
+            rules.push(`.theme-grid-gap${sel(`gap-${n}`)} { row-gap: ${grid} !important; column-gap: ${grid} !important; }`);
+            rules.push(`.theme-grid-gap${sel(`gap-x-${n}`)} { column-gap: ${grid} !important; }`);
+            rules.push(`.theme-grid-gap${sel(`gap-y-${n}`)} { row-gap: ${grid} !important; }`);
+            rules.push(`${sel(`gap-${n}`)}:not(.theme-grid-gap) { row-gap: ${flex} !important; column-gap: ${flex} !important; }`);
+            rules.push(`${sel(`gap-x-${n}`)}:not(.theme-grid-gap) { column-gap: ${flex} !important; }`);
+            rules.push(`${sel(`gap-y-${n}`)}:not(.theme-grid-gap) { row-gap: ${flex} !important; }`);
+        });
+        return rules.join('\n');
+    });
 }
 
 function buildPaddingOverrideCss() {
@@ -826,16 +1519,61 @@ function buildPaddingOverrideCss() {
         pl: (x) => `padding-left: ${x} !important;`,
         pr: (x) => `padding-right: ${x} !important;`
     };
-    const rules = [];
-    Object.entries(sideDecls).forEach(([prefix, makeDecl]) => {
-        SPACING_SCALE.forEach(n => {
-            const x = `calc(var(--spacing-padding-x) * ${n})`;
-            const y = `calc(var(--spacing-padding-y) * ${n})`;
-            const selector = `${prefix}-${n}`.replace('.', '\\.'); // e.g. p-0.5 -> p-0\.5 (a literal "." starts a new class selector otherwise)
-            rules.push(`.${selector} { ${makeDecl(x, y)} }`);
+    return withResponsiveVariants(sel => {
+        const rules = [];
+        Object.entries(sideDecls).forEach(([prefix, makeDecl]) => {
+            SPACING_SCALE.forEach(n => {
+                const x = `calc(var(--spacing-padding-x) * ${n})`;
+                const y = `calc(var(--spacing-padding-y) * ${n})`;
+                rules.push(`${sel(`${prefix}-${n}`)} { ${makeDecl(x, y)} }`);
+            });
         });
+        return rules.join('\n');
     });
-    return rules.join('\n');
+}
+
+// Margins (mt-1 under a title, mb-3 under a heading, mt-8 between the
+// Overview sections, pl-12 indenting a tag) and space-x/space-y (typography.js
+// stacks its sections with space-y-10) are the other half of the templates'
+// spacing, and had no override at all - they stayed on Tailwind's fixed
+// 0.25rem scale no matter what the sliders said, which is exactly the "does
+// this actually resolve to my unit?" doubt the Element tab exists to remove.
+// They're gap-shaped (space between siblings, not inside a box), so they
+// follow --spacing-gap by default and --spacing-grid under the same
+// `theme-grid-gap` marker gap-N uses - space-y is literally Tailwind's
+// pre-`gap` way of writing the same thing. Only numeric steps are covered;
+// mx-auto/ml-auto/mt-auto aren't lengths and stay as-is.
+function buildMarginOverrideCss() {
+    const sideDecls = {
+        m: v => `margin: ${v} !important;`,
+        mx: v => `margin-inline: ${v} !important;`,
+        my: v => `margin-block: ${v} !important;`,
+        mt: v => `margin-top: ${v} !important;`,
+        mb: v => `margin-bottom: ${v} !important;`,
+        ml: v => `margin-left: ${v} !important;`,
+        mr: v => `margin-right: ${v} !important;`
+    };
+    // Tailwind's own space-* selector: every child after the first (hidden
+    // ones excluded). Its --tw-space-*-reverse axis flip isn't used anywhere
+    // in the templates, so the override sets the one leading margin only.
+    const siblings = '> :not([hidden]) ~ :not([hidden])';
+    return withResponsiveVariants(sel => {
+        const rules = [];
+        Object.entries(sideDecls).forEach(([prefix, makeDecl]) => {
+            SPACING_SCALE.forEach(n => {
+                rules.push(`${sel(`${prefix}-${n}`)} { ${makeDecl(`calc(var(--spacing-gap) * ${n})`)} }`);
+            });
+        });
+        SPACING_SCALE.forEach(n => {
+            const grid = `calc(var(--spacing-grid) * ${n})`;
+            const flex = `calc(var(--spacing-gap) * ${n})`;
+            rules.push(`.theme-grid-gap${sel(`space-y-${n}`)} ${siblings} { margin-top: ${grid} !important; }`);
+            rules.push(`.theme-grid-gap${sel(`space-x-${n}`)} ${siblings} { margin-left: ${grid} !important; }`);
+            rules.push(`${sel(`space-y-${n}`)}:not(.theme-grid-gap) ${siblings} { margin-top: ${flex} !important; }`);
+            rules.push(`${sel(`space-x-${n}`)}:not(.theme-grid-gap) ${siblings} { margin-left: ${flex} !important; }`);
+        });
+        return rules.join('\n');
+    });
 }
 
 // Every PALETTE_COLOR_KEYS var gets a derived "R G B" channel companion
@@ -851,7 +1589,19 @@ function buildPaddingOverrideCss() {
 // cssColorToHex is the only reliable way to get channels out of whatever
 // format the value is actually in (see its own comment on why - modern
 // browsers echo oklch()/lab()/etc. back verbatim instead of normalizing).
-function cssVarBlockFor(vars) {
+//
+// The same block also carries each color's linked palette-token NAME as a
+// CSS string custom property (--link-primary: "tailwind neutral-900"), read
+// by the Color Palette preview template via `content: var(--link-<key>)`.
+// Not a window.__tokenLinks script global: a script only re-runs on a full
+// srcdoc reload, and renderPreview deliberately avoids reloads - it patches
+// this one <style>'s text in place on every edit - so a global would show
+// the link as it was when the template first loaded, not the one just
+// picked. Riding along in the patched block means a pick updates the
+// label the same instant it updates the swatch, and a light/dark switch
+// swaps both together (`links` defaults to the active mode's map, which is
+// what `vars` is always taken from too).
+function cssVarBlockFor(vars, links = tokenLinks[state.mode]) {
     const lines = Object.entries(vars).map(([k, v]) => `  --${k}: ${v};`);
     if (vars['shadow-color']) {
         lines.push(`  --shadow-color-a: rgb(from var(--shadow-color) r g b / var(--shadow-opacity, 1));`);
@@ -859,6 +1609,14 @@ function cssVarBlockFor(vars) {
     PALETTE_COLOR_KEYS.forEach(key => {
         const hex = cssColorToHex(vars[key]);
         if (hex) lines.push(`  --${key}-rgb: ${hexToRgb(hex).join(' ')};`);
+    });
+    lines.push(`  --link-mode: ${JSON.stringify(state.mode)};`);
+    LINKABLE_COLOR_KEYS.forEach(key => {
+        const link = links[key];
+        // JSON.stringify yields a valid double-quoted CSS string - the token
+        // name is the only untrusted-ish part and palette names never carry
+        // quotes, but escaping is free.
+        lines.push(`  --link-${key}: ${JSON.stringify(link ? `${link.source} ${link.name}` : 'unlinked')};`);
     });
     return lines.join('\n');
 }
@@ -904,12 +1662,32 @@ function buildPreviewDocument(vars, templateHtml) {
           // --radius-card lets the two sidebar sliders adjust them independently
           // without touching any template markup. Buttons use the dedicated
           // rounded-btn utility below, tied to --radius-button instead.
-          sm: 'calc(var(--radius-field) - 4px)', md: 'calc(var(--radius-field) - 2px)',
+          //
+          // The +/- px steps are shadcn's own derivation (radius-sm = radius
+          // - 4px, etc.), which is why they're kept - but at the "none" token
+          // (0rem) and Atlassian's radius.xsmall (2px) they went negative,
+          // and a negative border-radius is an invalid declaration the
+          // browser drops entirely (square corners, not small ones). max()
+          // floors each derived step at 0 so every token on the scale
+          // produces a valid radius. Bare "rounded" (Tailwind's DEFAULT,
+          // used on segmented-control chips and code spans) had no entry
+          // and fell through to Tailwind's fixed 0.25rem - it's a field-
+          // scale radius, mapped alongside sm. rounded-full is deliberately
+          // NOT mapped: it's the pill/circle case (Atlassian radius.full),
+          // not a step on this scale - see the radius token tables above.
+          sm: 'max(0px, calc(var(--radius-field) - 4px))', DEFAULT: 'max(0px, calc(var(--radius-field) - 4px))',
+          md: 'max(0px, calc(var(--radius-field) - 2px))',
           lg: 'var(--radius-card)', xl: 'calc(var(--radius-card) + 4px)', '2xl': 'calc(var(--radius-card) + 8px)',
           btn: 'var(--radius-button)'
         },
         fontFamily: {
-          sans: ['var(--font-sans)'], serif: ['var(--font-serif)'], mono: ['var(--font-mono)']
+          sans: ['var(--font-sans)'], serif: ['var(--font-serif)'], mono: ['var(--font-mono)'],
+          // Typography sets as utilities (font-heading, text-heading, ...) -
+          // see typeFontFamilyConfig/typeFontSizeConfig.
+          ${typeFontFamilyConfig()}
+        },
+        fontSize: {
+          ${typeFontSizeConfig()}
         },
         boxShadow: {
           '2xs': 'var(--shadow-offset-x) var(--shadow-offset-y) calc(var(--shadow-blur) * 0.5) var(--shadow-spread) var(--shadow-color-a)',
@@ -925,6 +1703,7 @@ function buildPreviewDocument(vars, templateHtml) {
     }
   };
 <\/script>
+${buildTypeHeadHtml(vars)}
 <style id="theme-vars">
   :root {
 ${cssVarBlockFor(vars)}
@@ -938,6 +1717,9 @@ ${buildPaddingOverrideCss()}
 </style>
 <style id="gap-override">
 ${buildGapOverrideCss()}
+</style>
+<style id="margin-override">
+${buildMarginOverrideCss()}
 </style>
 </head>
 <body>
@@ -969,6 +1751,10 @@ function renderPreview() {
 
     if (previewLoadedTemplate === state.activePreview && iframe.contentDocument && iframe.contentDocument.getElementById('theme-vars')) {
         iframe.contentDocument.getElementById('theme-vars').textContent = `:root {\n${cssVarBlockFor(vars)}\n}`;
+        // A family edit can need a Google Fonts face the document hasn't
+        // loaded yet - patch the <link>/legend meta in place too, same
+        // no-reload path.
+        syncPreviewTypeHead(iframe.contentDocument, vars);
         return;
     }
 
@@ -985,10 +1771,72 @@ function renderAll() {
 }
 
 // --- Code modal ---
+// Marker that heads the token-map comment appended to the export. Import
+// looks for exactly this string to pull the map back out, so the two must
+// agree - defined once here for both.
+const TOKEN_LINKS_MARKER = 'theme-editor:token-links';
+
+// Each palette-sourced color gets its linked token as a trailing comment
+// (`--primary: #171717; /* tailwind neutral-900 */`) - or `/* unlinked */`
+// when nothing accounts for it - so a reader of the exported CSS can see
+// the mapping without opening the editor. Then the whole map is repeated
+// as JSON inside one comment block: the per-line comments are for humans,
+// the block is for carrying the mapping into a design-token file (and for
+// Import to restore exact links instead of re-guessing nearest swatches -
+// see the tokenLinks comment for why a hex alone can't name its token).
+// Both are comments, so the output stays plain `--var: value;` CSS that
+// Import (and tweakcn) parse exactly as before.
+// Measurement counterpart of the color link comment above: the radius/
+// spacing keys have no tokenLinks entry (their token is a pure function of
+// value + activePaletteSource, see nearest*TokenIndex), so the name is
+// re-derived here at export time - `--spacing-gap: 0.25rem; /* tailwind 1
+// (4px) */`. The stored value is always on-scale after
+// snapMeasurementsToScale, but if a hand-edited custom theme in
+// localStorage somehow isn't, the comment says so instead of claiming a
+// token the preview isn't actually rendering. Returns '' for any other key.
+function tokenComment(key, value) {
+    const isRadius = RADIUS_KEYS.includes(key);
+    // --type-<set>-size / -leading sit on the typography scale (text-xs..,
+    // font.size.*) rather than the spacing one - same comment shape so the
+    // export reads uniformly: value, then the token it was picked from.
+    const typeProp = /^type-[a-z]+-(size|leading)$/.exec(key);
+    if (typeProp) {
+        const tokens = typeProp[1] === 'size' ? currentTypeSizeTokens() : currentTypeLeadingTokens();
+        const names = typeProp[1] === 'size' ? currentTypeSizeNames() : currentTypeLeadingNames();
+        const rem = measurementToRem(value, 1);
+        const index = nearestTypeTokenIndex(tokens, rem);
+        const label = `${activePaletteSource} ${names[index]} (${remToPx(tokens[index])}px)`;
+        const exact = Math.abs(tokens[index] - rem) < 0.0001;
+        return exact ? ` /* ${label} */` : ` /* off-scale - nearest ${label} */`;
+    }
+    if (!isRadius && !SPACING_KEYS.includes(key)) return '';
+    const tokens = isRadius ? currentRadiusTokens() : currentSpacingTokens();
+    const names = isRadius ? currentRadiusNames() : currentSpacingNames();
+    const rem = measurementToRem(value, isRadius ? 0.5 : 0.25);
+    const index = isRadius ? nearestRadiusTokenIndex(rem) : nearestSpacingTokenIndex(rem);
+    const label = `${activePaletteSource} ${names[index]} (${remToPx(tokens[index])}px)`;
+    const exact = Math.abs(tokens[index] - rem) < 0.0001;
+    return exact ? ` /* ${label} */` : ` /* off-scale - nearest ${label} */`;
+}
+
 function buildCodeOutput() {
-    const light = Object.entries(state.vars.light).map(([k, v]) => `  --${k}: ${v};`).join('\n');
-    const dark = Object.entries(state.vars.dark).map(([k, v]) => `  --${k}: ${v};`).join('\n');
-    return `:root {\n${light}\n}\n\n.dark {\n${dark}\n}`;
+    const block = (mode) => Object.entries(state.vars[mode]).map(([k, v]) => {
+        const link = tokenLinks[mode][k];
+        let note = '';
+        if (link) note = ` /* ${link.source} ${link.name} */`;
+        else if (LINKABLE_COLOR_KEYS.includes(k)) note = ' /* unlinked */';
+        else note = tokenComment(k, v);
+        return `  --${k}: ${v};${note}`;
+    }).join('\n');
+    const tokenMap = {};
+    ['light', 'dark'].forEach(mode => {
+        tokenMap[mode] = {};
+        LINKABLE_COLOR_KEYS.forEach(key => {
+            const link = tokenLinks[mode][key];
+            if (link) tokenMap[mode][key] = { source: link.source, name: link.name, hex: link.hex };
+        });
+    });
+    return `:root {\n${block('light')}\n}\n\n.dark {\n${block('dark')}\n}\n\n/* ${TOKEN_LINKS_MARKER}\n${JSON.stringify(tokenMap, null, 2)}\n*/`;
 }
 
 // --- Event wiring ---
@@ -1057,6 +1905,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const allOpen = ALL_COLOR_GROUPS.every(g => openGroups.has(g.key));
         setAllColorGroupsOpen(!allOpen);
     });
+    // "Snap all to palette" - one undo step for the whole batch (pushUndo
+    // once, then write links directly rather than via setVar, which would
+    // record a step per key). Only the ACTIVE mode's unlinked keys are
+    // touched; already-linked fields keep the token they were picked as.
+    document.getElementById('snapAllColorsButton').addEventListener('click', () => {
+        const unlinked = unlinkedColorKeys();
+        if (!unlinked.length) return;
+        pushUndo();
+        Object.assign(tokenLinks[state.mode], snapVarsToPalette(state.vars[state.mode], activePaletteSource, unlinked));
+        renderAll();
+    });
 
     // Theme picker
     document.getElementById('themePickerButton').addEventListener('click', () => {
@@ -1082,8 +1941,32 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('palettePickerLabel').textContent = PALETTE_SOURCES[activePaletteSource].label.replace(' v4', '');
             document.querySelectorAll('[data-palette-source]').forEach(b => b.classList.toggle('active', b === btn));
             renderColorPopoverGrid();
-            // Field names are resolved against activePaletteSource - re-derive them
+            // The Radius/Padding/Gap/Grid token SETS are source-dependent
+            // (Tailwind vs Atlassian scales don't line up), so a value that
+            // sat exactly on the old scale can be off the new one. Snap the
+            // stored vars themselves - not just the slider positions - so the
+            // preview renders the token the sidebar now names; without this
+            // the slider re-snapped visually while the preview kept the old
+            // scale's rem (see snapMeasurementsToScale). One undo entry, and
+            // only when something actually moved - snapshotted BEFORE the
+            // snap (pushUndo after the fact would capture the already-moved
+            // vars, and undo could never roll them back).
+            const preSwitch = JSON.stringify({ vars: state.vars, tokenLinks });
+            const lightMoved = snapMeasurementsToScale(state.vars.light);
+            const darkMoved = snapMeasurementsToScale(state.vars.dark);
+            if (lightMoved || darkMoved) {
+                undoStack.push(preSwitch);
+                if (undoStack.length > 50) undoStack.shift();
+                redoStack = [];
+                updateUndoRedoButtons();
+                renderPreview();
+            }
+            // Field names are resolved against activePaletteSource - re-derive them.
             renderColorGroups();
+            renderElementTab();
+            // Type-set size/line-height sliders step through a source-
+            // dependent scale too (text-xs.. vs font.size.*).
+            renderTypographyTab();
             document.getElementById('palettePickerMenu').hidden = true;
         });
     });
@@ -1143,47 +2026,48 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('letterSpacingNumber').addEventListener('input', (e) => syncLetterSpacing(e.target.value));
 
     // Element tab
-    const makeRadiusSync = (key, rangeId, numberId) => (val) => {
-        document.getElementById(rangeId).value = val;
-        document.getElementById(numberId).value = val;
-        setVar(key, `${val}rem`);
+    // Same index-into-real-token-scale pattern as spacing (see
+    // makeSpacingSync below) - the range value is a currentRadiusTokens()
+    // index, not a rem amount, and the number field shows the resolved
+    // token's real name (Tailwind's sm/md/lg/... or Atlassian's radius.*).
+    const makeRadiusSync = (key, rangeId, numberId) => (tokenIndex) => {
+        const rem = currentRadiusTokens()[tokenIndex];
+        const numberEl = document.getElementById(numberId);
+        numberEl.value = currentRadiusNames()[tokenIndex];
+        numberEl.title = `${rem}rem`;
+        setVar(key, `${rem}rem`);
     };
-    const syncCardRadius = makeRadiusSync('radius-card', 'cardRadiusRange', 'cardRadiusNumber');
-    document.getElementById('cardRadiusRange').addEventListener('input', (e) => syncCardRadius(e.target.value));
-    document.getElementById('cardRadiusNumber').addEventListener('input', (e) => syncCardRadius(e.target.value));
+    [['radius-card', 'cardRadiusRange', 'cardRadiusNumber'], ['radius-field', 'fieldRadiusRange', 'fieldRadiusNumber'],
+     ['radius-button', 'buttonRadiusRange', 'buttonRadiusNumber']]
+        .forEach(([key, rangeId, numberId]) => {
+            const sync = makeRadiusSync(key, rangeId, numberId);
+            document.getElementById(rangeId).addEventListener('input', (e) => sync(e.target.value));
+        });
 
-    const syncFieldRadius = makeRadiusSync('radius-field', 'fieldRadiusRange', 'fieldRadiusNumber');
-    document.getElementById('fieldRadiusRange').addEventListener('input', (e) => syncFieldRadius(e.target.value));
-    document.getElementById('fieldRadiusNumber').addEventListener('input', (e) => syncFieldRadius(e.target.value));
-
-    const syncButtonRadius = makeRadiusSync('radius-button', 'buttonRadiusRange', 'buttonRadiusNumber');
-    document.getElementById('buttonRadiusRange').addEventListener('input', (e) => syncButtonRadius(e.target.value));
-    document.getElementById('buttonRadiusNumber').addEventListener('input', (e) => syncButtonRadius(e.target.value));
-
-    // The range input's value is a SPACING_TOKENS index, not a rem amount -
-    // the paired number field is a readonly readout of the resolved token,
-    // not a free-text input, so only the range needs a listener.
+    // The range input's value is a currentSpacingTokens() index, not a rem
+    // amount - the paired number field is a readonly readout of the
+    // resolved token's real name (Tailwind's own multiplier name, or
+    // Atlassian's space.* token - see currentSpacingNames), not a free-text
+    // input, so only the range needs a listener. Reads both sets live (not
+    // captured at wiring time) so they still resolve correctly after a
+    // later Tailwind/Atlassian switch.
     const makeSpacingSync = (key, rangeId, numberId) => (tokenIndex) => {
-        const rem = SPACING_TOKENS[tokenIndex];
-        document.getElementById(numberId).value = rem;
+        const rem = currentSpacingTokens()[tokenIndex];
+        const numberEl = document.getElementById(numberId);
+        numberEl.value = currentSpacingNames()[tokenIndex];
+        numberEl.title = `${rem}rem`;
         setVar(key, `${rem}rem`);
     };
     [['spacing-padding-y', 'paddingYRange', 'paddingYNumber'], ['spacing-padding-x', 'paddingXRange', 'paddingXNumber'],
-     ['spacing-gap', 'gapRange', 'gapNumber']]
+     ['spacing-gap', 'gapRange', 'gapNumber'], ['spacing-grid', 'gridRange', 'gridNumber']]
         .forEach(([key, rangeId, numberId]) => {
             const sync = makeSpacingSync(key, rangeId, numberId);
             document.getElementById(rangeId).addEventListener('input', (e) => sync(e.target.value));
         });
 
-    // Shadow fields
-    document.getElementById('shadowColorInput').addEventListener('change', (e) => {
-        document.getElementById('shadowColorPicker').value = cssColorToHex(e.target.value) || '#000000';
-        setVar('shadow-color', e.target.value);
-    });
-    document.getElementById('shadowColorPicker').addEventListener('input', (e) => {
-        document.getElementById('shadowColorInput').value = e.target.value;
-        setVar('shadow-color', e.target.value);
-    });
+    // Shadow fields - color is rendered by renderElementTab via
+    // createColorFieldRow (into #shadowColorRow), which wires its own
+    // palette-popover/reset handlers, same as every Colors-tab field.
     [
         ['shadowOpacityRange', 'shadowOpacityNumber', 'shadow-opacity', ''],
         ['shadowBlurRange', 'shadowBlurNumber', 'shadow-blur', 'px'],
@@ -1217,19 +2101,64 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = document.getElementById('importTextarea').value;
         const errorEl = document.getElementById('importError');
         errorEl.textContent = '';
-        const matches = [...text.matchAll(/--([a-zA-Z0-9-]+)\s*:\s*([^;]+);/g)];
-        if (!matches.length) {
+        // A Code export carries its token map in a marked comment (see
+        // buildCodeOutput) - pull it out BEFORE comments are stripped, and
+        // treat a malformed one as absent rather than failing the import.
+        let carriedLinks = null;
+        const carriedMatch = text.match(new RegExp(`${TOKEN_LINKS_MARKER}\\s*([\\s\\S]*?)\\*/`));
+        if (carriedMatch) {
+            try { carriedLinks = JSON.parse(carriedMatch[1]); } catch (e) { carriedLinks = null; }
+        }
+        // Strip every comment first - the export's trailing
+        // `/* tailwind neutral-900 */` notes never contain a `;` so they
+        // couldn't leak into a value, but a commented-out `/* --old: x; */`
+        // in someone's hand-written CSS would otherwise be imported as live.
+        const stripped = text.replace(/\/\*[\s\S]*?\*\//g, '');
+        const parseDecls = (css) => [...css.matchAll(/--([a-zA-Z0-9-]+)\s*:\s*([^;]+);/g)].map(([, k, v]) => [k.trim(), v.trim()]);
+        // Route `:root {}` and `.dark {}` blocks to their own modes when both
+        // are present (the shape our own export and tweakcn's produce) -
+        // reading them as one flat list applied every dark value on top of
+        // its light twin in whichever mode happened to be active, so a Code
+        // -> Import round-trip couldn't reproduce the theme. A paste with no
+        // .dark block still goes to the active mode, as before.
+        const darkIndex = stripped.search(/\.dark\s*\{/);
+        const perMode = darkIndex === -1
+            ? { [state.mode]: parseDecls(stripped) }
+            : { light: parseDecls(stripped.slice(0, darkIndex)), dark: parseDecls(stripped.slice(darkIndex)) };
+        if (!Object.values(perMode).some(decls => decls.length)) {
             errorEl.textContent = 'No --variable: value; declarations found.';
             return;
         }
         pushUndo();
-        matches.forEach(([, key, value]) => { state.vars[state.mode][key.trim()] = value.trim(); });
-        // Imported values (like a theme's own baked-in defaults) didn't come
-        // through the popover, so they need the same link-and-snap pass
-        // loadTheme gives every color - limited to the keys this import
-        // actually touched, so unrelated fields' existing links are untouched.
-        const importedKeys = PALETTE_COLOR_KEYS.filter(key => matches.some(([, k]) => k.trim() === key));
-        Object.assign(tokenLinks[state.mode], snapVarsToPalette(state.vars[state.mode], activePaletteSource, importedKeys));
+        Object.entries(perMode).forEach(([mode, decls]) => {
+            decls.forEach(([key, value]) => { state.vars[mode][key] = value; });
+            // Pasted radius/spacing values land on the active token scale the
+            // same way loadTheme's do (see snapMeasurementsToScale) - a
+            // no-op for keys already on it, so untouched fields don't move.
+            snapMeasurementsToScale(state.vars[mode]);
+            // Imported values (like a theme's own baked-in defaults) didn't come
+            // through the popover, so they need the same link-and-snap pass
+            // loadTheme gives every color - limited to the keys this import
+            // actually touched, so unrelated fields' existing links are untouched.
+            const importedKeys = LINKABLE_COLOR_KEYS.filter(key => decls.some(([k]) => k === key));
+            Object.assign(tokenLinks[mode], snapVarsToPalette(state.vars[mode], activePaletteSource, importedKeys));
+            // A carried link beats the nearest-swatch guess: it names the
+            // exact token that was picked, which the hex alone can't
+            // recover (zinc-50/neutral-50/mauve-50 all #fafafa). Only
+            // honored when the name really exists in the named source, and
+            // the applied hex is that swatch's own, so link and value can't
+            // disagree even if the file was hand-edited.
+            const carried = carriedLinks && typeof carriedLinks === 'object' ? carriedLinks[mode] : null;
+            if (!carried || typeof carried !== 'object') return;
+            importedKeys.forEach(key => {
+                const link = carried[key];
+                if (!link || typeof link.source !== 'string' || typeof link.name !== 'string') return;
+                const entry = findPaletteEntryByName(link.source, link.name);
+                if (!entry) return;
+                state.vars[mode][key] = entry.hex;
+                tokenLinks[mode][key] = { source: link.source, name: entry.name, hex: entry.hex.toLowerCase() };
+            });
+        });
         renderAll();
         document.getElementById('importModal').hidden = true;
         document.getElementById('importTextarea').value = '';

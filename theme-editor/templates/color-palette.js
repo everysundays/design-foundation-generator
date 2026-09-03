@@ -1,35 +1,71 @@
-// Color Palette preview - a raw swatch grid of every themeable variable, so
-// every token can be visually sanity-checked in one glance.
+// Color Palette preview - every semantic color token as a card: the swatch,
+// its semantic name, and the palette token it's linked to (e.g. "tailwind
+// neutral-900"), so the whole var-to-token mapping can be audited in one
+// glance. The linked name is NOT baked into this markup - it's read from
+// the `--link-<key>` CSS string vars cssVarBlockFor injects into the
+// preview's :root (see its comment for why a CSS var and not a script
+// global): that block is patched live on every pick and swapped whole on a
+// light/dark switch, so the label here tracks the sidebar without this
+// template ever reloading. Labels sit BELOW the swatch in the page's own
+// foreground color, so no swatch needs a hardcoded contrast color (the old
+// `text-white` on the chart tiles was the one loose, non-token color in the
+// templates).
 window.THEME_TEMPLATES = window.THEME_TEMPLATES || {};
 window.THEME_TEMPLATES['color-palette'] = `
+<style>
+  /* Each .token-link carries its own --link-<key> as --l (set inline on the
+     element), so one rule serves all 33 cards. "unlinked" is the literal
+     string cssVarBlockFor emits for a color with no palette link, so it
+     shows up here as that word - the sidebar's summary line is where the
+     count/amber flag lives. */
+  .token-link::after { content: var(--l); }
+  .token-link-mode::after { content: var(--link-mode); }
+</style>
 <div class="p-8 max-w-5xl mx-auto">
-  <h1 class="text-2xl font-bold mb-6">Color Palette</h1>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    ${[
-      ['Background', 'bg-background', 'text-foreground', 'border border-border'],
-      ['Foreground', 'bg-foreground', 'text-background', ''],
-      ['Card', 'bg-card', 'text-card-foreground', 'border border-border'],
-      ['Popover', 'bg-popover', 'text-popover-foreground', 'border border-border'],
-      ['Primary', 'bg-primary', 'text-primary-foreground', ''],
-      ['Secondary', 'bg-secondary', 'text-secondary-foreground', ''],
-      ['Muted', 'bg-muted', 'text-muted-foreground', ''],
-      ['Accent', 'bg-accent', 'text-accent-foreground', ''],
-      ['Destructive', 'bg-destructive', 'text-destructive-foreground', ''],
-      ['Border', 'bg-border', 'text-foreground', ''],
-      ['Input', 'bg-input', 'text-foreground', ''],
-      ['Ring', 'bg-ring', 'text-foreground', ''],
-      ['Chart 1', 'bg-chart-1', 'text-white', ''],
-      ['Chart 2', 'bg-chart-2', 'text-white', ''],
-      ['Chart 3', 'bg-chart-3', 'text-white', ''],
-      ['Chart 4', 'bg-chart-4', 'text-white', ''],
-      ['Chart 5', 'bg-chart-5', 'text-white', ''],
-      ['Sidebar', 'bg-sidebar', 'text-sidebar-foreground', 'border border-sidebar-border'],
-      ['Sidebar Primary', 'bg-sidebar-primary', 'text-sidebar-primary-foreground', ''],
-      ['Sidebar Accent', 'bg-sidebar-accent', 'text-sidebar-accent-foreground', '']
-    ].map(([label, bg, text, extra]) => `
-    <div class="rounded-lg ${bg} ${text} ${extra} p-4 h-24 flex flex-col justify-between shadow-sm">
-      <span class="text-xs font-medium opacity-80">${label}</span>
+  <div class="flex items-baseline justify-between mb-6">
+    <h1 class="text-2xl font-bold">Color Palette</h1>
+    <span class="text-xs text-muted-foreground">Semantic token &rarr; linked palette token (<span class="token-link-mode font-mono"></span> mode)</span>
+  </div>
+  ${[
+    ['Base', [['background', 'Background'], ['foreground', 'Foreground']]],
+    ['Card', [['card', 'Card'], ['card-foreground', 'Card Foreground']]],
+    ['Popover', [['popover', 'Popover'], ['popover-foreground', 'Popover Foreground']]],
+    ['Primary', [['primary', 'Primary'], ['primary-foreground', 'Primary Foreground']]],
+    ['Secondary', [['secondary', 'Secondary'], ['secondary-foreground', 'Secondary Foreground']]],
+    ['Muted', [['muted', 'Muted'], ['muted-foreground', 'Muted Foreground']]],
+    ['Accent', [['accent', 'Accent'], ['accent-foreground', 'Accent Foreground']]],
+    ['Destructive', [['destructive', 'Destructive'], ['destructive-foreground', 'Destructive Foreground']]],
+    ['Border & Input', [['border', 'Border'], ['input', 'Input'], ['ring', 'Ring']]],
+    ['Chart', [['chart-1', 'Chart 1'], ['chart-2', 'Chart 2'], ['chart-3', 'Chart 3'], ['chart-4', 'Chart 4'], ['chart-5', 'Chart 5']]],
+    ['Sidebar', [
+      ['sidebar', 'Sidebar'], ['sidebar-foreground', 'Sidebar Foreground'],
+      ['sidebar-primary', 'Sidebar Primary'], ['sidebar-primary-foreground', 'Sidebar Primary Foreground'],
+      ['sidebar-accent', 'Sidebar Accent'], ['sidebar-accent-foreground', 'Sidebar Accent Foreground'],
+      ['sidebar-border', 'Sidebar Border'], ['sidebar-ring', 'Sidebar Ring']
+    ]]
+  ].map(([groupLabel, tokens]) => `
+  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-6 mb-2">${groupLabel}</h2>
+  <div class="theme-grid-gap grid grid-cols-2 md:grid-cols-4 gap-4">
+    ${tokens.map(([key, label]) => `
+    <div class="rounded-lg border border-border bg-card text-card-foreground p-3 flex flex-col gap-2 shadow-sm">
+      <div class="h-12 rounded-md border border-border bg-${key}"></div>
+      <div class="flex flex-col">
+        <span class="text-sm font-medium">${label}</span>
+        <span class="text-xs text-muted-foreground font-mono token-link" style="--l: var(--link-${key})"></span>
+      </div>
     </div>`).join('')}
+  </div>`).join('')}
+  <!-- shadow-color is themed like every color above but lives in the
+       Element tab; listed here so the audit view covers all 33 links. -->
+  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-6 mb-2">Shadow</h2>
+  <div class="theme-grid-gap grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="rounded-lg border border-border bg-card text-card-foreground p-3 flex flex-col gap-2 shadow-sm">
+      <div class="h-12 rounded-md border border-border" style="background: var(--shadow-color)"></div>
+      <div class="flex flex-col">
+        <span class="text-sm font-medium">Shadow Color</span>
+        <span class="text-xs text-muted-foreground font-mono token-link" style="--l: var(--link-shadow-color)"></span>
+      </div>
+    </div>
   </div>
 
   <h2 class="text-lg font-semibold mt-8 mb-3">Buttons</h2>

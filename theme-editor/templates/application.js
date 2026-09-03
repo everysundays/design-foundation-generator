@@ -32,7 +32,7 @@ window.THEME_TEMPLATES['application'] = `
       </div>
     </div>
 
-    <div class="p-6 flex flex-col gap-6">
+    <div class="theme-grid-gap p-6 flex flex-col gap-6">
 
       <!-- Price chart card -->
       <div class="rounded-lg border border-border bg-card text-card-foreground shadow-sm">
@@ -52,11 +52,11 @@ window.THEME_TEMPLATES['application'] = `
             </div>
           </div>
           <div class="flex gap-1 bg-muted rounded-md p-0.5">
-            <button class="px-3 py-1 rounded text-xs text-muted-foreground">1D</button>
-            <button class="px-3 py-1 rounded text-xs text-muted-foreground">1W</button>
-            <button class="px-3 py-1 rounded bg-background shadow-sm text-xs font-medium">1M</button>
-            <button class="px-3 py-1 rounded text-xs text-muted-foreground">1Y</button>
-            <button class="px-3 py-1 rounded text-xs text-muted-foreground">All</button>
+            <button class="px-3 py-1 rounded-btn text-xs text-muted-foreground">1D</button>
+            <button class="px-3 py-1 rounded-btn text-xs text-muted-foreground">1W</button>
+            <button class="px-3 py-1 rounded-btn bg-background shadow-sm text-xs font-medium">1M</button>
+            <button class="px-3 py-1 rounded-btn text-xs text-muted-foreground">1Y</button>
+            <button class="px-3 py-1 rounded-btn text-xs text-muted-foreground">All</button>
           </div>
         </div>
         <div class="px-5">
@@ -91,9 +91,9 @@ window.THEME_TEMPLATES['application'] = `
             <div class="text-xs text-muted-foreground">Recent account movements</div>
           </div>
           <div class="flex gap-1 bg-muted rounded-md p-0.5">
-            <button class="px-3 py-1 rounded bg-background shadow-sm text-xs font-medium">Completed</button>
-            <button class="px-3 py-1 rounded text-xs text-muted-foreground">Pending</button>
-            <button class="px-3 py-1 rounded text-xs text-muted-foreground">Cancelled</button>
+            <button class="px-3 py-1 rounded-btn bg-background shadow-sm text-xs font-medium">Completed</button>
+            <button class="px-3 py-1 rounded-btn text-xs text-muted-foreground">Pending</button>
+            <button class="px-3 py-1 rounded-btn text-xs text-muted-foreground">Cancelled</button>
           </div>
         </div>
         <div class="divide-y divide-border">
@@ -126,9 +126,9 @@ window.THEME_TEMPLATES['application'] = `
       <div class="font-semibold mb-3">Activity</div>
       <input class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground text-sm" placeholder="Search activity" readonly>
       <div class="flex gap-1 bg-sidebar-accent/40 rounded-md p-0.5 mt-3">
-        <button class="flex-1 px-2 py-1 rounded bg-sidebar-primary text-sidebar-primary-foreground text-xs font-medium">All</button>
-        <button class="flex-1 px-2 py-1 rounded text-xs text-muted-foreground">Tasks</button>
-        <button class="flex-1 px-2 py-1 rounded text-xs text-muted-foreground">Meetings</button>
+        <button class="flex-1 px-2 py-1 rounded-btn bg-sidebar-primary text-sidebar-primary-foreground text-xs font-medium">All</button>
+        <button class="flex-1 px-2 py-1 rounded-btn text-xs text-muted-foreground">Tasks</button>
+        <button class="flex-1 px-2 py-1 rounded-btn text-xs text-muted-foreground">Meetings</button>
       </div>
     </div>
     <div class="flex-1 overflow-y-auto divide-y divide-sidebar-border">

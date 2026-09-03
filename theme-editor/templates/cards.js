@@ -7,10 +7,10 @@
 window.THEME_TEMPLATES = window.THEME_TEMPLATES || {};
 window.THEME_TEMPLATES['cards'] = `
 <div class="p-6 bg-background min-h-screen text-foreground">
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+  <div class="theme-grid-gap grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
 
     <!-- Column 1: Total Revenue + Upgrade form -->
-    <div class="flex flex-col gap-4">
+    <div class="theme-grid-gap flex flex-col gap-4">
 
       <!-- Total Revenue -->
       <div class="rounded-xl border border-border bg-card text-card-foreground p-6 shadow-sm">
@@ -94,8 +94,8 @@ window.THEME_TEMPLATES['cards'] = `
     </div>
 
     <!-- Columns 2-3 -->
-    <div class="md:col-span-2 flex flex-col gap-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+    <div class="theme-grid-gap md:col-span-2 flex flex-col gap-4">
+      <div class="theme-grid-gap grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
 
         <!-- Calendar -->
         <div class="rounded-xl border border-border bg-card text-card-foreground p-4 shadow-sm">

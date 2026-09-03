@@ -77,10 +77,10 @@ window.THEME_TEMPLATES['dashboard'] = `
       <h1 class="font-medium">Documents</h1>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-4 lg:p-6 flex flex-col gap-4">
+    <div class="theme-grid-gap flex-1 overflow-y-auto p-4 lg:p-6 flex flex-col gap-4">
 
       <!-- Stat cards -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="theme-grid-gap grid grid-cols-1 md:grid-cols-3 gap-4">
         ${[
           ['Total Revenue', '$1,250.00', '+12.5%', true, 'Trending up this month', 'Visitors for the last 6 months'],
           ['New Customers', '1,234', '-20%', false, 'Down 20% this period', 'Acquisition needs attention'],
@@ -157,7 +157,7 @@ window.THEME_TEMPLATES['dashboard'] = `
             <thead class="bg-muted/50 text-muted-foreground">
               <tr class="border-b border-border">
                 <th class="w-8 px-3 py-2"></th>
-                <th class="w-8 px-1 py-2"><span class="block w-4 h-4 rounded border border-input bg-background"></span></th>
+                <th class="w-8 px-1 py-2"><span class="block w-4 h-4 rounded-sm border border-input bg-background"></span></th>
                 <th class="px-3 py-2 text-left font-medium">Header</th>
                 <th class="px-3 py-2 text-left font-medium">Section Type</th>
                 <th class="px-3 py-2 text-right font-medium">Target</th>
@@ -175,7 +175,7 @@ window.THEME_TEMPLATES['dashboard'] = `
               ].map(([header, type, target, limit]) => `
               <tr class="hover:bg-muted/50">
                 <td class="px-3 py-2 text-muted-foreground"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/></svg></td>
-                <td class="px-1 py-2"><span class="block w-4 h-4 rounded border border-input bg-background"></span></td>
+                <td class="px-1 py-2"><span class="block w-4 h-4 rounded-sm border border-input bg-background"></span></td>
                 <td class="px-3 py-2 font-medium whitespace-nowrap">${header}</td>
                 <td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-md border border-border text-xs text-muted-foreground">${type}</span></td>
                 <td class="px-3 py-2 text-right"><input class="w-16 px-2 py-1 rounded-md border border-input bg-background text-right text-sm" value="${target}" readonly></td>
