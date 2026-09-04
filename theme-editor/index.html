@@ -6,19 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="panels.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
     <script src="tweakcn-themes-full.js"></script>
     <script src="tailwind-palette.js"></script>
     <script src="atlassian-palette.js"></script>
     <script src="foundation.js"></script>
     <script src="components.js"></script>
-    <script src="pages.js"></script>
+    <script src="panels.js"></script>
     <script src="dtcg.js"></script>
 </head>
 <body>
     <div class="app">
         <header class="toolbar">
             <div class="toolbar-group toolbar-group-left">
+                <div class="toolbar-group">
+                    <button id="palettePickerButton" class="theme-picker-button" title="Design system source (palette + scales)">
+                        <span class="theme-picker-prefix">Design system</span>
+                        <i class="fas fa-swatchbook"></i>
+                        <span id="palettePickerLabel">Tailwind</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div id="palettePickerMenu" class="theme-picker-menu palette-picker-menu" hidden>
+                        <button class="theme-picker-row active" data-palette-source="tailwind">Tailwind</button>
+                        <button class="theme-picker-row" data-palette-source="atlassian">Atlassian</button>
+                    </div>
+                </div>
+
                 <div class="toolbar-group">
                     <button id="themePickerButton" class="theme-picker-button" title="Start from a theme or a saved system">
                         <span class="theme-picker-prefix">Start from</span>
@@ -29,18 +43,6 @@
                     <div id="themePickerMenu" class="theme-picker-menu" hidden>
                         <input type="text" id="themeSearchInput" class="theme-search-input" placeholder="Search themes and saved systems...">
                         <div id="themePickerList" class="theme-picker-list"></div>
-                    </div>
-                </div>
-
-                <div class="toolbar-group">
-                    <button id="palettePickerButton" class="theme-picker-button" title="Foundation source (palette + scales)">
-                        <i class="fas fa-swatchbook"></i>
-                        <span id="palettePickerLabel">Tailwind</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
-                    <div id="palettePickerMenu" class="theme-picker-menu palette-picker-menu" hidden>
-                        <button class="theme-picker-row active" data-palette-source="tailwind">Tailwind</button>
-                        <button class="theme-picker-row" data-palette-source="atlassian">Atlassian</button>
                     </div>
                 </div>
             </div>
@@ -61,36 +63,23 @@
         <div class="workspace">
             <aside class="sidebar">
                 <nav class="sidebar-tabs">
-                    <button class="sidebar-tab active" data-sidebar-tab="inspector">Inspector</button>
-                    <button class="sidebar-tab" data-sidebar-tab="colors">Colors</button>
-                    <button class="sidebar-tab" data-sidebar-tab="typography">Typography</button>
+                    <button class="sidebar-tab" data-sidebar-tab="summary">Summary</button>
+                    <button class="sidebar-tab active" data-sidebar-tab="colors">Colors</button>
+                    <button class="sidebar-tab" data-sidebar-tab="space">Space</button>
+                    <button class="sidebar-tab" data-sidebar-tab="radius">Radius</button>
+                    <button class="sidebar-tab" data-sidebar-tab="border">Border</button>
+                    <button class="sidebar-tab" data-sidebar-tab="shadow">Shadow</button>
+                    <button class="sidebar-tab" data-sidebar-tab="type">Type</button>
                 </nav>
 
-                <div class="sidebar-panel active" data-sidebar-panel="inspector">
-                    <div class="field-group">
-                        <label class="field-label" for="inspectorElementSelect">Element</label>
-                        <select id="inspectorElementSelect" class="field-select"></select>
-                    </div>
-                    <div id="inspectorEmpty" class="inspector-empty">
-                        <p>Click any part of an element on the <strong>Elements</strong> page to edit it here - or pick an element above.</p>
-                        <p class="field-group-note">Every property offers only values that exist in the design system: semantic roles, palette steps, and the active foundation scales.</p>
-                    </div>
-                    <div id="inspectorPanel" class="inspector-panel" hidden></div>
-                </div>
+                <!-- The active tab's panel (panels.js builders). -->
+                <div id="panelBody" class="sidebar-panel active"></div>
 
-                <div class="sidebar-panel" data-sidebar-panel="colors">
-                    <div class="color-search-row">
-                        <input type="text" id="colorSearchInput" class="color-search-input" placeholder="Search colors...">
-                        <button id="toggleAllColorGroupsButton" class="toolbar-icon-button" title="Expand all"><i class="fas fa-chevron-down"></i></button>
-                    </div>
-                    <div class="color-link-summary">
-                        <span id="colorLinkSummaryText" class="color-link-summary-text"></span>
-                        <button id="snapAllColorsButton" class="color-link-summary-button" hidden>Snap all to palette</button>
-                    </div>
-                    <div id="colorGroups" class="color-groups"></div>
-                </div>
-
-                <div class="sidebar-panel" data-sidebar-panel="typography">
+                <!-- Typography controls live here while no Type panel is showing.
+                     scripts.js moves these nodes into #typeControlsMount when the
+                     Type tab renders and parks them back here after, so the
+                     listeners buildTypeSetGroups wires survive every re-render. -->
+                <div id="typeControlsTemplate" hidden>
                     <div class="field-group">
                         <div class="field-group-label">Font Family</div>
                         <label class="field-label" for="fontSansSelect">Sans-Serif</label>
@@ -119,10 +108,14 @@
             <div id="sidebarResizeHandle" class="sidebar-resize-handle" title="Drag to resize"></div>
 
             <main class="preview-area">
-                <nav class="preview-tabs">
-                    <button class="preview-tab" data-page="foundation">Foundation</button>
-                    <button class="preview-tab" data-page="typography">Typography</button>
-                    <button class="preview-tab active" data-page="elements">Elements</button>
+                <nav class="gallery-nav">
+                    <button class="gallery-nav-button active" data-cat="all">All</button>
+                    <button class="gallery-nav-button" data-cat="actions">Actions</button>
+                    <button class="gallery-nav-button" data-cat="forms">Forms</button>
+                    <button class="gallery-nav-button" data-cat="feedback">Feedback</button>
+                    <button class="gallery-nav-button" data-cat="surfaces">Surfaces</button>
+                    <button class="gallery-nav-button" data-cat="navigation">Navigation</button>
+                    <button class="gallery-nav-button" data-cat="data">Data</button>
                 </nav>
                 <iframe id="previewFrame" class="preview-frame" title="Design system preview"></iframe>
             </main>

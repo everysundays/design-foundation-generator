@@ -28,13 +28,18 @@
             post({ type: 'ds:action', ...action.dataset });
             return;
         }
+        const part = e.target.closest('[data-part]');
+        const root = e.target.closest('[data-element]');
+        // Anywhere that isn't a specimen part clears the selection.
+        if (!part || !root) {
+            document.querySelectorAll('[data-selected]').forEach(el => el.removeAttribute('data-selected'));
+            post({ type: 'ds:clear' });
+            return;
+        }
         const page = elementsPage();
         if (!page || !page.contains(e.target)) return;
         // Buttons/links in the gallery are specimens, never real controls.
         if (e.target.closest('a, button, input, select, textarea, label')) e.preventDefault();
-        const part = e.target.closest('[data-part]');
-        const root = e.target.closest('[data-element]');
-        if (!part || !root) return;
         document.querySelectorAll('[data-selected]').forEach(el => el.removeAttribute('data-selected'));
         part.setAttribute('data-selected', '');
         post({

@@ -1,16 +1,21 @@
-// Theme Editor v2 - design-system creator. The sidebar edits three token
-// layers (foundation subset -> semantic -> component part) and a preview
-// iframe renders three pages (Foundation, Typography, Elements) from those
-// tokens alone - see REQUIREMENTS-v2.md and ARCHITECTURE-v2.md.
+// Theme Editor v3 - "touch and go" design-system creator. The right pane is
+// the Elements gallery (every base element x variant x state, rendered from
+// the token chain alone); the left sidebar is the PICKER: select a part in
+// the gallery, open a foundation tab (Colors / Space / Radius / Border /
+// Shadow / Type), see which entry that part uses (marked), click another
+// entry to assign it. A Summary tab collects what the work uses and keeps the
+// semantic-role list so values can be reconciled to roles later.
+// See REQUIREMENTS-v2.md, ARCHITECTURE-v2.md (data model) and
+// ARCHITECTURE-v3.md (this layout).
 //
 // Preview isolation is structural: the preview is a real <iframe>, a separate
 // document from this page. The editor chrome is styled entirely by styles.css
-// and never touches the design system's CSS variables.
+// / panels.css and never touches the design system's CSS variables.
 //
 // Sibling modules (plain globals, see index.html load order): foundation.js
 // (FOUNDATION scales + ref helpers), components.js (ELEMENTS spec, seeding,
-// wiring CSS, gallery), pages.js (Foundation/Typography page HTML), dtcg.js
-// (tokens.json export/import).
+// wiring CSS, gallery), panels.js (sidebar panel HTML), dtcg.js (tokens.json
+// export/import).
 
 const STORAGE_KEY = 'themeEditor.savedSystems';
 // v1 stored { name: { light, dark } } under this key - still readable, as
@@ -146,12 +151,18 @@ let state = {
     mode: 'light',
     vars: { light: {}, dark: {} },
     loadedVars: { light: {}, dark: {} },
+    // v2's declared palette subset is gone; `families` is kept as "every
+    // family of the source" so saves and the DTCG export keep their shape.
     palette: { families: [] },
     loadedPalette: { families: [] },
     components: {},
     loadedComponents: {},
-    activePage: 'elements',
-    selection: null
+    // Which sidebar tab is showing (summary | colors | space | radius |
+    // border | shadow | type) - the tab decides which prop KIND a click assigns.
+    activeTab: 'colors',
+    // kind -> prop key, for parts with several props of one kind (padding x/y).
+    activeProp: {},
+    selection: null           // { element, variant, part, state } | null
 };
 
 // Authoritative palette-token link for every semantic color, keyed by mode
@@ -265,52 +276,21 @@ function flattenVars(theme) {
     };
 }
 
-// --- Palette subset ---
-function neutralFamilyFor(sourceKey) {
-    return sourceKey === 'atlassian' ? 'Neutral' : 'neutral';
-}
-
+// --- Palette helpers ---
 function isSpecialName(name) {
     return POPOVER_SPECIALS.some(([, special]) => special === name);
 }
 
-// Families the current links land in (both modes), in source order, plus a
-// neutral ramp if none of them is neutral-ish - a system with no neutral
-// can't build a surface.
-function derivePaletteFamilies() {
-    const used = new Set();
-    ['light', 'dark'].forEach(mode => {
-        Object.values(tokenLinks[mode]).forEach(link => {
-            if (link.source !== activePaletteSource) return;
-            const family = paletteFamilyOfName(activePaletteSource, link.name);
-            if (family) used.add(family);
-        });
-    });
-    if (![...used].some(f => /neutral|gray|zinc|slate|stone|mauve|olive|mist|taupe/i.test(f))) used.add(neutralFamilyFor(activePaletteSource));
-    return foundationOf(activePaletteSource).color.families().filter(f => used.has(f));
+// Every family of the active source. v3 shows the whole palette; the
+// "subset" a system declares is simply everything (see state.palette).
+function allFamilies() {
+    return [...foundationOf(activePaletteSource).color.families()];
 }
 
-function unionFamilies(a, b) {
-    const set = new Set([...a, ...b]);
-    return foundationOf(activePaletteSource).color.families().filter(f => set.has(f));
-}
-
-// A link "is in the palette" when it names a swatch of the active source that
-// sits in the declared subset (specials always count).
+// A semantic color "is linked" when its link names a swatch (or a special)
+// of the active source.
 function isLinkInPalette(link) {
-    if (!link || link.source !== activePaletteSource) return false;
-    if (isSpecialName(link.name)) return true;
-    const family = paletteFamilyOfName(activePaletteSource, link.name);
-    return !!family && state.palette.families.includes(family);
-}
-
-function toggleRamp(family) {
-    const families = state.palette.families;
-    const next = families.includes(family) ? families.filter(f => f !== family) : unionFamilies(families, [family]);
-    if (!next.length) return;
-    pushUndo();
-    state.palette.families = next;
-    renderAll();
+    return !!link && link.source === activePaletteSource;
 }
 
 // --- Load / undo ---
@@ -357,7 +337,7 @@ function applyLoaded({ name, vars, links, families, components }) {
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
     tokenLinks = { light: { ...links.light }, dark: { ...links.dark } };
     loadedTokenLinks = { light: { ...links.light }, dark: { ...links.dark } };
-    state.palette = { families: families && families.length ? [...families] : derivePaletteFamilies() };
+    state.palette = { families: allFamilies() };
     state.loadedPalette = { families: [...state.palette.families] };
     state.components = { ...components };
     state.loadedComponents = { ...components };
@@ -400,6 +380,14 @@ function currentVars() {
     return state.vars[state.mode];
 }
 
+// True while the user is typing/dragging inside the sidebar panel - rebuilding
+// the panel's DOM mid-keystroke would steal focus from that control.
+function panelHasFocus() {
+    const active = document.activeElement;
+    const body = document.getElementById('panelBody');
+    return !!(active && body && body.contains(active) && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName));
+}
+
 // `link` (when passed) replaces the field's tokenLinks entry atomically with
 // the value write, both landing after pushUndo's snapshot.
 function setVar(key, value, { record = true, link } = {}) {
@@ -410,24 +398,27 @@ function setVar(key, value, { record = true, link } = {}) {
         else delete tokenLinks[state.mode][key];
     }
     renderPreview();
-    renderColorGroups();
-    if (key.startsWith('type-') || key.startsWith('font-')) renderTypographyTab();
-    renderInspector();
+    if (key.startsWith('type-') || key.startsWith('font-') || key.startsWith('tracking')) renderTypographyTab();
+    if (panelHasFocus()) {
+        // Keep the control the user is in; the panel's own readouts refresh
+        // on the next full render (blur, tab switch, gallery click).
+            renderSemanticRolesIfMounted();
+        return;
+    }
+    renderPanel();
 }
 
 function setComponentToken(id, ref) {
     pushUndo();
     state.components[id] = ref;
-    renderPreview();
-    renderInspector();
+    renderAll();
 }
 
 function clearComponentToken(id) {
     if (!Object.prototype.hasOwnProperty.call(state.components, id)) return;
     pushUndo();
     delete state.components[id];
-    renderPreview();
-    renderInspector();
+    renderAll();
 }
 
 function updateUndoRedoButtons() {
@@ -436,32 +427,32 @@ function updateUndoRedoButtons() {
 }
 
 // --- Sidebar tabs ---
+const SIDEBAR_TABS = ['summary', 'colors', 'space', 'radius', 'border', 'shadow', 'type'];
+
 function showSidebarTab(key) {
+    if (!SIDEBAR_TABS.includes(key)) return;
+    state.activeTab = key;
     document.querySelectorAll('.sidebar-tab').forEach(b => b.classList.toggle('active', b.dataset.sidebarTab === key));
-    document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.toggle('active', p.dataset.sidebarPanel === key));
+    renderPanel();
 }
 
-// --- Sidebar: Colors ---
+// --- Semantic roles (Summary tab) ---
+// The 34 palette-linked roles as foldable groups, rendered into the Summary
+// panel's #semanticRolesMount so a role can still be re-linked through the
+// palette popover and reconciled with what the work actually uses.
 const openGroups = new Set(ALL_COLOR_GROUPS.filter(g => g.open).map(g => g.key));
 
-function renderFoldableGroups(groups, containerId, searchTerm) {
-    const container = document.getElementById(containerId);
+function renderFoldableGroups(groups, container) {
     container.innerHTML = '';
     const vars = currentVars();
 
     groups.forEach(group => {
-        const visibleFields = group.fields.filter(([key, label]) =>
-            !searchTerm || key.includes(searchTerm) || label.toLowerCase().includes(searchTerm) || group.label.toLowerCase().includes(searchTerm)
-        );
-        if (!visibleFields.length) return;
-
         const details = document.createElement('details');
         details.className = 'color-group';
         details.dataset.group = group.key;
-        details.open = searchTerm ? true : openGroups.has(group.key);
+        details.open = openGroups.has(group.key);
         details.addEventListener('toggle', () => {
             if (details.open) openGroups.add(group.key); else openGroups.delete(group.key);
-            updateToggleAllColorGroupsButton();
         });
 
         const summary = document.createElement('summary');
@@ -470,7 +461,7 @@ function renderFoldableGroups(groups, containerId, searchTerm) {
         summaryText.textContent = group.label;
         const summarySwatches = document.createElement('span');
         summarySwatches.className = 'color-group-fold-swatches';
-        visibleFields.forEach(([key]) => {
+        group.fields.forEach(([key]) => {
             const dot = document.createElement('span');
             dot.className = 'color-group-fold-swatch';
             dot.style.backgroundColor = cssColorToHex(vars[key]) || '#000000';
@@ -481,46 +472,55 @@ function renderFoldableGroups(groups, containerId, searchTerm) {
 
         const body = document.createElement('div');
         body.className = 'color-group-body';
-        visibleFields.forEach(([key, label]) => body.appendChild(createColorFieldRow(key, label, vars)));
+        group.fields.forEach(([key, label]) => body.appendChild(createColorFieldRow(key, label, vars)));
         details.appendChild(body);
         container.appendChild(details);
     });
 }
 
-function renderColorGroups() {
-    const search = document.getElementById('colorSearchInput').value.trim().toLowerCase();
-    renderFoldableGroups(ALL_COLOR_GROUPS, 'colorGroups', search);
-    updateToggleAllColorGroupsButton();
-    renderColorLinkSummary();
-}
-
-// Every semantic color whose active-mode link doesn't land in the declared
-// palette subset (no link, other source, or a ramp that was removed).
+// Every semantic color whose active-mode link doesn't name a swatch of the
+// active source (no link, or a link from the other source).
 function unlinkedColorKeys() {
     return LINKABLE_COLOR_KEYS.filter(key => !isLinkInPalette(tokenLinks[state.mode][key]));
 }
 
-function renderColorLinkSummary() {
+// Renders the roles section (link summary line + snap-all + groups) into the
+// Summary panel's mount. No-op when the Summary panel isn't showing.
+function renderSemanticRoles() {
+    const mount = document.getElementById('semanticRolesMount');
+    if (!mount) return;
+    mount.innerHTML = '';
     const unlinked = unlinkedColorKeys();
     const total = LINKABLE_COLOR_KEYS.length;
-    const linked = total - unlinked.length;
-    const text = document.getElementById('colorLinkSummaryText');
-    text.textContent = `${linked} of ${total} colors linked (${state.mode})`;
-    text.classList.toggle('color-link-summary-text-warning', unlinked.length > 0);
-    text.title = unlinked.length ? `Outside the palette: ${unlinked.join(', ')}` : 'Every color resolves to a palette token in the subset';
-    document.getElementById('snapAllColorsButton').hidden = unlinked.length === 0;
+
+    const summaryRow = document.createElement('div');
+    summaryRow.className = 'color-link-summary';
+    const text = document.createElement('span');
+    text.className = 'color-link-summary-text' + (unlinked.length ? ' color-link-summary-text-warning' : '');
+    text.textContent = `${total - unlinked.length} of ${total} roles linked (${state.mode})`;
+    text.title = unlinked.length ? `Unlinked: ${unlinked.join(', ')}` : `Every role resolves to a ${foundationOf(activePaletteSource).label} swatch`;
+    summaryRow.appendChild(text);
+    if (unlinked.length) {
+        const snap = document.createElement('button');
+        snap.className = 'color-link-summary-button';
+        snap.textContent = 'Snap all to palette';
+        snap.addEventListener('click', () => {
+            pushUndo();
+            Object.assign(tokenLinks[state.mode], snapVarsToPalette(state.vars[state.mode], activePaletteSource, unlinkedColorKeys()));
+            renderAll();
+        });
+        summaryRow.appendChild(snap);
+    }
+    mount.appendChild(summaryRow);
+
+    const groups = document.createElement('div');
+    groups.className = 'color-groups';
+    renderFoldableGroups(ALL_COLOR_GROUPS, groups);
+    mount.appendChild(groups);
 }
 
-function updateToggleAllColorGroupsButton() {
-    const btn = document.getElementById('toggleAllColorGroupsButton');
-    const allOpen = ALL_COLOR_GROUPS.every(g => openGroups.has(g.key));
-    btn.title = allOpen ? 'Collapse all' : 'Expand all';
-    btn.classList.toggle('expanded', allOpen);
-}
-
-function setAllColorGroupsOpen(open) {
-    ALL_COLOR_GROUPS.forEach(g => { if (open) openGroups.add(g.key); else openGroups.delete(g.key); });
-    renderColorGroups();
+function renderSemanticRolesIfMounted() {
+    if (document.getElementById('semanticRolesMount')) renderSemanticRoles();
 }
 
 // One semantic color row: swatch, label, read-only token-name field, palette
@@ -543,18 +543,15 @@ function createColorFieldRow(key, label, vars) {
 
     const link = tokenLinks[state.mode][key];
     const inPalette = isLinkInPalette(link);
-    const sameSource = link && link.source === activePaletteSource;
 
-    // Three states: in the palette (token name); linked but outside the
-    // subset / other source ("Outside palette"); no link at all ("Unlinked").
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'color-field-input' + (inPalette ? '' : ' color-field-input-unlinked');
-    input.value = inPalette ? link.name : (link ? 'Outside palette' : 'Unlinked');
+    input.value = inPalette ? link.name : (link ? 'Other source' : 'Unlinked');
     input.title = inPalette
         ? `${foundationOf(activePaletteSource).label} ${link.name}`
         : (link
-            ? `Linked to ${(FOUNDATION[link.source] || {}).label || link.source} ${link.name} - not in this system's palette subset`
+            ? `Linked to ${(FOUNDATION[link.source] || {}).label || link.source} ${link.name} - not the active design system`
             : 'Not linked to any palette token - pick a swatch, or use "Snap all to palette"');
     input.readOnly = true;
     if (!inPalette) {
@@ -564,14 +561,14 @@ function createColorFieldRow(key, label, vars) {
         swatch.appendChild(dot);
     }
 
-    const openPicker = () => openColorPalettePopover(paletteBtn, sameSource ? link.name : null, (newHex, newName) => {
+    const openPicker = () => openColorPalettePopover(paletteBtn, inPalette ? link.name : null, (newHex, newName) => {
         setVar(key, newHex, { link: { source: activePaletteSource, name: newName, hex: newHex.toLowerCase() } });
     });
     input.addEventListener('click', (e) => { e.stopPropagation(); openPicker(); });
 
     const paletteBtn = document.createElement('button');
     paletteBtn.className = 'color-field-palette-btn';
-    paletteBtn.title = `Pick from the ${foundationOf(activePaletteSource).label} palette subset`;
+    paletteBtn.title = `Pick from the ${foundationOf(activePaletteSource).label} palette`;
     paletteBtn.innerHTML = '<i class="fas fa-swatchbook"></i>';
     paletteBtn.addEventListener('click', (e) => { e.stopPropagation(); openPicker(); });
 
@@ -589,20 +586,19 @@ function createColorFieldRow(key, label, vars) {
     return row;
 }
 
-// Jump from the preview's semantic list to the matching Colors-tab row.
+// Jump to a role's row in the Summary tab (used when a tooltip names a role).
 function revealSemanticRow(key) {
     const group = ALL_COLOR_GROUPS.find(g => g.fields.some(([k]) => k === key));
     if (!group) return;
-    showSidebarTab('colors');
-    document.getElementById('colorSearchInput').value = '';
     openGroups.add(group.key);
-    renderColorGroups();
+    showSidebarTab('summary');
     const row = document.querySelector(`.color-field-row[data-key="${CSS.escape(key)}"]`);
     if (!row) return;
     row.scrollIntoView({ block: 'center', behavior: 'smooth' });
     row.classList.add('color-field-row-flash');
     setTimeout(() => row.classList.remove('color-field-row-flash'), 1000);
 }
+
 
 // --- Sidebar: Typography ---
 const FONT_OPTIONS = {
@@ -951,15 +947,39 @@ function snapVarsToPalette(vars, sourceKey, keys, families) {
     return links;
 }
 
+// Tooltip text is line-based (see panelTip): the first line is the title,
+// every other line is `label: a, b, c (+N)` and renders as a label followed
+// by one pill per token name. A single-line text stays a plain readout.
+function tooltipHtml(text) {
+    const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lines = String(text).split('\n');
+    const title = `<div class="swatch-tooltip-title">${esc(lines[0])}</div>`;
+    const rows = lines.slice(1).map(line => {
+        const at = line.indexOf(': ');
+        if (at === -1) return `<div class="swatch-tooltip-row">${esc(line)}</div>`;
+        const label = line.slice(0, at);
+        let rest = line.slice(at + 2);
+        let more = '';
+        const m = /\s*\(\+(\d+)\)$/.exec(rest);
+        if (m) { more = `<span class="swatch-tooltip-more">+${m[1]}</span>`; rest = rest.slice(0, m.index); }
+        const pills = rest.split(', ').filter(Boolean).map(n => `<span class="swatch-tooltip-pill">${esc(n)}</span>`).join('');
+        return `<div class="swatch-tooltip-row"><span class="swatch-tooltip-label">${esc(label)}</span>${pills}${more}</div>`;
+    }).join('');
+    return title + rows;
+}
+
 function showSwatchTooltip(anchorEl, text) {
     const tip = document.getElementById('swatchTooltip');
-    tip.textContent = text;
+    tip.innerHTML = tooltipHtml(text);
     tip.hidden = false;
+    const gap = 6, edge = 8;
     const anchorRect = anchorEl.getBoundingClientRect();
     const tipRect = tip.getBoundingClientRect();
-    const left = Math.max(4, Math.min(anchorRect.left + anchorRect.width / 2 - tipRect.width / 2, window.innerWidth - tipRect.width - 4));
-    const above = anchorRect.top - tipRect.height - 4;
-    const top = above < 4 ? anchorRect.bottom + 4 : above;
+    const left = Math.max(edge, Math.min(anchorRect.left + anchorRect.width / 2 - tipRect.width / 2, window.innerWidth - tipRect.width - edge));
+    // Above the anchor by default; below it when that would run past the top.
+    const above = anchorRect.top - tipRect.height - gap;
+    const top = above < edge ? anchorRect.bottom + gap : above;
+    tip.classList.toggle('swatch-tooltip-below', above < edge);
     tip.style.left = `${left}px`;
     tip.style.top = `${top}px`;
 }
@@ -996,13 +1016,12 @@ function makePopoverSwatch(popover, hex, name, extraClass, ref) {
     return btn;
 }
 
-// Only the declared subset's ramps are offered - the palette IS the subset.
+// Every ramp of the active source.
 function renderColorPopoverGrid() {
     const popover = document.getElementById('colorPalettePopover');
     const grid = popover.querySelector('.color-popover-grid');
     grid.innerHTML = '';
-    const families = state.palette.families.length ? state.palette.families : foundationOf(activePaletteSource).color.families();
-    families.forEach(family => {
+    allFamilies().forEach(family => {
         const rowEl = document.createElement('div');
         rowEl.className = 'color-popover-row';
         paletteFamilyEntries(activePaletteSource, family).forEach(entry => rowEl.appendChild(makePopoverSwatch(popover, entry.hex, entry.name)));
@@ -1110,13 +1129,7 @@ function scaleKinds() {
 function cssVarBlockFor(vars, links) {
     const lines = [];
     const source = activePaletteSource;
-    const families = new Set(state.palette.families);
-    Object.values(links).forEach(link => {
-        if (link.source !== source) return;
-        const family = paletteFamilyOfName(source, link.name);
-        if (family) families.add(family);
-    });
-    foundationOf(source).color.families().filter(f => families.has(f)).forEach(family => {
+    foundationOf(source).color.families().forEach(family => {
         paletteFamilyEntries(source, family).forEach(entry => lines.push(`  ${refToVar(`palette.${entry.name}`)}: ${entry.hex};`));
     });
     lines.push('  --palette-white: #ffffff;', '  --palette-black: #000000;', '  --palette-transparent: transparent;');
@@ -1129,7 +1142,7 @@ function cssVarBlockFor(vars, links) {
     LINKABLE_COLOR_KEYS.forEach(key => {
         if (vars[key] === undefined) return;
         const link = links[key];
-        const linked = link && link.source === source && (isSpecialName(link.name) || families.has(paletteFamilyOfName(source, link.name)));
+        const linked = isLinkInPalette(link) && (isSpecialName(link.name) || !!paletteEntryByName(source, link.name));
         lines.push(`  --${key}: ${linked ? `var(${refToVar(`palette.${link.name}`)})` : vars[key]};`);
         emitted.add(key);
     });
@@ -1169,24 +1182,6 @@ function themeVarsCss(vars, links) {
     return `@layer tokens {\n:root {\n${cssVarBlockFor(vars, links)}\n}\n}`;
 }
 
-function pagesCtx() {
-    const foundation = foundationOf(activePaletteSource);
-    return {
-        source: activePaletteSource,
-        foundation,
-        families: state.palette.families,
-        allFamilies: foundation.color.families(),
-        vars: state.vars,
-        links: tokenLinks,
-        mode: state.mode,
-        semanticGroups: ALL_COLOR_GROUPS,
-        components: state.components,
-        usage: typeof componentUsage === 'function' ? componentUsage(state.components) : {},
-        typeSets: TYPE_SETS,
-        typeSetSummary
-    };
-}
-
 function safeBuild(fnName, ...args) {
     const fn = typeof window !== 'undefined' ? window[fnName] : undefined;
     if (typeof fn !== 'function') return `<div class="page"><p>${fnName} is not loaded.</p></div>`;
@@ -1212,10 +1207,8 @@ function buildPreviewDocument(vars, links) {
 ${typeMetaCss(vars)}
 }</style>
 </head>
-<body data-route="${state.activePage}" data-inspect-state="${state.selection ? state.selection.state : 'default'}">
-<section data-page="foundation">${safeBuild('buildFoundationPageHtml', pagesCtx())}</section>
-<section data-page="typography">${safeBuild('buildTypographyPageHtml', pagesCtx())}</section>
-<section data-page="elements">${safeBuild('buildGalleryHtml')}</section>
+<body data-route="elements" data-inspect-state="${state.selection ? state.selection.state : 'default'}">
+<section data-page="elements"><div class="page gallery-page">${safeBuild('buildGalleryHtml')}</div></section>
 <script src="preview/frame.js"><\/script>
 </body>
 </html>`;
@@ -1227,22 +1220,44 @@ function previewDocument() {
     return doc && doc.getElementById('theme-vars') ? doc : null;
 }
 
-// Marks the selected part in the gallery cell for the state being inspected.
+// The gallery shows ONE instance per element. The selected element's stage
+// renders the variant + state being inspected; every other stage sits at its
+// first variant, default state. Only stages whose shown pair changed are
+// re-rendered, so unrelated DOM stays put.
+function syncGalleryStages(doc) {
+    if (typeof renderGalleryInstance !== 'function') return;
+    const sel = state.selection;
+    doc.querySelectorAll('[data-page="elements"] .gallery-stage[data-gallery-element]').forEach(stage => {
+        const key = stage.dataset.galleryElement;
+        const spec = elementSpec(key);
+        if (!spec) return;
+        const mine = sel && sel.element === key;
+        const variant = mine ? (sel.variant || '') : ((spec.variants && spec.variants[0]) || '');
+        const st = mine ? sel.state : 'default';
+        if (stage.dataset.variant === variant && stage.dataset.state === st) return;
+        stage.dataset.variant = variant;
+        stage.dataset.state = st;
+        stage.innerHTML = renderGalleryInstance(key, variant || null, st);
+    });
+}
+
+// Marks the selected part in the gallery for the state being inspected.
 function applySelectionHighlight(doc) {
+    syncGalleryStages(doc);
     doc.querySelectorAll('[data-selected]').forEach(el => el.removeAttribute('data-selected'));
     const sel = state.selection;
     doc.body.dataset.inspectState = sel ? sel.state : 'default';
     if (!sel) return;
-    const variantSel = sel.variant ? `[data-variant="${CSS.escape(sel.variant)}"]` : ':not([data-variant])';
-    const root = doc.querySelector(`[data-page="elements"] [data-element="${CSS.escape(sel.element)}"]${variantSel}[data-state="${CSS.escape(sel.state)}"]`);
+    const stage = doc.querySelector(`[data-page="elements"] .gallery-stage[data-gallery-element="${CSS.escape(sel.element)}"]`);
+    const root = stage && stage.querySelector(`[data-element="${CSS.escape(sel.element)}"]`);
     if (!root) return;
     const part = root.dataset.part === sel.part ? root : root.querySelector(`[data-part="${CSS.escape(sel.part)}"]`);
     if (part) part.setAttribute('data-selected', '');
 }
 
-// Edits patch the one theme-vars <style> and re-render the two read-mostly
-// pages; the gallery DOM stays put so selection survives. A full srcdoc
-// build happens only once (or if the document went away).
+// Edits patch the one theme-vars <style> in place; the gallery DOM stays put
+// so selection survives. A full srcdoc build happens only once (or if the
+// document went away).
 function renderPreview() {
     const iframe = document.getElementById('previewFrame');
     const vars = currentVars();
@@ -1251,34 +1266,35 @@ function renderPreview() {
     if (doc) {
         doc.getElementById('theme-vars').textContent = themeVarsCss(vars, links);
         syncPreviewTypeHead(doc, vars);
-        const foundationPage = doc.querySelector('[data-page="foundation"]');
-        const typographyPage = doc.querySelector('[data-page="typography"]');
-        const ctx = pagesCtx();
-        if (foundationPage) foundationPage.innerHTML = safeBuild('buildFoundationPageHtml', ctx);
-        if (typographyPage) typographyPage.innerHTML = safeBuild('buildTypographyPageHtml', ctx);
-        doc.body.dataset.route = state.activePage;
         applySelectionHighlight(doc);
         return;
     }
     iframe.srcdoc = buildPreviewDocument(vars, links);
 }
 
-function renderPageTabs() {
-    document.querySelectorAll('.preview-tab').forEach(b => b.classList.toggle('active', b.dataset.page === state.activePage));
+function scrollGalleryTo(cat) {
+    const doc = previewDocument();
+    document.querySelectorAll('.gallery-nav-button').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+    if (!doc) return;
+    if (cat === 'all') { doc.defaultView.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    const section = doc.getElementById(`cat-${cat}`);
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderAll() {
-    renderColorGroups();
-    renderTypographyTab();
+    renderPanel();
     renderThemePickerButton();
     renderColorPopoverGrid();
-    renderPageTabs();
-    renderInspector();
     renderPreview();
 }
 
-// --- Inspector ---
+// --- Selection, active property, marks, strip, panel ---
 const STATE_LABELS = { default: 'Default', hover: 'Hover', focus: 'Focus', active: 'Active', disabled: 'Disabled' };
+
+// Which prop kind(s) each sidebar tab assigns.
+const TAB_KINDS = { colors: ['color'], space: ['space'], radius: ['radius'], border: ['borderWidth', 'borderStyle'], shadow: ['shadow'], type: ['type'], summary: [] };
+// Ref kind (parseRef) -> prop kind a click on that ref assigns.
+const REF_KIND_TO_PROP_KIND = { palette: 'color', color: 'color', space: 'space', radius: 'radius', borderWidth: 'borderWidth', borderStyle: 'borderStyle', shadow: 'shadow', type: 'type' };
 
 // elementSpec(keyOrSpec) comes from components.js.
 
@@ -1287,7 +1303,8 @@ function titleCase(text) {
 }
 
 // Token id per the contract grammar: element[.variant].part[.prop][.state]
-// (prop only for multi-prop parts, state only when not default).
+// (prop only for multi-prop parts, state only when not default). Same result
+// as components.js tokenId(), kept local so it works with a raw prop key.
 function componentId(element, variant, part, prop, stateKey) {
     const segments = [element];
     if (variant) segments.push(variant);
@@ -1306,7 +1323,66 @@ function componentRef(id) {
     return state.components[id];
 }
 
-// Full chain for a ref, for the breadcrumb: "color.border → neutral-200 (#e5e5e5)".
+function selectedSpec() {
+    const sel = state.selection;
+    return sel && typeof elementSpec === 'function' ? elementSpec(sel.element) : null;
+}
+
+function selectedPartSpec() {
+    const spec = selectedSpec();
+    if (!spec) return null;
+    return spec.parts.find(p => p.key === state.selection.part) || spec.parts[0];
+}
+
+// The part a tab edits for one kind: the selected part when it has a prop of
+// that kind, else the element's first part that does - so clicking a button's
+// label and then opening Space still lets you set the button's padding
+// ("touch and go" - the tab always has something to assign to).
+function effectivePartSpec(kind) {
+    const spec = selectedSpec();
+    const part = selectedPartSpec();
+    if (!spec || !part) return null;
+    if (part.props.some(p => p.kind === kind)) return part;
+    return spec.parts.find(p => p.props.some(q => q.kind === kind)) || null;
+}
+
+// The effective part's props of one kind (e.g. padding -> [x, y] for 'space').
+function activeProps(selection, kind) {
+    const spec = selectedSpec();
+    const part = effectivePartSpec(kind);
+    if (!spec || !part || !selection) return [];
+    return part.props.filter(p => p.kind === kind);
+}
+
+// The one prop of `kind` a click assigns: the remembered chip, else the first.
+function activePropSpec(kind) {
+    const props = activeProps(state.selection, kind);
+    if (!props.length) return null;
+    const chosen = state.activeProp[kind];
+    return props.find(p => p.key === chosen) || props[0];
+}
+
+function activeTokenId(kind) {
+    const spec = selectedSpec();
+    const part = effectivePartSpec(kind);
+    const prop = activePropSpec(kind);
+    if (!spec || !part || !prop) return null;
+    return partPropId(spec, state.selection.variant, part, prop, state.selection.state);
+}
+
+// Follows a ref to the foundation entry it lands on: color.<role> -> the
+// role's palette link (or null when unlinked); everything else is itself.
+function resolveToFoundation(ref, mode) {
+    const parsed = parseRef(ref);
+    if (!parsed) return null;
+    if (parsed.kind === 'color') {
+        const link = tokenLinks[mode || state.mode][parsed.name];
+        return link && link.source === activePaletteSource ? `palette.${link.name}` : null;
+    }
+    return ref;
+}
+
+// Full chain for a ref: "color.border → neutral-200 (#e5e5e5)".
 function describeRef(ref) {
     const parsed = parseRef(ref);
     if (!parsed) return String(ref);
@@ -1328,187 +1404,148 @@ function describeRef(ref) {
     return entry && entry.px !== null && entry.px !== undefined ? `${ref} (${entry.px}px)` : ref;
 }
 
-// Short resolved readout for a prop row: hex, px, or the type summary.
-function resolvedReadout(ref) {
-    const parsed = parseRef(ref);
-    if (!parsed) return { text: '?', hex: null };
-    const { kind, name } = parsed;
-    if (kind === 'color') {
-        const hex = cssColorToHex(currentVars()[name] || '');
-        const link = tokenLinks[state.mode][name];
-        return { text: link ? `${link.name} ${hex || ''}` : (hex || 'unlinked'), hex };
+function elementLabel(element, variant, part) {
+    const spec = typeof elementSpec === 'function' ? elementSpec(element) : null;
+    const crumbs = [spec ? spec.label : titleCase(element)];
+    if (variant) crumbs.push(titleCase(variant));
+    if (part) {
+        const p = spec && spec.parts.find(x => x.key === part);
+        crumbs.push(p ? (p.label || titleCase(part)) : titleCase(part));
     }
-    if (kind === 'palette') {
-        const entry = findPaletteEntryByName(activePaletteSource, name);
-        return { text: entry ? entry.hex : '?', hex: entry ? (entry.hex === 'transparent' ? null : entry.hex) : null };
-    }
-    if (kind === 'type') {
-        const set = TYPE_SETS.find(s => s.key === name);
-        return { text: set ? typeSetSummary(currentVars(), set) : '?', hex: null };
-    }
-    const entry = findScaleEntry(activePaletteSource, kind, name);
-    return { text: entry ? (entry.px !== null && entry.px !== undefined ? `${entry.px}px` : entry.value) : 'off-scale', hex: null };
+    return crumbs.join(' › ');
 }
 
-function renderInspectorElementSelect() {
-    const select = document.getElementById('inspectorElementSelect');
-    if (!select || typeof ELEMENTS === 'undefined') return;
-    if (!select.options.length) {
-        const first = document.createElement('option');
-        first.value = '';
-        first.textContent = 'Pick an element…';
-        select.appendChild(first);
-        ELEMENTS.forEach(spec => {
-            (spec.variants || [null]).forEach(variant => {
-                const opt = document.createElement('option');
-                opt.value = `${spec.key}|${variant || ''}`;
-                opt.textContent = variant ? `${spec.label} · ${titleCase(variant)}` : spec.label;
-                select.appendChild(opt);
-            });
+// Every token id of the selected element (all parts, props, states) - what
+// "used" marks are computed over.
+function selectedElementIds() {
+    const spec = selectedSpec();
+    if (!spec) return [];
+    const ids = [];
+    const variant = state.selection.variant;
+    spec.parts.forEach(part => part.props.forEach(prop => spec.states.forEach(st => ids.push(partPropId(spec, variant, part, prop, st)))));
+    return ids;
+}
+
+// ctx.marks[ref] = { count, ids, roles, used, active } per the v3 contract.
+function computeMarks() {
+    const marks = {};
+    const entry = (ref) => (marks[ref] = marks[ref] || { count: 0, ids: [], roles: [], used: false, active: false });
+
+    if (typeof componentTokenIds === 'function') {
+        componentTokenIds().forEach(id => {
+            const target = resolveToFoundation(componentRef(id), state.mode);
+            if (!target) return;
+            const m = entry(target);
+            m.count += 1;
+            m.ids.push(id);
         });
     }
-    const sel = state.selection;
-    select.value = sel ? `${sel.element}|${sel.variant || ''}` : '';
+
+    LINKABLE_COLOR_KEYS.forEach(role => {
+        const link = tokenLinks[state.mode][role];
+        if (link && link.source === activePaletteSource) entry(`palette.${link.name}`).roles.push(role);
+    });
+
+    selectedElementIds().forEach(id => {
+        const target = resolveToFoundation(componentRef(id), state.mode);
+        if (target) entry(target).used = true;
+    });
+
+    const kinds = TAB_KINDS[state.activeTab] || [];
+    kinds.forEach(kind => {
+        const id = activeTokenId(kind);
+        if (!id) return;
+        const target = resolveToFoundation(componentRef(id), state.mode);
+        if (target) entry(target).active = true;
+    });
+    return marks;
 }
 
-function renderInspector() {
-    const empty = document.getElementById('inspectorEmpty');
-    const panel = document.getElementById('inspectorPanel');
-    if (!empty || !panel) return;
-    renderInspectorElementSelect();
-    const sel = state.selection;
-    const spec = sel && elementSpec(sel.element);
-    if (!spec) {
-        empty.hidden = false;
-        panel.hidden = true;
-        panel.innerHTML = '';
+function panelCtx() {
+    return {
+        source: activePaletteSource,
+        foundation: foundationOf(activePaletteSource),
+        mode: state.mode,
+        vars: state.vars,
+        links: tokenLinks,
+        components: state.components,
+        // The panel's chips/marks follow the part the active tab actually
+        // edits (see effectivePartSpec), not necessarily the clicked one.
+        selection: (() => {
+            if (!state.selection) return null;
+            const kinds = TAB_KINDS[state.activeTab] || [];
+            const target = kinds.length ? effectivePartSpec(kinds[0]) : null;
+            return target ? { ...state.selection, part: target.key } : state.selection;
+        })(),
+        activeProps: state.activeProp,
+        marks: computeMarks(),
+        typeSets: TYPE_SETS,
+        typeSetSummary,
+        elementLabel
+    };
+}
+
+// --- Panels ---
+// Typography controls are real DOM with listeners wired once; they're moved
+// between the hidden template and the Type panel's mount, never rebuilt.
+function parkTypeControls() {
+    const template = document.getElementById('typeControlsTemplate');
+    const mount = document.getElementById('typeControlsMount');
+    if (!template || !mount) return;
+    while (mount.firstChild) template.appendChild(mount.firstChild);
+}
+
+function mountTypeControls() {
+    const template = document.getElementById('typeControlsTemplate');
+    const mount = document.getElementById('typeControlsMount');
+    if (!template || !mount) return;
+    while (template.firstChild) mount.appendChild(template.firstChild);
+}
+
+function renderPanel() {
+    const body = document.getElementById('panelBody');
+    if (!body) return;
+    // The hovered swatch is about to be replaced - don't leave its tip behind.
+    hideSwatchTooltip();
+    parkTypeControls();
+    const ctx = panelCtx();
+    const tab = state.activeTab;
+    let html = '';
+    if (tab === 'colors') html = safeBuild('buildColorsPanelHtml', ctx);
+    else if (tab === 'space') html = safeBuild('buildScalePanelHtml', 'space', ctx);
+    else if (tab === 'radius') html = safeBuild('buildScalePanelHtml', 'radius', ctx);
+    else if (tab === 'border') html = safeBuild('buildBorderPanelHtml', ctx);
+    else if (tab === 'shadow') html = safeBuild('buildScalePanelHtml', 'shadow', ctx);
+    else if (tab === 'type') html = safeBuild('buildTypePanelHtml', ctx);
+    else html = safeBuild('buildSummaryPanelHtml', ctx);
+    body.innerHTML = html;
+    if (tab === 'type') {
+        mountTypeControls();
+        renderTypographyTab();
+    }
+    if (tab === 'summary') renderSemanticRoles();
+}
+
+// One delegated click handler for every panel: chips choose the prop a kind
+// assigns; refs assign to the active token of their kind.
+function onPanelClick(e) {
+    const chip = e.target.closest('[data-prop]');
+    if (chip && chip.closest('#panelBody')) {
+        const kindHolder = chip.closest('[data-kind]');
+        const kind = chip.dataset.kind || (kindHolder && kindHolder.dataset.kind) || (TAB_KINDS[state.activeTab] || [])[0];
+        if (kind) state.activeProp[kind] = chip.dataset.prop;
+            renderPanel();
         return;
     }
-    empty.hidden = true;
-    panel.hidden = false;
-    panel.innerHTML = '';
-    const el = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
-
-    if (!spec.states.includes(sel.state)) sel.state = 'default';
-    const selectedPart = spec.parts.find(p => p.key === sel.part) || spec.parts[0];
-    sel.part = selectedPart.key;
-
-    // Breadcrumb for the part's first property.
-    const firstProp = selectedPart.props[0];
-    const firstId = partPropId(spec, sel.variant, selectedPart, firstProp, sel.state);
-    const crumbs = [spec.label];
-    if (sel.variant) crumbs.push(titleCase(sel.variant));
-    crumbs.push(selectedPart.label || titleCase(selectedPart.key));
-    if (selectedPart.props.length > 1) crumbs.push(firstProp.label || titleCase(firstProp.key));
-    const breadcrumb = el('div', 'inspector-breadcrumb', { textContent: `${crumbs.join(' › ')} → ${describeRef(componentRef(firstId))}` });
-    breadcrumb.title = breadcrumb.textContent;
-    panel.appendChild(breadcrumb);
-
-    // State switch - a dot marks states carrying explicit overrides.
-    const explicitStates = new Set();
-    Object.keys(state.components).forEach(id => {
-        const prefix = componentId(spec.key, sel.variant, '', null, null).replace(/\.$/, '');
-        if (!id.startsWith(`${prefix}.`)) return;
-        const last = id.split('.').pop();
-        if (STATE_LABELS[last] && last !== 'default') explicitStates.add(last);
-    });
-    if (spec.states.length > 1) {
-        const switcher = el('div', 'inspector-states');
-        spec.states.forEach(st => {
-            const btn = el('button', 'inspector-state-btn' + (st === sel.state ? ' active' : '') + (explicitStates.has(st) ? ' has-override' : ''), { textContent: STATE_LABELS[st] || titleCase(st), type: 'button' });
-            btn.title = explicitStates.has(st) ? `${STATE_LABELS[st]} has its own values` : `${STATE_LABELS[st]} inherits default unless edited`;
-            btn.addEventListener('click', () => {
-                state.selection.state = st;
-                renderInspector();
-                const doc = previewDocument();
-                if (doc) applySelectionHighlight(doc);
-            });
-            switcher.appendChild(btn);
-        });
-        panel.appendChild(switcher);
-    }
-
-    // Parts: the selected one open, the rest folded.
-    spec.parts.forEach(part => {
-        const details = el('details', 'color-group inspector-part');
-        details.open = part.key === selectedPart.key;
-        const summary = el('summary', 'color-group-label');
-        summary.appendChild(el('span', '', { textContent: part.label || titleCase(part.key) }));
-        summary.appendChild(el('span', 'inspector-part-count', { textContent: `${part.props.length} prop${part.props.length === 1 ? '' : 's'}` }));
-        details.appendChild(summary);
-        details.addEventListener('toggle', () => { if (details.open) { state.selection.part = part.key; } });
-        const body = el('div', 'color-group-body');
-        part.props.forEach(prop => body.appendChild(renderInspectorPropRow(spec, sel, part, prop)));
-        details.appendChild(body);
-        panel.appendChild(details);
-    });
-}
-
-function renderInspectorPropRow(spec, sel, part, prop) {
-    const el = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
-    const id = partPropId(spec, sel.variant, part, prop, sel.state);
-    const defaultId = partPropId(spec, sel.variant, part, prop, 'default');
-    const explicit = Object.prototype.hasOwnProperty.call(state.components, id);
-    const inherited = sel.state !== 'default' && !explicit;
-    const ref = componentRef(id) || componentRef(defaultId) || '';
-    const kind = prop.kind;
-
-    const row = el('div', 'inspector-prop' + (inherited ? ' inspector-prop-inherited' : ''));
-    row.dataset.id = id;
-    const head = el('div', 'inspector-prop-head');
-    head.appendChild(el('span', 'inspector-prop-label', { textContent: prop.label || titleCase(prop.key || part.key) }));
-    const chip = el('span', 'inspector-prop-chip', { textContent: ref });
-    chip.title = id;
-    head.appendChild(chip);
-    if (inherited) head.appendChild(el('span', 'inspector-prop-inherit-note', { textContent: 'inherits default' }));
-    if (explicit && sel.state !== 'default') {
-        const inheritBtn = el('button', 'inspector-inherit-btn', { type: 'button', innerHTML: '<i class="fas fa-rotate-left"></i> inherit' });
-        inheritBtn.title = 'Drop this state\'s own value and inherit the default state again';
-        inheritBtn.addEventListener('click', () => clearComponentToken(id));
-        head.appendChild(inheritBtn);
-    }
-    row.appendChild(head);
-
-    const controlRow = el('div', 'inspector-prop-control');
-    const readout = resolvedReadout(ref);
-    if (kind === 'color') {
-        const btn = el('button', 'inspector-color-btn', { type: 'button' });
-        const swatch = el('span', 'color-field-swatch');
-        if (readout.hex) swatch.style.backgroundColor = readout.hex;
-        else swatch.classList.add('color-field-swatch-transparent');
-        btn.append(swatch, el('span', 'inspector-color-btn-text', { textContent: readout.text }));
-        btn.title = 'Pick a semantic role or a palette step';
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openColorPalettePopover(btn, null, (hex, name, pickedRef) => setComponentToken(id, pickedRef), { semantic: true, currentRef: ref });
-        });
-        controlRow.appendChild(btn);
-    } else if (kind === 'type') {
-        const select = el('select', 'field-select inspector-select');
-        TYPE_SETS.forEach(set => {
-            const opt = el('option', '', { value: `type.${set.key}`, textContent: `${set.label} · ${typeSetSummary(currentVars(), set)}` });
-            select.appendChild(opt);
-        });
-        select.value = ref;
-        select.addEventListener('change', () => setComponentToken(id, select.value));
-        controlRow.appendChild(select);
-    } else if (KIND_PREFIX[kind]) {
-        const select = el('select', 'field-select inspector-select');
-        scaleEntries(activePaletteSource, kind).forEach(entry => {
-            select.appendChild(el('option', '', { value: scaleRef(kind, entry.name), textContent: scaleEntryLabel(entry) }));
-        });
-        if (![...select.options].some(o => o.value === ref)) {
-            select.appendChild(el('option', '', { value: ref, textContent: `${ref} (off-scale)` }));
-        }
-        select.value = ref;
-        select.addEventListener('change', () => setComponentToken(id, select.value));
-        controlRow.appendChild(select);
-        controlRow.appendChild(el('span', 'field-readout', { textContent: readout.text }));
-    } else {
-        controlRow.appendChild(el('span', 'field-readout', { textContent: `${ref} (${kind})` }));
-    }
-    row.appendChild(controlRow);
-    return row;
+    const target = e.target.closest('[data-ref]');
+    if (!target || !target.closest('#panelBody')) return;
+    const ref = target.dataset.ref;
+    const parsed = parseRef(ref);
+    if (!parsed) return;
+    const kind = REF_KIND_TO_PROP_KIND[parsed.kind];
+    const id = kind ? activeTokenId(kind) : null;
+    if (!id) return;
+    setComponentToken(id, ref);
 }
 
 function selectElement(element, variant, part, stateKey) {
@@ -1518,13 +1555,21 @@ function selectElement(element, variant, part, stateKey) {
         element,
         variant: variant || (spec.variants ? spec.variants[0] : null),
         part: part || spec.parts[0].key,
-        state: stateKey || 'default'
+        state: spec.states.includes(stateKey) ? stateKey : 'default'
     };
-    showSidebarTab('inspector');
-    renderInspector();
+    if (!spec.parts.some(p => p.key === state.selection.part)) state.selection.part = spec.parts[0].key;
+    renderPanel();
     const doc = previewDocument();
     if (doc) applySelectionHighlight(doc);
 }
+
+function clearSelection() {
+    state.selection = null;
+    renderPanel();
+    const doc = previewDocument();
+    if (doc) applySelectionHighlight(doc);
+}
+
 
 // --- Palette source switch ---
 function setPaletteSourceUi(sourceKey) {
@@ -1546,7 +1591,7 @@ function switchPaletteSource(next) {
         snapTypeToScale(state.vars[mode]);
     });
     if (typeof remapComponentTokens === 'function') state.components = remapComponentTokens(state.components, prev, next);
-    state.palette.families = derivePaletteFamilies();
+    state.palette.families = allFamilies();
     pushUndoSnapshot(snapshot);
     renderAll();
 }
@@ -1714,7 +1759,7 @@ function applyCssImport(text) {
             tokenLinks[mode][key] = { source: link.source, name: entry.name, hex: entry.hex.toLowerCase() };
         });
     });
-    state.palette.families = unionFamilies(state.palette.families, derivePaletteFamilies());
+    state.palette.families = allFamilies();
     renderAll();
 }
 
@@ -1769,7 +1814,7 @@ function applyDesignMdImport(text) {
         }
     }
     if (typeof data.name === 'string' && data.name.trim()) state.themeName = data.name.trim();
-    state.palette.families = unionFamilies(state.palette.families, derivePaletteFamilies());
+    state.palette.families = allFamilies();
     renderAll();
 }
 
@@ -1825,12 +1870,26 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => showSidebarTab(btn.dataset.sidebarTab));
     });
 
-    document.querySelectorAll('.preview-tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-            state.activePage = btn.dataset.page;
-            renderPageTabs();
-            renderPreview();
-        });
+    // Panels: one delegated click handler, plus tooltips for [data-tip].
+    const panelBody = document.getElementById('panelBody');
+    panelBody.addEventListener('click', onPanelClick);
+    panelBody.addEventListener('mouseover', (e) => {
+        const tipped = e.target.closest('[data-tip]');
+        if (tipped && panelBody.contains(tipped)) showSwatchTooltip(tipped, tipped.dataset.tip);
+    });
+    panelBody.addEventListener('mouseout', (e) => {
+        const tipped = e.target.closest('[data-tip]');
+        if (tipped && !(e.relatedTarget && tipped.contains(e.relatedTarget))) hideSwatchTooltip();
+    });
+    panelBody.addEventListener('focusin', (e) => {
+        const tipped = e.target.closest('[data-tip]');
+        if (tipped) showSwatchTooltip(tipped, tipped.dataset.tip);
+    });
+    panelBody.addEventListener('focusout', hideSwatchTooltip);
+
+    // Gallery category nav
+    document.querySelectorAll('.gallery-nav-button').forEach(btn => {
+        btn.addEventListener('click', () => scrollGalleryTo(btn.dataset.cat));
     });
 
     // Messages from the preview frame (see preview/frame.js).
@@ -1840,41 +1899,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const msg = e.data;
         if (msg.type === 'ds:ready') {
             const doc = previewDocument();
-            if (doc) { doc.body.dataset.route = state.activePage; applySelectionHighlight(doc); }
+            if (doc) applySelectionHighlight(doc);
         } else if (msg.type === 'ds:select') {
             selectElement(msg.element, msg.variant || null, msg.part, msg.state || 'default');
-        } else if (msg.type === 'ds:action') {
-            if (msg.action === 'toggle-ramp' && msg.family) toggleRamp(msg.family);
-            else if (msg.action === 'edit-semantic' && msg.key) revealSemanticRow(msg.key);
+        } else if (msg.type === 'ds:clear') {
+            clearSelection();
         }
-    });
-
-    const inspectorSelect = document.getElementById('inspectorElementSelect');
-    if (inspectorSelect) {
-        inspectorSelect.addEventListener('change', () => {
-            if (!inspectorSelect.value) { state.selection = null; renderInspector(); const doc = previewDocument(); if (doc) applySelectionHighlight(doc); return; }
-            const [element, variant] = inspectorSelect.value.split('|');
-            selectElement(element, variant || null, null, 'default');
-            const doc = previewDocument();
-            if (doc) {
-                const root = doc.querySelector(`[data-page="elements"] [data-element="${CSS.escape(element)}"]`);
-                if (root && state.activePage === 'elements') root.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            }
-        });
-    }
-
-    document.getElementById('colorSearchInput').addEventListener('input', renderColorGroups);
-    document.getElementById('toggleAllColorGroupsButton').addEventListener('click', () => {
-        const allOpen = ALL_COLOR_GROUPS.every(g => openGroups.has(g.key));
-        setAllColorGroupsOpen(!allOpen);
-    });
-    // "Snap all to palette" - nearest swatch WITHIN the subset, one undo step.
-    document.getElementById('snapAllColorsButton').addEventListener('click', () => {
-        const unlinked = unlinkedColorKeys();
-        if (!unlinked.length) return;
-        pushUndo();
-        Object.assign(tokenLinks[state.mode], snapVarsToPalette(state.vars[state.mode], activePaletteSource, unlinked, state.palette.families));
-        renderAll();
     });
 
     // Theme picker
@@ -1888,7 +1918,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.target.closest('#themePickerButton') && !e.target.closest('#themePickerMenu')) document.getElementById('themePickerMenu').hidden = true;
     });
 
-    // Palette-source switcher
+    // Design-system source switcher
     document.getElementById('palettePickerButton').addEventListener('click', (e) => {
         e.stopPropagation();
         const menu = document.getElementById('palettePickerMenu');
@@ -1937,7 +1967,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAll();
     });
 
-    // Typography inputs
+    // Typography inputs (live in #typeControlsTemplate until the Type panel mounts them)
     document.getElementById('fontSansSelect').addEventListener('change', (e) => setVar('font-sans', e.target.value));
     document.getElementById('fontSerifSelect').addEventListener('change', (e) => setVar('font-serif', e.target.value));
     document.getElementById('fontMonoSelect').addEventListener('change', (e) => setVar('font-mono', e.target.value));

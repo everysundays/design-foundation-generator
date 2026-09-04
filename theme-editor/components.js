@@ -66,8 +66,28 @@ const _spacePart = (key, label) => _part(key, label, [[key, 'space']]);
 
 const FORM_STATES = ['default', 'hover', 'focus', 'disabled'];
 
+// Gallery categories (ARCHITECTURE-v3.md, "Gallery categories"): the order
+// of the Elements page and of the parent's .gallery-nav. An element missing
+// from every list lands in the trailing "Other" category.
+const ELEMENT_CATEGORIES = [
+    { key: 'actions',    label: 'Actions',    elements: ['button'] },
+    { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch'] },
+    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip'] },
+    { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item'] },
+    { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
+];
+const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
+
+// Category key of an element (the first ELEMENT_CATEGORIES entry listing it,
+// else 'other'). Every ELEMENTS entry carries the same value as `category`.
+function categoryOf(elementKey) {
+    const cat = ELEMENT_CATEGORIES.find(c => c.elements.includes(elementKey));
+    return cat ? cat.key : OTHER_CATEGORY.key;
+}
+
 function _el(key, label, variants, states, parts) {
-    return { key, label, variants, states, parts };
+    return { key, label, category: categoryOf(key), variants, states, parts };
 }
 
 const ELEMENTS = [
@@ -716,22 +736,30 @@ function renderGalleryInstance(elementKey, variant, state) {
     return render ? render(variant, state) : '';
 }
 
-// The Elements page body: one section per element, a matrix of variant rows
-// x state columns, every cell forced through data-state.
+// The Elements page body: one section per element holding ONE instance (the
+// first variant, default state). The editor swaps the shown variant/state of
+// the selected element's stage in place (scripts.js syncGalleryStages).
+// Element sections sit in one unlabelled .gallery-category per
+// ELEMENT_CATEGORIES entry (in that order, elements in ELEMENTS order), plus
+// a trailing "Other" for strays - the wrapper only exists as a scroll target
+// for the parent's category nav; nothing is printed for it.
 function buildGalleryHtml() {
-    return ELEMENTS.map(el => {
-        const variants = elementVariants(el);
-        const header = '<div class="gallery-row-label gallery-corner" aria-hidden="true"></div>' +
-            el.states.map(s => `<div class="gallery-state-label" data-cell-state="${s}">${COMPONENT_STATE_LABELS[s]}</div>`).join('');
-        const rows = variants.map(variant => {
-            const label = variant ? capitalize(variant) : el.label;
-            return `<div class="gallery-row-label">${label}</div>` +
-                el.states.map(state =>
-                    `<div class="gallery-cell" data-cell-state="${state}">${renderGalleryInstance(el.key, variant, state)}</div>`
-                ).join('');
-        }).join('\n');
-        return `<section class="gallery-section" id="gallery-${el.key}" data-gallery-element="${el.key}">\n` +
-            `<h2 class="gallery-title">${el.label}</h2>\n` +
-            `<div class="gallery-matrix" style="--gallery-columns: ${el.states.length}">\n${header}\n${rows}\n</div>\n</section>`;
-    }).join('\n');
+    const groups = ELEMENT_CATEGORIES.concat(OTHER_CATEGORY)
+        .map(cat => ({ cat, els: ELEMENTS.filter(el => el.category === cat.key) }))
+        .filter(g => g.els.length);
+    return groups.map(({ cat, els }) =>
+        `<section class="gallery-category" id="cat-${cat.key}" data-gallery-category="${cat.key}">\n` +
+        `<div class="gallery-elements">\n` + els.map(buildGallerySection).join('\n') + '\n</div>\n</section>'
+    ).join('\n');
+}
+
+// One element section: a stage with the element's first variant in its
+// default state - no heading, the specimen speaks for itself. The stage
+// records what it shows so the editor can tell when a re-render is needed.
+function buildGallerySection(el) {
+    const variant = elementVariants(el)[0];
+    return `<section class="gallery-section" id="gallery-${el.key}" data-gallery-element="${el.key}">\n` +
+        `<div class="gallery-stage" data-gallery-element="${el.key}" data-variant="${variant || ''}" data-state="default">` +
+        renderGalleryInstance(el.key, variant, 'default') +
+        `</div>\n</section>`;
 }

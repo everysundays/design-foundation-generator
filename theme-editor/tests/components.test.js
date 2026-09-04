@@ -14,9 +14,9 @@ const ctx = vm.createContext({ console });
 });
 // Script-scoped `const`s are not properties of the context; lift what the
 // test needs out of the shared global lexical scope.
-const g = vm.runInContext(`({ ELEMENTS, parseRef, refToVar, findScaleEntry, paletteEntryByName,
+const g = vm.runInContext(`({ ELEMENTS, ELEMENT_CATEGORIES, categoryOf, parseRef, refToVar, findScaleEntry, paletteEntryByName,
     componentTokenIds, tokenIdParts, tokenId, propKind, seedComponentTokens, resolveComponentRef,
-    componentVarLines, buildWiringCss, buildGalleryHtml, componentUsage, remapComponentTokens })`, ctx);
+    componentVarLines, buildWiringCss, buildGalleryHtml, renderGalleryInstance, componentUsage, remapComponentTokens })`, ctx);
 
 const SOURCES = ['tailwind', 'atlassian'];
 const SEMANTIC_ROLES = new Set([
@@ -185,22 +185,59 @@ g.ELEMENTS.forEach(el => {
     ok(html.includes(`id="gallery-${el.key}"`), `gallery section ${el.key}`);
     ok(html.includes(`data-element="${el.key}"`), `gallery instance ${el.key}`);
     ok(html.includes(`class="ds-${el.key}`), `gallery class ds-${el.key}`);
-    (el.variants || []).forEach(v => ok(html.includes(`data-element="${el.key}" data-variant="${v}"`), `gallery variant ${el.key}.${v}`));
-    el.states.forEach(s => ok(html.includes(`data-cell-state="${s}"`), `gallery state cell ${s}`));
+    // ONE instance per element: a stage showing the first variant, default state
+    const stages = html.match(new RegExp(`<div class="gallery-stage" data-gallery-element="${el.key}" data-variant="([^"]*)" data-state="default">`, 'g')) || [];
+    ok(stages.length === 1, `${el.key} has exactly one stage (${stages.length})`);
+    const first = (el.variants || [null])[0];
+    ok(html.includes(`data-variant="${first || ''}" data-state="default">`), `${el.key} stage shows first variant`);
+    if (first) ok(html.includes(`data-element="${el.key}" data-variant="${first}"`), `gallery instance ${el.key}.${first}`);
+    // the other variants are absent from THIS element's stage (a tabs-list specimen may host an active tab)
+    const stageHtml = html.slice(html.indexOf(`id="gallery-${el.key}"`), html.indexOf('</section>', html.indexOf(`id="gallery-${el.key}"`)));
+    (el.variants || []).slice(1).forEach(v => ok(!stageHtml.includes(`data-element="${el.key}" data-variant="${v}"`), `gallery does not render ${el.key}.${v}`));
 });
-ok(html.includes('<h2 class="gallery-title">Button</h2>'), 'gallery title');
-ok(html.includes('class="gallery-matrix"'), 'gallery matrix');
-ok(html.includes('class="gallery-row-label"'), 'row labels');
-ok(html.includes('class="gallery-state-label"'), 'state labels');
-ok(html.includes('data-state="disabled" data-part="bg" aria-disabled="true"'), 'disabled via aria, not the attribute');
+ok(!html.includes('data-state="hover"') && !html.includes('data-state="disabled"'), 'gallery renders default state only');
+ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 'gallery prints no headings');
+
+// --- gallery categories (ARCHITECTURE-v3.md) ------------------------------
+{
+    const catKeys = g.ELEMENT_CATEGORIES.map(c => c.key);
+    ok(JSON.stringify(catKeys) === JSON.stringify(['actions', 'forms', 'feedback', 'surfaces', 'navigation', 'data']), 'category keys/order');
+    ok(g.ELEMENT_CATEGORIES.every(c => c.label && Array.isArray(c.elements) && c.elements.length), 'categories have label + elements');
+    const listed = g.ELEMENT_CATEGORIES.flatMap(c => c.elements);
+    ok(new Set(listed).size === listed.length, 'no element listed in two categories');
+    listed.forEach(k => ok(g.ELEMENTS.some(el => el.key === k), `category lists unknown element ${k}`));
+    g.ELEMENT_CATEGORIES.forEach(c => {
+        ok(html.includes(`<section class="gallery-category" id="cat-${c.key}"`), `category section cat-${c.key}`);
+    });
+    // category sections appear in ELEMENT_CATEGORIES order, then at most "Other"
+    const order = [...html.matchAll(/id="cat-([a-z-]+)"/g)].map(m => m[1]);
+    ok(JSON.stringify(order.filter(k => k !== 'other')) === JSON.stringify(catKeys), `category order ${order.join(',')}`);
+    // every element key sits inside exactly one category section
+    const sections = html.split(/(?=<section class="gallery-category")/).filter(x => x.startsWith('<section class="gallery-category"'));
+    g.ELEMENTS.forEach(el => {
+        const hosts = sections.filter(sec => sec.includes(`id="gallery-${el.key}"`));
+        ok(hosts.length === 1, `${el.key} is inside exactly one category (${hosts.length})`);
+        const catKey = g.categoryOf(el.key);
+        ok(typeof catKey === 'string' && catKey, `categoryOf(${el.key}) returns a key`);
+        ok(catKeys.includes(catKey) || catKey === 'other', `categoryOf(${el.key}) is a known key`);
+        ok(el.category === catKey, `${el.key}.category matches categoryOf`);
+        ok(hosts[0].includes(`id="cat-${catKey}"`), `${el.key} rendered under cat-${catKey}`);
+    });
+    ok(!html.includes('id="cat-other"'), 'every element is categorised (no Other group)');
+    ok(g.categoryOf('nope') === 'other', 'unknown element -> other');
+    ok(g.categoryOf('button') === 'actions' && g.categoryOf('avatar') === 'data', 'spot checks');
+}
+ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
+ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');
+ok(g.renderGalleryInstance('button', 'primary', 'disabled').includes('data-state="disabled" data-part="bg" aria-disabled="true"'), 'disabled via aria, not the attribute');
 ok(!/<button[^>]* disabled/.test(html), 'no native disabled attribute');
 ok(/<input[^>]*readonly/.test(html) && /<textarea[^>]*readonly/.test(html), 'fields readonly');
 ok(!html.includes('<img') && !html.includes('http'), 'no external assets');
-ok((html.match(/data-part="mark"/g) || []).length >= 16, 'checkbox/radio marks');
+ok((html.match(/data-part="mark"/g) || []).length === 2, 'checkbox/radio marks (one instance each)');
 ok(html.includes('data-part="thumb"'), 'switch thumb part');
 ok(html.includes('data-part="header"') && html.includes('data-part="cell"'), 'table parts');
 ok(html.includes('data-part="meta"') && html.includes('data-part="line"'), 'list meta + separator line');
-ok((html.match(/<svg /g) || []).length > 20, 'inline svg icons');
+ok((html.match(/<svg /g) || []).length >= 5, 'inline svg icons');
 ok(!/ src=/.test(html), 'no src attributes');
 
 // --- componentUsage / remapComponentTokens -----------------------------------

@@ -843,15 +843,54 @@ body.resizing-sidebar .preview-frame {
   color: var(--ui-bg);
   font-size: 11px;
   font-family: ui-monospace, monospace;
-  white-space: nowrap;
-  padding: 2px 6px;
-  border-radius: 4px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: 8px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   pointer-events: none;
   z-index: 300;
 }
 
 .swatch-tooltip[hidden] {
   display: none;
+}
+
+.swatch-tooltip-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.swatch-tooltip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.swatch-tooltip-label {
+  opacity: 0.6;
+  margin-inline-end: 2px;
+}
+
+/* Every token name is a small pill - light gray, clearly lifted off the
+   dark tooltip background rather than a barely-there tint. */
+.swatch-tooltip-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg) 35%, transparent);
+  color: var(--ui-bg);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.swatch-tooltip-more {
+  opacity: 0.6;
+  font-size: 10px;
 }
 
 .popover-swatch-transparent {
@@ -1013,51 +1052,6 @@ body.resizing-sidebar .preview-frame {
   text-overflow: ellipsis;
 }
 
-/* State switch: segmented buttons; a dot marks states with their own values. */
-.inspector-states {
-  display: flex;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-sm);
-  overflow: hidden;
-}
-
-.inspector-state-btn {
-  flex: 1;
-  position: relative;
-  border: none;
-  background: var(--ui-bg);
-  color: var(--ui-text-muted);
-  font-size: 11px;
-  padding: 6px 4px;
-  cursor: pointer;
-  border-inline-start: 1px solid var(--ui-border);
-}
-
-.inspector-state-btn:first-child {
-  border-inline-start: none;
-}
-
-.inspector-state-btn:hover {
-  background: var(--ui-bg-subtle);
-}
-
-.inspector-state-btn.active {
-  background: var(--ui-accent);
-  color: var(--ui-accent-text);
-  font-weight: 600;
-}
-
-.inspector-state-btn.has-override::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ui-warning);
-}
-
 .inspector-part-count {
   font-size: 10px;
   font-weight: 400;
@@ -1107,22 +1101,6 @@ body.resizing-sidebar .preview-frame {
 
 .inspector-prop-inherited .inspector-prop-chip {
   border-style: dashed;
-}
-
-.inspector-inherit-btn {
-  margin-inline-start: auto;
-  border: 1px solid var(--ui-border);
-  background: var(--ui-bg);
-  color: var(--ui-text-muted);
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: var(--ui-radius-sm);
-  cursor: pointer;
-}
-
-.inspector-inherit-btn:hover {
-  color: var(--ui-text);
-  background: var(--ui-bg-subtle);
 }
 
 .inspector-prop-control {
@@ -1261,4 +1239,55 @@ body.resizing-sidebar .preview-frame {
 
 .import-file-label {
   cursor: pointer;
+}
+
+/* Seven tabs need to fit a 280px sidebar: smaller, wrapping. */
+.sidebar-tabs {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.sidebar-tab {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* --- v3: gallery category nav (replaces the page tabs) --- */
+
+.gallery-nav {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  background: var(--ui-bg);
+  border-bottom: 1px solid var(--ui-border);
+  overflow-x: auto;
+}
+
+.gallery-nav-button {
+  border: none;
+  background: none;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0;
+}
+
+.gallery-nav-button:hover {
+  color: var(--ui-text);
+}
+
+.gallery-nav-button.active {
+  color: var(--ui-text);
+  font-weight: 600;
+  background: var(--ui-bg-subtle);
+}
+
+
+/* Summary tab: the semantic-roles section reuses the v2 group styling. */
+#semanticRolesMount {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }

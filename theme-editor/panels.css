@@ -1,0 +1,501 @@
+/* Sidebar picker panels (v3) - editor chrome for the fp-* markup panels.js
+   emits. Reads only the --ui-* tokens declared in styles.css; nothing here
+   is a design-system value (the samples show the token's shape/size, the
+   colours around them are the editor's own). */
+
+.fp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fp-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.fp-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+
+.fp-panel-note,
+.fp-empty {
+  font-size: 11px;
+  color: var(--ui-text-muted);
+  margin: 0;
+}
+
+.fp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fp-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+
+.fp-section-count {
+  font-weight: 400;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Nested scale panels inside the Border/Summary sections drop their own
+   head line - the section title already names them. */
+.fp-section .fp-panel-head {
+  display: none;
+}
+
+/* --- Shared: count badge, used dot, active ring --- */
+
+/* Every clickable entry is positioned so the badge/dot can anchor to it. */
+.fp-swatch,
+.fp-entry,
+.fp-type-set {
+  position: relative;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fp-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--ui-text);
+  color: var(--ui-bg);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  font-family: ui-monospace, monospace;
+  pointer-events: none;
+  /* Ring in the panel background so the pill stays legible on a dark swatch. */
+  box-shadow: 0 0 0 1.5px var(--ui-bg);
+  z-index: 1;
+}
+
+/* "The selected element uses this somewhere" - a soft corner dot. */
+[data-used]::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+  box-shadow: 0 0 0 1.5px var(--ui-bg);
+  pointer-events: none;
+}
+
+/* "The active token resolves here" - what a click would replace. Placed
+   before :hover so hovering a different entry still wins. */
+[data-active] {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.fp-swatch:hover,
+.fp-entry:hover,
+.fp-type-set:hover {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+/* --- Colors --- */
+
+/* A ramp is its label on one line and its steps on the next; the steps split
+   the panel width evenly so each is wide enough to carry its shade number. */
+.fp-ramp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fp-ramp-label {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-swatches {
+  display: flex;
+  gap: 3px;
+}
+
+.fp-swatch {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  background: var(--swatch);
+  display: grid;
+  place-items: center;
+}
+
+.fp-swatch-label {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline: 2px;
+  color: rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.fp-swatch-dark .fp-swatch-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* The used-dot sits in the corner; keep it off the label. */
+.fp-swatch[data-used]::after {
+  right: 3px;
+  bottom: 3px;
+}
+
+.fp-swatch-transparent {
+  background-color: var(--ui-bg);
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+}
+
+/* white / black / transparent share the row like any other ramp. */
+.fp-ramp-specials {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+/* --- Scale entries (space / radius / border / shadow / summary rows) --- */
+
+.fp-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fp-entry {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text);
+  text-align: left;
+}
+
+.fp-entry:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.fp-entry[data-active] {
+  background: var(--ui-bg-subtle);
+  border-color: var(--ui-border);
+}
+
+.fp-entry-name {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-entry-value {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Leave room for the badge sitting at the row's top-right corner. */
+  margin-right: 10px;
+}
+
+/* Entries keep the badge inside the row's box, not hanging off the corner. */
+.fp-entry .fp-count {
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  position: absolute;
+}
+
+.fp-entry .fp-entry-value {
+  margin-right: 0;
+}
+
+.fp-entry[data-count]:not([data-count="0"]) .fp-entry-value {
+  margin-right: 22px;
+}
+
+.fp-entry[data-used]::after {
+  right: auto;
+  left: 2px;
+  bottom: 50%;
+  transform: translateY(50%);
+}
+
+/* Samples: fixed 60x22 box so rows align; each kind paints its token. */
+.fp-sample {
+  display: block;
+  width: 60px;
+  height: 22px;
+  box-sizing: border-box;
+}
+
+/* Space bars are 1:1 with the step (largest step of either source is
+   96px), so the sample column grows to 100px for that panel only. */
+.fp-panel-scale[data-kind="space"] .fp-entry {
+  grid-template-columns: 100px 1fr auto;
+}
+
+.fp-sample-space {
+  display: flex;
+  align-items: center;
+  width: 100px;
+}
+
+.fp-sample-space i {
+  display: block;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ui-text);
+  inline-size: min(calc(var(--px) * 1px), 100px);
+  min-inline-size: 1px;
+}
+
+.fp-sample-radius {
+  background: var(--ui-text);
+  border-radius: var(--sample);
+}
+
+.fp-sample-border-width {
+  border-block-end: var(--sample) solid var(--ui-text);
+  height: 14px;
+  align-self: end;
+}
+
+.fp-sample-border-style {
+  border: 2px var(--sample) var(--ui-text);
+  border-radius: 3px;
+  height: 18px;
+}
+
+/* Shadow rows get a taller, roomier card so the blur and offset of the
+   larger steps actually show instead of being clipped by the neighbours. */
+.fp-panel-scale[data-kind="shadow"] .fp-entry {
+  grid-template-columns: 104px auto minmax(0, 1fr);
+  padding-block: 10px;
+}
+
+/* The shadow readout is the raw CSS value; keep it on one line and let it
+   fade out instead of running over the name. */
+.fp-panel-scale[data-kind="shadow"] .fp-entry-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: end;
+}
+
+.fp-panel-scale[data-kind="shadow"] .fp-entries {
+  gap: 6px;
+}
+
+.fp-sample-shadow {
+  width: 80px;
+  height: 36px;
+  margin: 2px 12px 10px;
+  border-radius: 6px;
+  background: var(--ui-bg);
+  box-shadow: var(--sample);
+}
+
+.fp-sample-color {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--swatch);
+  justify-self: start;
+}
+
+/* --- Prop chips (padding x/y, ring vs border width, …) --- */
+
+.fp-chips {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-subtle);
+  align-self: flex-start;
+}
+
+.fp-chip {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-chip[aria-pressed="true"] {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* --- Type sets --- */
+
+.fp-type-sets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fp-type-set {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  text-align: left;
+}
+
+.fp-type-set:hover,
+.fp-type-set[data-active] {
+  background: var(--ui-bg-subtle);
+}
+
+.fp-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--type-badge-color, var(--ui-text-muted));
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}
+
+.fp-type-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fp-type-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fp-type-summary {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The specimen carries the set's real font values inline; only clip it. */
+.fp-type-specimen {
+  display: block;
+  max-height: 2.6em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fp-type-set .fp-count {
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+}
+
+.fp-type-set .fp-type-main {
+  padding-right: 16px;
+}
+
+.fp-type-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.fp-type-controls:empty {
+  display: none;
+}
+
+/* --- Summary --- */
+
+.fp-panel-summary .fp-section {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.fp-panel-summary .fp-section:last-child {
+  border-bottom: none;
+}
+
+.fp-summary-entry {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 130px);
+}
+
+.fp-summary-entry .fp-type-badge {
+  justify-self: start;
+}
