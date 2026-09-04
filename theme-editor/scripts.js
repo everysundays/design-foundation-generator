@@ -5,8 +5,8 @@
 // Shadow / Type), see which entry that part uses (marked), click another
 // entry to assign it. A Summary tab collects what the work uses and keeps the
 // semantic-role list so values can be reconciled to roles later.
-// See REQUIREMENTS-v2.md, ARCHITECTURE-v2.md (data model) and
-// ARCHITECTURE-v3.md (this layout).
+// Work is tracked on the GitHub Project board linked from the root README;
+// the board, not a doc, is the source of truth for what gets built.
 //
 // Preview isolation is structural: the preview is a real <iframe>, a separate
 // document from this page. The editor chrome is styled entirely by styles.css
@@ -16,6 +16,10 @@
 // (FOUNDATION scales + ref helpers), components.js (ELEMENTS spec, seeding,
 // wiring CSS, gallery), panels.js (sidebar panel HTML), dtcg.js (tokens.json
 // export/import).
+
+// Local Docker save-server (theme-editor/save-server/) - writes a saved
+// system to theme-editor/systems/<name>.json. Independent of localStorage.
+const SAVE_SERVER_URL = 'http://localhost:4521';
 
 const STORAGE_KEY = 'themeEditor.savedSystems';
 // v1 stored { name: { light, dark } } under this key - still readable, as
@@ -157,6 +161,10 @@ let state = {
     loadedPalette: { families: [] },
     components: {},
     loadedComponents: {},
+    // User-added Space/Border/Shadow values beyond the source's fixed scale
+    // (see foundation.js's CUSTOM_SCALE) - points at that source's slot.
+    customScale: emptyCustomScale(),
+    loadedCustomScale: emptyCustomScale(),
     // Which sidebar tab is showing (summary | colors | space | radius |
     // border | shadow | type) - the tab decides which prop KIND a click assigns.
     activeTab: 'colors',
@@ -295,7 +303,7 @@ function isLinkInPalette(link) {
 
 // --- Load / undo ---
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale });
 }
 
 function restoreSnapshot(json) {
@@ -310,6 +318,7 @@ function restoreSnapshot(json) {
     tokenLinks = snap.tokenLinks;
     state.components = snap.components || state.components;
     state.palette = snap.palette || state.palette;
+    state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
 }
 
 function pushUndo() {
@@ -331,7 +340,7 @@ function seedComponentsFor(vars) {
     return typeof seedComponentTokens === 'function' ? seedComponentTokens(activePaletteSource, { radiusRem }) : {};
 }
 
-function applyLoaded({ name, vars, links, families, components }) {
+function applyLoaded({ name, vars, links, families, components, customScale }) {
     state.themeName = name;
     state.vars = { light: { ...vars.light }, dark: { ...vars.dark } };
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
@@ -341,6 +350,10 @@ function applyLoaded({ name, vars, links, families, components }) {
     state.loadedPalette = { families: [...state.palette.families] };
     state.components = { ...components };
     state.loadedComponents = { ...components };
+    // activePaletteSource is already correct here - loadTheme flips it (for a
+    // saved system) before calling applyLoaded.
+    state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
+    state.loadedCustomScale = cloneCustomScale(state.customScale);
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -356,7 +369,8 @@ function loadTheme(name) {
         applyLoaded({
             name, vars, links,
             families: saved.palette && saved.palette.families,
-            components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) }
+            components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
+            customScale: saved.customScale
         });
         return;
     }
@@ -419,6 +433,39 @@ function clearComponentToken(id) {
     pushUndo();
     delete state.components[id];
     renderAll();
+}
+
+// Adds a user-defined entry to one of the Space/Border-width/Border-style/
+// Shadow scales (see panels.js's `allowAdd` add-row). Returns an error string
+// on failure (nothing is changed), or null on success.
+function addCustomScaleEntry(kind, rawName, rawValue) {
+    const name = String(rawName || '').trim();
+    const value = String(rawValue || '').trim();
+    const label = (typeof PANEL_KIND_LABELS !== 'undefined' && PANEL_KIND_LABELS[kind]) || kind;
+    if (!name || !value) return 'Enter a name and a value.';
+    const id = cssIdent(name);
+    if (scaleEntries(activePaletteSource, kind).some(e => cssIdent(e.name) === id)) {
+        return `"${name}" collides with an existing ${label} entry.`;
+    }
+    let entry;
+    if (kind === 'borderStyle') {
+        entry = { name, value, px: null };
+    } else if (kind === 'shadow') {
+        const nums = value.split(/\s+/).map(Number);
+        if (nums.length !== 5 || nums.some(n => !Number.isFinite(n))) {
+            return 'Shadow needs 5 numbers: x y blur spread alpha (e.g. 0 4 12 0 0.15).';
+        }
+        const layers = [nums];
+        entry = { name, layers, value: shadowLayersToCss(layers), px: null };
+    } else {
+        const rem = measurementToRem(value, NaN);
+        if (!Number.isFinite(rem)) return 'Enter a number (rem) or a px value, e.g. 4.5 or 72px.';
+        entry = remEntry(name, rem);
+    }
+    pushUndo();
+    state.customScale[kind].push(entry);
+    renderAll();
+    return null;
 }
 
 function updateUndoRedoButtons() {
@@ -1105,6 +1152,20 @@ function openColorPalettePopover(anchor, currentName, onSelect, opts = {}) {
 }
 
 // --- localStorage ---
+// The full shape of one saved system - used by both the localStorage Save
+// (customSystems[name], below) and the "Save to repo" fetch to the local
+// save-server (see SAVE_SERVER_URL).
+function buildSystemSnapshot() {
+    return {
+        source: activePaletteSource,
+        palette: { families: [...state.palette.families] },
+        vars: { light: { ...state.vars.light }, dark: { ...state.vars.dark } },
+        tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
+        components: { ...state.components },
+        customScale: cloneCustomScale(state.customScale)
+    };
+}
+
 function saveCustomSystems() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(customSystems));
     localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(customThemes));
@@ -1512,10 +1573,10 @@ function renderPanel() {
     const tab = state.activeTab;
     let html = '';
     if (tab === 'colors') html = safeBuild('buildColorsPanelHtml', ctx);
-    else if (tab === 'space') html = safeBuild('buildScalePanelHtml', 'space', ctx);
+    else if (tab === 'space') html = safeBuild('buildScalePanelHtml', 'space', ctx, { allowAdd: true });
     else if (tab === 'radius') html = safeBuild('buildScalePanelHtml', 'radius', ctx);
     else if (tab === 'border') html = safeBuild('buildBorderPanelHtml', ctx);
-    else if (tab === 'shadow') html = safeBuild('buildScalePanelHtml', 'shadow', ctx);
+    else if (tab === 'shadow') html = safeBuild('buildScalePanelHtml', 'shadow', ctx, { allowAdd: true });
     else if (tab === 'type') html = safeBuild('buildTypePanelHtml', ctx);
     else html = safeBuild('buildSummaryPanelHtml', ctx);
     body.innerHTML = html;
@@ -1535,6 +1596,20 @@ function onPanelClick(e) {
         const kind = chip.dataset.kind || (kindHolder && kindHolder.dataset.kind) || (TAB_KINDS[state.activeTab] || [])[0];
         if (kind) state.activeProp[kind] = chip.dataset.prop;
             renderPanel();
+        return;
+    }
+    const addBtn = e.target.closest('[data-add-confirm]');
+    if (addBtn && addBtn.closest('#panelBody')) {
+        const row = addBtn.closest('[data-add-kind]');
+        const kind = row.dataset.addKind;
+        const nameInput = row.querySelector('[data-add-field="name"]');
+        const valueInput = row.querySelector('[data-add-field="value"]');
+        const errorEl = row.querySelector('[data-add-error]');
+        const err = addCustomScaleEntry(kind, nameInput.value, valueInput.value);
+        if (errorEl) {
+            errorEl.textContent = err || '';
+            errorEl.hidden = !err;
+        }
         return;
     }
     const target = e.target.closest('[data-ref]');
@@ -1586,6 +1661,10 @@ function switchPaletteSource(next) {
     if (prev === next) return;
     const snapshot = undoSnapshot();
     setPaletteSourceUi(next);
+    // Custom entries are per-source (foundation.js's CUSTOM_SCALE) - repoint
+    // at `next`'s slot rather than remap; `prev`'s slot is untouched, so
+    // switching back restores them.
+    state.customScale = customScaleFor(next);
     ['light', 'dark'].forEach(mode => {
         tokenLinks[mode] = { ...tokenLinks[mode], ...snapVarsToPalette(state.vars[mode], next, LINKABLE_COLOR_KEYS) };
         snapTypeToScale(state.vars[mode]);
@@ -1686,8 +1765,7 @@ async function renderExport() {
     }
 }
 
-function downloadText(filename, text, type = 'text/plain') {
-    const blob = new Blob([text], { type });
+function downloadBlob(filename, blob) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1696,6 +1774,87 @@ function downloadText(filename, text, type = 'text/plain') {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+function downloadText(filename, text, type = 'text/plain') {
+    downloadBlob(filename, new Blob([text], { type }));
+}
+
+// --- Zip (STORE method, no compression - plenty for text exports, and needs
+// no external library) - "Download zip" bundles every EXPORT_TABS format
+// into one file so it isn't a separate manual download per tab. ---
+function crc32(bytes) {
+    let crc = ~0;
+    for (let i = 0; i < bytes.length; i++) {
+        crc ^= bytes[i];
+        for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+    }
+    return (~crc) >>> 0;
+}
+
+function buildZip(files) {
+    const encoder = new TextEncoder();
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+    const dosDate = 0x21; // 1980-01-01 - a generated export has no meaningful mtime
+
+    files.forEach(({ name, content }) => {
+        const nameBytes = encoder.encode(name);
+        const dataBytes = encoder.encode(content);
+        const crc = crc32(dataBytes);
+
+        const local = new DataView(new ArrayBuffer(30));
+        local.setUint32(0, 0x04034b50, true);
+        local.setUint16(4, 20, true);
+        local.setUint16(6, 0, true);
+        local.setUint16(8, 0, true); // method: 0 = store
+        local.setUint16(10, 0, true);
+        local.setUint16(12, dosDate, true);
+        local.setUint32(14, crc, true);
+        local.setUint32(18, dataBytes.length, true);
+        local.setUint32(22, dataBytes.length, true);
+        local.setUint16(26, nameBytes.length, true);
+        local.setUint16(28, 0, true);
+        localParts.push(new Uint8Array(local.buffer), nameBytes, dataBytes);
+
+        const central = new DataView(new ArrayBuffer(46));
+        central.setUint32(0, 0x02014b50, true);
+        central.setUint16(4, 20, true);
+        central.setUint16(6, 20, true);
+        central.setUint16(8, 0, true);
+        central.setUint16(10, 0, true);
+        central.setUint16(12, 0, true);
+        central.setUint16(14, dosDate, true);
+        central.setUint32(16, crc, true);
+        central.setUint32(20, dataBytes.length, true);
+        central.setUint32(24, dataBytes.length, true);
+        central.setUint16(28, nameBytes.length, true);
+        central.setUint16(30, 0, true);
+        central.setUint16(32, 0, true);
+        central.setUint16(34, 0, true);
+        central.setUint16(36, 0, true);
+        central.setUint32(38, 0, true);
+        central.setUint32(42, offset, true);
+        centralParts.push(new Uint8Array(central.buffer), nameBytes);
+
+        offset += 30 + nameBytes.length + dataBytes.length;
+    });
+
+    const centralStart = offset;
+    const centralSize = centralParts.reduce((sum, p) => sum + p.length, 0);
+
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(4, 0, true);
+    end.setUint16(6, 0, true);
+    end.setUint16(8, files.length, true);
+    end.setUint16(10, files.length, true);
+    end.setUint32(12, centralSize, true);
+    end.setUint32(16, centralStart, true);
+    end.setUint16(20, 0, true);
+
+    return new Blob([...localParts, ...centralParts, new Uint8Array(end.buffer)], { type: 'application/zip' });
 }
 
 // --- Import ---
@@ -1964,6 +2123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tokenLinks = { light: { ...loadedTokenLinks.light }, dark: { ...loadedTokenLinks.dark } };
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
+        state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
         renderAll();
     });
 
@@ -2029,17 +2189,51 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('confirmSaveButton').addEventListener('click', () => {
         const name = document.getElementById('saveNameInput').value.trim();
         if (!name) return;
-        customSystems[name] = {
-            source: activePaletteSource,
-            palette: { families: [...state.palette.families] },
-            vars: { light: { ...state.vars.light }, dark: { ...state.vars.dark } },
-            tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
-            components: { ...state.components }
-        };
+        customSystems[name] = buildSystemSnapshot();
         saveCustomSystems();
         state.themeName = name;
         renderThemePickerButton();
         document.getElementById('saveModal').hidden = true;
+    });
+
+    // Save to repo - POSTs the same shape to the local save-server (see
+    // theme-editor/save-server/), which writes theme-editor/systems/<name>.json
+    // on disk. Independent of the localStorage Save above; needs the server
+    // running (`docker compose up` in theme-editor/save-server/).
+    const saveRepoButton = document.getElementById('saveToRepoButton');
+    if (saveRepoButton) saveRepoButton.addEventListener('click', async () => {
+        const name = document.getElementById('saveNameInput').value.trim();
+        const errorEl = document.getElementById('saveRepoError');
+        if (!name) return;
+        if (errorEl) errorEl.hidden = true;
+        try {
+            const res = await fetch(`${SAVE_SERVER_URL}/api/systems/${encodeURIComponent(name)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(buildSystemSnapshot())
+            });
+            if (!res.ok) throw new Error(`Server responded ${res.status}`);
+        } catch (e) {
+            if (errorEl) {
+                errorEl.textContent = `Couldn't reach the save-server at ${SAVE_SERVER_URL} - is it running? (docker compose up in theme-editor/save-server/)`;
+                errorEl.hidden = false;
+            }
+            console.error('Save to repo failed:', e);
+        }
+    });
+
+    // Download zip - every EXPORT_TABS format (tokens.json, design-system.css,
+    // theme.css) bundled into one file, downloaded immediately. No server,
+    // no separate Export-tab-by-tab download.
+    const downloadZipButton = document.getElementById('downloadZipButton');
+    if (downloadZipButton) downloadZipButton.addEventListener('click', async () => {
+        const name = document.getElementById('saveNameInput').value.trim() || state.themeName || 'design-system';
+        const files = [];
+        for (const [key, tab] of Object.entries(EXPORT_TABS)) {
+            try { files.push({ name: `${name}/${tab.filename}`, content: await tab.build() }); }
+            catch (e) { console.error(`Download zip: ${key} export failed`, e); }
+        }
+        downloadBlob(`${name}.zip`, buildZip(files));
     });
 
     document.querySelectorAll('.modal').forEach(modal => {

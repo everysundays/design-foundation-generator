@@ -357,6 +357,67 @@
   justify-self: start;
 }
 
+/* --- Add row (Space / Border width / Border style / Shadow only - see
+   panels.js buildScaleAddRowHtml / scripts.js addCustomScaleEntry) --- */
+
+.fp-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--ui-border);
+}
+
+.fp-add-input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.fp-add-input:focus {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -1px;
+}
+
+.fp-add-input-name {
+  flex-grow: 0;
+  flex-basis: 64px;
+}
+
+.fp-add-btn {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-subtle);
+  color: var(--ui-text);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-add-btn:hover {
+  background: var(--ui-bg);
+  border-color: var(--ui-accent);
+}
+
+.fp-add-error {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--ui-warning, #b45309);
+}
+
 /* --- Prop chips (padding x/y, ring vs border width, …) --- */
 
 .fp-chips {

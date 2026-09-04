@@ -65,7 +65,7 @@ body {
   padding: var(--pg-space-8);
   display: flex;
   flex-direction: column;
-  gap: var(--pg-space-10);
+  gap: var(--pg-space-4);
 }
 
 .page-header { display: flex; flex-direction: column; gap: var(--pg-space-2); }
@@ -108,16 +108,16 @@ body {
 .gallery-elements {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--pg-space-6) var(--pg-space-8);
+  gap: var(--pg-space-3) var(--pg-space-4);
 }
 .gallery-section {
   flex: 1 1 18rem;
   max-inline-size: 36rem;
   min-inline-size: 0;
-  gap: var(--pg-space-3);
+  gap: var(--pg-space-2);
 }
 .gallery-stage {
-  padding: var(--pg-space-4);
+  padding: var(--pg-space-2);
   min-inline-size: 0;
 }
 

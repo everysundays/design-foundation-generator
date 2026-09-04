@@ -1,7 +1,7 @@
 // dtcg.js - tokens.json export / import for Theme Editor v2.
 //
 // Writes and reads the Tokens Studio / Penpot importer dialect (see
-// penpot/tokens.example.json and ARCHITECTURE-v2.md "dtcg.js API"): a file
+// penpot/tokens.example.json): a file
 // is a map of token SETS, each set a nested group tree whose leaves are
 // `{ "$type": ..., "$value": ... }`, plus `$metadata.tokenSetOrder` and
 // `$themes`. References are `{group.name}` strings that resolve across

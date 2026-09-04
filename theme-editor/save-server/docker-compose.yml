@@ -1,0 +1,20 @@
+# theme-editor's "Save to repo" backend. No custom image - stock Node runs
+# server.js directly, bind-mounted read-only; theme-editor/systems/ is
+# bind-mounted so writes land on the host repo, not just inside the
+# container.
+#
+# Usage: docker compose up   (from this directory)
+services:
+  save-server:
+    image: node:lts-alpine
+    working_dir: /app
+    command: ["node", "server.js"]
+    ports:
+      - "4521:4521"
+    volumes:
+      - ./server.js:/app/server.js:ro
+      - ../systems:/systems
+    environment:
+      PORT: "4521"
+      ALLOWED_ORIGIN: "http://localhost:4520"
+    restart: unless-stopped

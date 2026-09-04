@@ -1,5 +1,5 @@
-// components.js - the "Elements" layer of Theme Editor v2 (see
-// ARCHITECTURE-v2.md, "Component-part tokens"). Plain browser globals, loaded
+// components.js - the "Elements" layer of Theme Editor: component-part
+// tokens with states, seeding, wiring CSS, gallery. Plain browser globals, loaded
 // after foundation.js; uses parseRef / refToVar / scaleEntries /
 // findScaleEntry / nearestScaleEntry / remapRef / scaleRef from there.
 //
@@ -66,7 +66,7 @@ const _spacePart = (key, label) => _part(key, label, [[key, 'space']]);
 
 const FORM_STATES = ['default', 'hover', 'focus', 'disabled'];
 
-// Gallery categories (ARCHITECTURE-v3.md, "Gallery categories"): the order
+// Gallery categories: the order
 // of the Elements page and of the parent's .gallery-nav. An element missing
 // from every list lands in the trailing "Other" category.
 const ELEMENT_CATEGORIES = [

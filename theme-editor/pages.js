@@ -1,5 +1,5 @@
-// Foundation + Typography page builders for the preview document (see
-// ARCHITECTURE-v2.md "pages.js API"). Both return the HTML that goes INSIDE
+// Foundation + Typography page builders for the preview document.
+// Both return the HTML that goes INSIDE
 // <section data-page="foundation"> / <section data-page="typography">; the
 // host (scripts.js) re-renders them with innerHTML on every edit, so they are
 // pure functions of `ctx` and hold no state.

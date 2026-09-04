@@ -1,5 +1,5 @@
-// Preview-frame side of the click-to-edit protocol (see ARCHITECTURE-v2.md,
-// "Frame protocol"). Runs inside the srcdoc iframe; the editor is the parent
+// Preview-frame side of the click-to-edit protocol (the other side is the
+// 'message' listener in scripts.js). Runs inside the srcdoc iframe; the editor is the parent
 // window. Hover outline and selection are attributes pages.css paints; the
 // parent is told what was clicked via postMessage and answers by writing
 // straight into this document (same-origin).

@@ -1,6 +1,6 @@
 // Sidebar panels for Theme Editor v3 ("touch and go"): the left tabs ARE the
-// pickers. Every builder here is a pure function of a ctx (see
-// ARCHITECTURE-v3.md "panels.js API") returning HTML for #panelBody; it never
+// pickers. Every builder here is a pure function of a ctx (built by
+// scripts.js panelCtx) returning HTML for #panelBody; it never
 // reads editor state directly. Everything assignable carries `data-ref` (the
 // ref a click writes to the active token) and `data-tip` (the tooltip text);
 // scripts.js owns the one delegated click handler and the tooltip.
@@ -93,18 +93,20 @@ function panelSwatchIsDark(hex) {
     return (r * 299 + g * 587 + b * 114) / 1000 < 150;
 }
 
-// `label` is what reads inside the swatch: the shade number of a ramp step,
-// the name itself for the specials.
+// A ramp step's shade number (800, 900, 950…) isn't shown - hover already
+// gives name · hex via the tooltip. Only the specials carry a visible label,
+// since "white" / "black" / "transparent" aren't guessable from the swatch
+// alone. The count badge (panelBadgeHtml) is separate and always shows.
 function panelSwatchHtml(ctx, name, hex, family, label) {
     const ref = `palette.${name}`;
     const mark = panelMark(ctx, ref);
     const tip = panelTip(name, hex, mark);
     const transparent = hex === 'transparent';
-    const text = label === undefined || label === null ? name : label;
+    const text = label === undefined || label === null ? name : '';
     const cls = 'fp-swatch' + (transparent ? ' fp-swatch-transparent' : '') + (panelSwatchIsDark(hex) ? ' fp-swatch-dark' : '');
     return `<button type="button" class="${cls}" ${panelMarkAttrs(ref, tip, mark)}` +
         ` style="--swatch: ${panelEsc(hex)}" aria-label="${panelEsc(name)}" title="">` +
-        `<span class="fp-swatch-label">${panelEsc(text)}</span>${panelBadgeHtml(mark)}</button>`;
+        (text ? `<span class="fp-swatch-label">${panelEsc(text)}</span>` : '') + panelBadgeHtml(mark) + `</button>`;
 }
 
 function buildColorsPanelHtml(ctx) {
@@ -179,7 +181,27 @@ function panelEntryHtml(ctx, kind, entry) {
 </button>`;
 }
 
-function buildScalePanelHtml(kind, ctx) {
+// A kind's "value" field takes a different shape per kind - shown as the
+// input's placeholder so the add-row needs no label of its own.
+const SCALE_ADD_PLACEHOLDER = {
+    space: '4.5rem or 72px', radius: '4.5rem or 72px', borderWidth: '4.5rem or 72px',
+    borderStyle: 'double', shadow: '0 4 12 0 0.15'
+};
+
+// Inline "add a custom entry" row (see scripts.js addCustomScaleEntry / the
+// onPanelClick [data-add-confirm] branch) - one row per kind, self-contained
+// so the click handler only needs to look inside its own [data-add-kind].
+function buildScaleAddRowHtml(kind) {
+    const placeholder = SCALE_ADD_PLACEHOLDER[kind] || 'value';
+    return `<div class="fp-add-row" data-add-kind="${panelEsc(kind)}">
+  <input type="text" class="fp-add-input fp-add-input-name" placeholder="name" data-add-field="name">
+  <input type="text" class="fp-add-input fp-add-input-value" placeholder="${panelEsc(placeholder)}" data-add-field="value">
+  <button type="button" class="fp-add-btn" data-add-confirm>+ Add</button>
+  <span class="fp-add-error" data-add-error hidden></span>
+</div>`;
+}
+
+function buildScalePanelHtml(kind, ctx, opts = {}) {
     const entries = scaleEntries(ctx.source, kind);
     const foundation = ctx.foundation || foundationOf(ctx.source);
     const note = kind === 'space' ? foundation.unitNote : `${entries.length} steps`;
@@ -189,13 +211,14 @@ ${buildPropChipsHtml(ctx, kind)}
 <div class="fp-entries">
 ${entries.map(e => panelEntryHtml(ctx, kind, e)).join('\n')}
 </div>
+${opts.allowAdd ? buildScaleAddRowHtml(kind) : ''}
 </div>`;
 }
 
 function buildBorderPanelHtml(ctx) {
     return `<div class="fp-panel fp-panel-border">
-<div class="fp-section"><h3 class="fp-section-title">Width</h3>${buildScalePanelHtml('borderWidth', ctx)}</div>
-<div class="fp-section"><h3 class="fp-section-title">Style</h3>${buildScalePanelHtml('borderStyle', ctx)}</div>
+<div class="fp-section"><h3 class="fp-section-title">Width</h3>${buildScalePanelHtml('borderWidth', ctx, { allowAdd: true })}</div>
+<div class="fp-section"><h3 class="fp-section-title">Style</h3>${buildScalePanelHtml('borderStyle', ctx, { allowAdd: true })}</div>
 </div>`;
 }
 

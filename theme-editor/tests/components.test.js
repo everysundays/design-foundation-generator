@@ -1,7 +1,7 @@
 // node tests/components.test.js
 // Loads the palette data, foundation.js and components.js into one vm
-// context (they are plain browser globals) and checks the Elements layer
-// against ARCHITECTURE-v2.md.
+// context (they are plain browser globals) and checks the Elements layer's
+// contract: spec shape, seeding, remapping, wiring CSS, gallery markup.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -198,7 +198,7 @@ g.ELEMENTS.forEach(el => {
 ok(!html.includes('data-state="hover"') && !html.includes('data-state="disabled"'), 'gallery renders default state only');
 ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 'gallery prints no headings');
 
-// --- gallery categories (ARCHITECTURE-v3.md) ------------------------------
+// --- gallery categories -----------------------------------------------------
 {
     const catKeys = g.ELEMENT_CATEGORIES.map(c => c.key);
     ok(JSON.stringify(catKeys) === JSON.stringify(['actions', 'forms', 'feedback', 'surfaces', 'navigation', 'data']), 'category keys/order');

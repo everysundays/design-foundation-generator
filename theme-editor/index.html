@@ -21,8 +21,8 @@
         <header class="toolbar">
             <div class="toolbar-group toolbar-group-left">
                 <div class="toolbar-group">
-                    <button id="palettePickerButton" class="theme-picker-button" title="Design system source (palette + scales)">
-                        <span class="theme-picker-prefix">Design system</span>
+                    <button id="palettePickerButton" class="theme-picker-button" title="Foundation (palette + scales the design system is built on)">
+                        <span class="theme-picker-prefix">Foundation</span>
                         <i class="fas fa-swatchbook"></i>
                         <span id="palettePickerLabel">Tailwind</span>
                         <i class="fas fa-chevron-down"></i>
@@ -34,14 +34,14 @@
                 </div>
 
                 <div class="toolbar-group">
-                    <button id="themePickerButton" class="theme-picker-button" title="Start from a theme or a saved system">
-                        <span class="theme-picker-prefix">Start from</span>
+                    <button id="themePickerButton" class="theme-picker-button" title="Design system - a saved system, or a starting theme">
+                        <span class="theme-picker-prefix">Design system</span>
                         <span id="themeSwatchDots" class="theme-swatch-dots"></span>
                         <span id="themeNameLabel">Default</span>
                         <i class="fas fa-chevron-down"></i>
                     </button>
                     <div id="themePickerMenu" class="theme-picker-menu" hidden>
-                        <input type="text" id="themeSearchInput" class="theme-search-input" placeholder="Search themes and saved systems...">
+                        <input type="text" id="themeSearchInput" class="theme-search-input" placeholder="Search design systems...">
                         <div id="themePickerList" class="theme-picker-list"></div>
                     </div>
                 </div>
@@ -110,12 +110,7 @@
             <main class="preview-area">
                 <nav class="gallery-nav">
                     <button class="gallery-nav-button active" data-cat="all">All</button>
-                    <button class="gallery-nav-button" data-cat="actions">Actions</button>
-                    <button class="gallery-nav-button" data-cat="forms">Forms</button>
-                    <button class="gallery-nav-button" data-cat="feedback">Feedback</button>
-                    <button class="gallery-nav-button" data-cat="surfaces">Surfaces</button>
-                    <button class="gallery-nav-button" data-cat="navigation">Navigation</button>
-                    <button class="gallery-nav-button" data-cat="data">Data</button>
+                    <button class="gallery-nav-button" data-cat="custom">Custom</button>
                 </nav>
                 <iframe id="previewFrame" class="preview-frame" title="Design system preview"></iframe>
             </main>
@@ -181,9 +176,14 @@
                 <h2>Save design system</h2>
                 <button id="closeSaveModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
             </div>
-            <p class="import-hint">Saved in this browser (localStorage). Use Export &rarr; Download to keep it in a repo.</p>
+            <p class="import-hint">Save keeps it in this browser (localStorage). Save to repo also writes theme-editor/systems/&lt;name&gt;.json via the local save-server (theme-editor/save-server/). Download zip needs neither - tokens.json, design-system.css and theme.css land in one file, right away.</p>
             <input type="text" id="saveNameInput" class="theme-search-input" placeholder="System name">
-            <button id="confirmSaveButton" class="toolbar-button">Save</button>
+            <div class="modal-actions">
+                <button id="confirmSaveButton" class="toolbar-button">Save</button>
+                <button id="saveToRepoButton" class="toolbar-button">Save to repo</button>
+                <button id="downloadZipButton" class="toolbar-button">Download zip</button>
+            </div>
+            <p id="saveRepoError" class="import-error" hidden></p>
         </div>
     </div>
 

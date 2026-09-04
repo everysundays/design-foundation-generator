@@ -125,8 +125,46 @@ function foundationOf(sourceKey) {
     return FOUNDATION[sourceKey] || FOUNDATION.tailwind;
 }
 
+// --- Custom scale entries ---
+// User-added values beyond what a source's fixed scale ships (Space/Border
+// width/Border style/Shadow - see panels.js buildScalePanelHtml's `allowAdd`).
+// Kept per-source, like FOUNDATION itself, so a system's additions don't leak
+// across a Tailwind<->Atlassian switch; scripts.js repoints state.customScale
+// at the active source's slot on load/switch/undo (see setCustomScaleFor).
+function emptyCustomScale() {
+    return { space: [], radius: [], borderWidth: [], borderStyle: [], shadow: [] };
+}
+
+function cloneCustomScale(customScale) {
+    const src = customScale || {};
+    return {
+        space: [...(src.space || [])], radius: [...(src.radius || [])],
+        borderWidth: [...(src.borderWidth || [])], borderStyle: [...(src.borderStyle || [])],
+        shadow: [...(src.shadow || [])]
+    };
+}
+
+const CUSTOM_SCALE = { tailwind: emptyCustomScale(), atlassian: emptyCustomScale() };
+
+// Points CUSTOM_SCALE[sourceKey] at a specific object (on load / undo-restore)
+// rather than mutating in place, so a reference held elsewhere (e.g. a
+// just-taken snapshot) never sees a later push.
+function setCustomScaleFor(sourceKey, customScale) {
+    CUSTOM_SCALE[sourceKey] = customScale || emptyCustomScale();
+    return CUSTOM_SCALE[sourceKey];
+}
+
+// Get-or-create: what addCustomScaleEntry pushes into and state.customScale
+// points at while `sourceKey` is the active source.
+function customScaleFor(sourceKey) {
+    if (!CUSTOM_SCALE[sourceKey]) CUSTOM_SCALE[sourceKey] = emptyCustomScale();
+    return CUSTOM_SCALE[sourceKey];
+}
+
 function scaleEntries(sourceKey, kind) {
-    return foundationOf(sourceKey)[kind] || [];
+    const base = foundationOf(sourceKey)[kind] || [];
+    const custom = (CUSTOM_SCALE[sourceKey] && CUSTOM_SCALE[sourceKey][kind]) || [];
+    return custom.length ? [...base, ...custom] : base;
 }
 
 function scaleRef(kind, name) {
