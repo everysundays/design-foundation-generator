@@ -685,3 +685,39 @@
   font-family: ui-monospace, monospace;
   font-size: 11px;
 }
+
+/* --- Reorder a semantic token (card 16): move-up/move-down, a sibling of
+   the rename/target/delete controls (panels.js buildTokenMoveHtml) - see
+   scripts.js onPanelClick's [data-move-token] branch / moveSemanticToken.
+   The color row's DOM-built equivalent is styles.css's .color-field-move(-btn). */
+.fp-move {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.fp-move-btn {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.fp-move-btn:hover:not(:disabled) {
+  color: var(--ui-text);
+}
+
+.fp-move-btn:disabled {
+  color: var(--ui-border);
+  cursor: default;
+}
+
+/* --- Colors-tab semantic row (card 16): a blank full-width spacer marking
+   where a new group starts, matching the Summary tab's own order/grouping
+   with no group labels here (panels.js buildSemanticRowHtml). */
+.fp-semantic-gap {
+  grid-column: 1 / -1;
+  height: 6px;
+}

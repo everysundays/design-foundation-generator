@@ -118,6 +118,11 @@ function normalizeSemanticTokens(list) {
         if (!name || !isCssIdentifier(name)) return;
         const key = `${t.kind}:${name}`;
         if (seen.has(key)) return;
+        // `group` (card 16): carried through verbatim when it's a non-empty
+        // string - never synthesized here (a missing group means "ungrouped",
+        // not "give it the built-in default" - see resolveSemanticState in
+        // scripts.js, this file's own builtInGrouping below, for that).
+        const group = typeof t.group === 'string' && t.group ? { group: t.group } : null;
         if (t.kind === 'color') {
             seen.add(key);
             // `builtin`: kept verbatim (string OR explicit null) when the
@@ -137,11 +142,12 @@ function normalizeSemanticTokens(list) {
             else if (t.builtin === null) entry = { kind: t.kind, name, builtin: null };
             else if (SEMANTIC_COLOR_ROLES.includes(name)) entry = { kind: t.kind, name, builtin: name };
             else entry = { kind: t.kind, name };
-            out.push(entry);
+            out.push(group ? Object.assign(entry, group) : entry);
         } else {
             if (typeof t.ref !== 'string' || !t.ref || (typeof parseRef === 'function' && !parseRef(t.ref))) return;
             seen.add(key);
-            out.push({ kind: t.kind, name, ref: t.ref });
+            const entry = { kind: t.kind, name, ref: t.ref };
+            out.push(group ? Object.assign(entry, group) : entry);
         }
     });
     return out.length ? out : defaultSemanticTokens();
@@ -494,4 +500,281 @@ function deleteSemanticToken(system, kind, name) {
         });
     }
     return { semanticTokens, vars: newVars, tokenLinks: newLinks };
+}
+
+// --- Reorder and group semantic tokens (card 16) ----------------------------
+// ORDER and GROUPING are both properties of a token's position/`.group`
+// field within its OWN KIND's subsequence (the file header: kinds freely
+// interleave in storage, "list order for kind X" is the filtered
+// subsequence's own relative order). Every function below reads/writes only
+// ONE kind's subsequence at a time, leaving every other kind's entries
+// exactly where they were - proven kind-agnostic by tests/semantic.test.js's
+// injected space-kind cases, even though only the color kind's Summary
+// section actually exposes group controls today (grouping is built and
+// screenshotted on the color kind per the DoD; every OTHER kind's Summary
+// rows get the same move-up/down controls, just never a "move to group"
+// picker - there is nothing to build one against).
+//
+// Invariant every function below MAINTAINS, so every reader that predates
+// this card (semanticNames, cssVarBlockFor's plain iteration, the Colors-tab
+// row) keeps working completely unmodified: within one kind's filtered
+// subsequence, a named group's members always sit together as one contiguous
+// run, in that group's first-appearance order, with every ungrouped token of
+// that kind forming ONE trailing run ("the ungrouped tail behaves as one
+// block for up/down") - always last, even when it's the only run.
+
+// tokens of `kind`, partitioned into `{ group: key|null, tokens: [...] }`
+// runs: named groups in first-appearance order, then one trailing run for
+// the ungrouped tokens (group: null) - always present, always last, even
+// when empty, so a caller never needs a separate "is there an ungrouped
+// tail" check.
+function semanticSections(list, kind) {
+    const filtered = (Array.isArray(list) ? list : []).filter(t => t && t.kind === kind);
+    const order = [];
+    const buckets = new Map();
+    const ungrouped = [];
+    filtered.forEach(t => {
+        const key = t.group || null;
+        if (!key) { ungrouped.push(t); return; }
+        if (!buckets.has(key)) { buckets.set(key, []); order.push(key); }
+        buckets.get(key).push(t);
+    });
+    const sections = order.map(key => ({ group: key, tokens: buckets.get(key) }));
+    sections.push({ group: null, tokens: ungrouped });
+    return sections;
+}
+
+function flattenSemanticSections(sections) {
+    return sections.reduce((acc, s) => acc.concat(s.tokens), []);
+}
+
+// Replaces `kind`'s subsequence of `list` with `order` (the SAME tokens,
+// rearranged) - every other kind's entries keep their exact original slot,
+// so kinds may freely interleave in storage. Always returns fresh copies
+// (every entry, not just the touched kind), matching renameToken/
+// deleteSemanticToken's "never mutates, always fresh" contract.
+function withKindOrder(list, kind, order) {
+    let i = 0;
+    return (Array.isArray(list) ? list : []).map(t => (t && t.kind === kind ? order[i++] : t)).map(t => ({ ...t }));
+}
+
+// Moves `name` (of `kind`) one place up/down (`dir` < 0 is up) among its own
+// group's (or the ungrouped tail's) members only - a move never crosses into
+// a neighbouring group or the tail (see setTokenGroup for the only way a
+// token changes group) and a boundary is a no-op. Pure - `name` not found
+// (wrong kind, or no such token) is also a safe no-op.
+function moveToken(list, kind, name, dir) {
+    const source = Array.isArray(list) ? list : [];
+    const sections = semanticSections(source, kind);
+    const si = sections.findIndex(s => s.tokens.some(t => t.name === name));
+    if (si === -1) return source.map(t => ({ ...t }));
+    const bucket = sections[si].tokens;
+    const i = bucket.findIndex(t => t.name === name);
+    const j = i + (dir < 0 ? -1 : 1);
+    if (j < 0 || j >= bucket.length) return source.map(t => ({ ...t }));
+    const newBucket = bucket.slice();
+    const tmp = newBucket[i];
+    newBucket[i] = newBucket[j];
+    newBucket[j] = tmp;
+    const newSections = sections.slice();
+    newSections[si] = { group: sections[si].group, tokens: newBucket };
+    return withKindOrder(source, kind, flattenSemanticSections(newSections));
+}
+
+// Moves `name` (of `kind`) into `groupKey` (a string - an existing OR
+// brand-new key) or out to the ungrouped tail (`groupKey` falsy). Appended as
+// the newest member of an EXISTING destination run; a brand-new key (no
+// other member of this kind yet) is inserted as its own one-member run at
+// roughly the token's OLD position, so turning a lone token into a new group
+// never scatters the rest of the list. Pure; a no-op (name not found in this
+// kind, or already in that group) still returns fresh copies.
+function setTokenGroup(list, kind, name, groupKey) {
+    const source = Array.isArray(list) ? list : [];
+    const flat = source.filter(t => t && t.kind === kind);
+    const oldIndex = flat.findIndex(t => t.name === name);
+    if (oldIndex === -1) return source.map(t => ({ ...t }));
+    const target = groupKey || null;
+    const current = flat[oldIndex].group || null;
+    if (current === target) return source.map(t => ({ ...t }));
+    const moved = { ...flat[oldIndex] };
+    if (target) moved.group = target;
+    else delete moved.group;
+    const without = flat.slice(0, oldIndex).concat(flat.slice(oldIndex + 1));
+    let insertAt;
+    if (!target) {
+        insertAt = without.length; // the ungrouped tail is always last
+    } else {
+        let lastOfGroup = -1;
+        without.forEach((t, i) => { if ((t.group || null) === target) lastOfGroup = i; });
+        insertAt = lastOfGroup === -1 ? Math.min(oldIndex, without.length) : lastOfGroup + 1;
+    }
+    const newFlat = without.slice(0, insertAt).concat([moved], without.slice(insertAt));
+    return withKindOrder(source, kind, newFlat);
+}
+
+// Moves the WHOLE named group `key` (every one of its `kind` members, as one
+// block) up/down among `kind`'s other NAMED groups - the ungrouped tail never
+// takes part (it always renders/exports last) and a boundary is a no-op.
+// Pure; `key` not found among `kind`'s groups is a safe no-op.
+function moveGroup(list, kind, key, dir) {
+    const source = Array.isArray(list) ? list : [];
+    const sections = semanticSections(source, kind);
+    const tail = sections[sections.length - 1];
+    const named = sections.slice(0, -1);
+    const i = named.findIndex(s => s.group === key);
+    if (i === -1) return source.map(t => ({ ...t }));
+    const j = i + (dir < 0 ? -1 : 1);
+    if (j < 0 || j >= named.length) return source.map(t => ({ ...t }));
+    const newNamed = named.slice();
+    const tmp = newNamed[i];
+    newNamed[i] = newNamed[j];
+    newNamed[j] = tmp;
+    return withKindOrder(source, kind, flattenSemanticSections([...newNamed, tail]));
+}
+
+// A candidate group label, refused (a user-facing string) for the same
+// reason a token name is: blank, or a duplicate of an EXISTING group's label
+// (case-insensitive - "Brand" and "brand" would render as two identical-
+// looking folds). null on success. `groups` is the live registry the
+// candidate is checked against - the CALLER excludes the group being
+// renamed from it first (see scripts.js renameSemanticGroupByKey), the same
+// way renameSemanticToken excludes the token being renamed from its own
+// name-collision check.
+function groupLabelError(label, groups) {
+    const trimmed = String(label === undefined || label === null ? '' : label).trim();
+    if (!trimmed) return 'Enter a name.';
+    const exists = (Array.isArray(groups) ? groups : []).some(g => g && typeof g.label === 'string' && g.label.toLowerCase() === trimmed.toLowerCase());
+    if (exists) return `A group named "${trimmed}" already exists.`;
+    return null;
+}
+
+// label -> a stable-enough kebab key ('Brand New!' -> 'brand-new'), unique
+// against every key already in `groups` (a collision appends -2, -3, … so
+// two differently-labelled groups, or two imported groups that happen to
+// slugify the same, never merge into one). Falls back to 'group' when
+// nothing alphanumeric survives - a key is never empty.
+function cssIdentFromLabel(label, groups) {
+    const base = String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'group';
+    const taken = new Set((Array.isArray(groups) ? groups : []).map(g => g && g.key));
+    if (!taken.has(base)) return base;
+    let i = 2;
+    while (taken.has(`${base}-${i}`)) i++;
+    return `${base}-${i}`;
+}
+
+// Registers a brand-new group and returns its fresh key - `{ groups, key }`,
+// pure. Validation (groupLabelError) is the CALLER's job, same contract as
+// addSemanticToken/semanticNameError; this always succeeds and always
+// mints a NEW key (never reuses one), even for a label that would otherwise
+// collide, so the caller's own pre-check is what actually prevents a
+// duplicate-looking pair of folds.
+function addGroup(groups, label) {
+    const list = Array.isArray(groups) ? groups : [];
+    const key = cssIdentFromLabel(label, list);
+    return { groups: [...list, { key, label: String(label === undefined || label === null ? '' : label).trim() }], key };
+}
+
+// Renames a group's label in place - the KEY (and so every token's `.group`,
+// and any fold-open/closed UI state keyed by it - see scripts.js openGroups)
+// is untouched, so a rename never loses a token's membership or a fold's
+// open state. A no-op (key not found) still returns a fresh array.
+function renameGroup(groups, key, label) {
+    return (Array.isArray(groups) ? groups : []).map(g => (g && g.key === key ? { ...g, label: String(label === undefined || label === null ? '' : label).trim() } : { ...g }));
+}
+
+// Drops every registry entry no CURRENT token (of ANY kind) still
+// references - "an emptied group disappears" (DoD line 2). Called after
+// every operation that can empty a group: setTokenGroup moving the last
+// member elsewhere, or deleteSemanticToken/renameToken (via the caller)
+// removing/renaming a token out from under it.
+function pruneEmptyGroups(groups, tokens) {
+    const used = new Set((Array.isArray(tokens) ? tokens : []).filter(t => t && t.group).map(t => t.group));
+    return (Array.isArray(groups) ? groups : []).filter(g => g && used.has(g.key)).map(g => ({ ...g }));
+}
+
+// A saved/imported groups registry, made safe: not an array -> [] (pruning
+// then leaves it []); each entry needs a valid identifier `key` and a
+// non-blank `label`, de-duplicated by key (first occurrence wins) - then
+// pruned of anything no surviving token (`tokens`, already normalized by the
+// caller) actually references, same rule as pruneEmptyGroups.
+function normalizeSemanticGroups(groups, tokens) {
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(groups) ? groups : []).forEach(g => {
+        if (!g || typeof g.key !== 'string' || !isCssIdentifier(g.key)) return;
+        if (typeof g.label !== 'string' || !g.label.trim()) return;
+        if (seen.has(g.key)) return;
+        seen.add(g.key);
+        out.push({ key: g.key, label: g.label.trim() });
+    });
+    return pruneEmptyGroups(out, tokens);
+}
+
+// The built-in color grouping (the Summary/Colors tabs' pre-card-16 fixed
+// ALL_COLOR_GROUPS folds), as a fallback for a token list with no grouping
+// info of its own (a save/undo-snapshot/import predating this card, or one
+// whose extension carried no `groups` key - see the reorder-and-group card's
+// import-fallback rule). `groupTable` is scripts.js's ALL_COLOR_GROUPS
+// reshaped to `[{ key, label, roleNames: [...] }]` (roleNames = the group's
+// original field keys) - passed in, never read as a global, the same
+// convention as every other scripts.js-owned table this file consumes (see
+// the file header on TYPE_SETS). Returns `{ tokens, groups }`: `tokens` is
+// `list` with every color entry's `.group` set (dropped first, so a stale
+// value from before a Foundation/role change never lingers) and REORDERED
+// into canonical group-by-group order (each group's own members keeping
+// their current relative order; a color token no role table entry claims -
+// a genuine user addition - and every OTHER kind's entries keep their
+// current relative position, appended after); `groups` lists only the
+// groups that actually ended up with >=1 member, in `groupTable` order.
+function builtInGrouping(tokens, groupTable) {
+    const list = Array.isArray(tokens) ? tokens : [];
+    let working = list.map(t => {
+        if (!t || t.kind !== 'color') return { ...t };
+        const c = { ...t };
+        delete c.group;
+        return c;
+    });
+    const table = Array.isArray(groupTable) ? groupTable : [];
+    const groups = [];
+    table.forEach(entry => {
+        const memberNames = [];
+        (Array.isArray(entry.roleNames) ? entry.roleNames : []).forEach(role => {
+            const token = working.find(t => t.kind === 'color' && t.builtin === role);
+            if (token) memberNames.push(token.name);
+        });
+        if (!memberNames.length) return;
+        groups.push({ key: entry.key, label: entry.label });
+        const memberSet = new Set(memberNames);
+        working = working.map(t => (t.kind === 'color' && memberSet.has(t.name)) ? { ...t, group: entry.key } : t);
+    });
+    const colorOrder = [];
+    table.forEach(entry => {
+        working.filter(t => t.kind === 'color' && t.group === entry.key).forEach(t => colorOrder.push(t));
+    });
+    working.filter(t => t.kind === 'color' && !t.group).forEach(t => colorOrder.push(t));
+    let i = 0;
+    const tokens2 = working.map(t => (t.kind === 'color' ? colorOrder[i++] : t));
+    return { tokens: tokens2, groups };
+}
+
+// Same lines as semanticVarLines (never changed - it's asserted directly),
+// grouped into contiguous `/* <label> */` sections in list order - the
+// design-system CSS export's own grouping (DoD line 6). `groups` is the live
+// registry (label lookup only; a dangling/unregistered key falls back to
+// showing the bare key as its own label, so a corrupt save still renders
+// SOMETHING rather than throwing). '' when `list` has no token of `kind`.
+function semanticVarLinesGrouped(list, kind, groups) {
+    const sections = semanticSections(list, kind);
+    const labelFor = (key) => {
+        const g = (Array.isArray(groups) ? groups : []).find(x => x && x.key === key);
+        return g ? g.label : key;
+    };
+    return sections.map(sec => {
+        const body = sec.tokens
+            .filter(t => t && typeof t.ref === 'string')
+            .map(t => `  ${refToVar(scaleRef(kind, t.name))}: var(${refToVar(t.ref)});`)
+            .join('\n');
+        if (!body) return '';
+        return sec.group ? `  /* ${labelFor(sec.group)} */\n${body}` : body;
+    }).filter(Boolean).join('\n');
 }

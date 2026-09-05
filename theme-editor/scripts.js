@@ -171,6 +171,14 @@ let state = {
     // plus any the user has added (see semantic.js, addSemanticColorToken).
     semanticTokens: defaultSemanticTokens(),
     loadedSemanticTokens: defaultSemanticTokens(),
+    // The named-group registry (card 16, "Reorder and group semantic
+    // tokens"): [{ key, label }], a token's own `.group` (semantic.js) names
+    // one by key. Starts empty here - the very first loadTheme('Default')
+    // call (DOMContentLoaded) always replaces it via resolveSemanticState,
+    // which falls back to the built-in grouping since a brand-new state has
+    // no groups of its own; see semantic.js builtInGrouping.
+    semanticGroups: [],
+    loadedSemanticGroups: [],
     // Which sidebar tab is showing (summary | colors | space | radius |
     // border | shadow | type) - the tab decides which prop KIND a click assigns.
     activeTab: 'colors',
@@ -309,7 +317,7 @@ function isLinkInPalette(link) {
 
 // --- Load / undo ---
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, semanticTokens: state.semanticTokens });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, semanticTokens: state.semanticTokens, semanticGroups: state.semanticGroups });
 }
 
 function restoreSnapshot(json) {
@@ -325,9 +333,14 @@ function restoreSnapshot(json) {
     state.components = snap.components || state.components;
     state.palette = snap.palette || state.palette;
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
-    // Missing (a snapshot taken before this field existed) -> the 33
-    // defaults, same rule as a saved system with no semanticTokens key.
-    state.semanticTokens = normalizeSemanticTokens(snap.semanticTokens);
+    // Missing (a snapshot taken before this card, or before card 8's field
+    // existed at all) -> the built-in order/grouping, same rule as a saved
+    // system with no semanticTokens/semanticGroups key (see
+    // resolveSemanticState - never the forbidden `snap.x || state.x`
+    // "keep whatever's currently loaded" pattern for a field this new).
+    const resolved = resolveSemanticState(snap.semanticTokens, snap.semanticGroups);
+    state.semanticTokens = resolved.tokens;
+    state.semanticGroups = resolved.groups;
 }
 
 function pushUndo() {
@@ -349,7 +362,7 @@ function seedComponentsFor(vars) {
     return typeof seedComponentTokens === 'function' ? seedComponentTokens(activePaletteSource, { radiusRem }) : {};
 }
 
-function applyLoaded({ name, vars, links, families, components, customScale, semanticTokens }) {
+function applyLoaded({ name, vars, links, families, components, customScale, semanticTokens, semanticGroups }) {
     state.themeName = name;
     state.vars = { light: { ...vars.light }, dark: { ...vars.dark } };
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
@@ -363,10 +376,13 @@ function applyLoaded({ name, vars, links, families, components, customScale, sem
     // saved system) before calling applyLoaded.
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
     state.loadedCustomScale = cloneCustomScale(state.customScale);
-    // Missing (a preset/legacy theme, or a saved system predating this field)
-    // -> the 33 built-in roles.
-    state.semanticTokens = normalizeSemanticTokens(semanticTokens);
+    // Missing (a preset/legacy theme, or a saved system predating card 8/16)
+    // -> the built-in roles, in the built-in order/grouping.
+    const resolved = resolveSemanticState(semanticTokens, semanticGroups);
+    state.semanticTokens = resolved.tokens;
+    state.semanticGroups = resolved.groups;
     state.loadedSemanticTokens = state.semanticTokens.map(t => ({ ...t }));
+    state.loadedSemanticGroups = state.semanticGroups.map(g => ({ ...g }));
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -384,7 +400,8 @@ function loadTheme(name) {
             families: saved.palette && saved.palette.families,
             components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
             customScale: saved.customScale,
-            semanticTokens: saved.semanticTokens
+            semanticTokens: saved.semanticTokens,
+            semanticGroups: saved.semanticGroups
         });
         return;
     }
@@ -681,63 +698,208 @@ function showSidebarTab(key) {
     renderPanel();
 }
 
-// --- Semantic roles (Summary tab) ---
-// The 33 palette-linked roles as foldable groups, rendered into the Summary
-// panel's #semanticRolesMount so a role can still be re-linked through the
-// palette popover and reconciled with what the work actually uses.
-const openGroups = new Set(ALL_COLOR_GROUPS.filter(g => g.open).map(g => g.key));
+// --- Reorder and group semantic tokens (card 16) ----------------------------
 
-// ALL_COLOR_GROUPS/COLOR_GROUPS/ELEMENT_GROUPS's `fields` name every slot by
-// its ORIGINAL built-in name (a `const`, never rewritten by a rename) - this
-// resolves a slot to whichever token CURRENTLY plays it (semantic.js
-// builtinTokenName), so a renamed role stays in its group, showing its new
-// name, rather than leaving a stale "accent" row behind while the renamed
-// token orphans itself into the ungrouped user-token list below.
-function groupFieldCurrentKey(builtinKey) {
-    return builtinTokenName(state.semanticTokens, builtinKey);
+// ALL_COLOR_GROUPS reshaped for semantic.js's kind-agnostic helpers, which
+// stay free of this file's own grouping constants (the same convention as
+// TYPE_SETS always being passed in - see semantic.js's file header).
+function colorGroupTable() {
+    return ALL_COLOR_GROUPS.map(g => ({ key: g.key, label: g.label, open: !!g.open, roleNames: g.fields.map(([k]) => k) }));
 }
 
-function renderFoldableGroups(groups, container) {
+// One rule, shared by every load path (applyLoaded / restoreSnapshot /
+// applyTokensImport): `groups` missing (undefined - a save/undo snapshot/
+// import from before this card, or an import whose extension carried no
+// `groups` key) falls back to the built-in grouping over the (already
+// normalized) token list; `groups` present (even []) is trusted, only
+// pruned/deduped. Never the forbidden `snap.x || state.x` "keep whatever's
+// currently loaded" pattern - a missing field always gets a fresh, well-
+// defined default of its own.
+function resolveSemanticState(tokens, groups) {
+    const normTokens = normalizeSemanticTokens(tokens);
+    if (Array.isArray(groups)) return { tokens: normTokens, groups: normalizeSemanticGroups(groups, normTokens) };
+    return builtInGrouping(normTokens, colorGroupTable());
+}
+
+// True once the live order/grouping has drifted from the built-in default in
+// ANY way (a move, a group added/renamed/moved, an ungroup, …) - the export
+// gate (see exportCtx): an untouched system must round-trip byte-identical
+// to before this card, so dtcg.js is handed a stripped, ungrouped copy
+// (still visually rendered WITH the built-in folds - see
+// renderFoldableColorGroups's own fallback) whenever this is false.
+function semanticIsCustomized() {
+    const stripped = state.semanticTokens.map(t => { const c = { ...t }; delete c.group; return c; });
+    const canonical = builtInGrouping(normalizeSemanticTokens(stripped), colorGroupTable());
+    return JSON.stringify(canonical.tokens) !== JSON.stringify(state.semanticTokens)
+        || JSON.stringify(canonical.groups) !== JSON.stringify(state.semanticGroups);
+}
+
+// Fold-open state, keyed by a group's STABLE key - unaffected by a rename
+// (only the label moves) or a move (only position moves). Seeded from the
+// built-in table's own `open` flags (today: Primary/Secondary start open,
+// matching pre-card-16 behaviour); a brand-new group is added explicitly by
+// addTokenToNewGroup so it opens showing the member that was just moved in.
+const openGroups = new Set(colorGroupTable().filter(g => g.open).map(g => g.key));
+
+// Moves a token up/down within its own kind+group (Summary tab move
+// controls) - a boundary is a no-op (moveToken guarantees it). One undo step.
+function moveSemanticToken(kind, name, dir) {
+    pushUndo();
+    state.semanticTokens = moveToken(state.semanticTokens, kind, name, dir);
+    renderAll();
+}
+
+// Moves a whole named group up/down among its kind's other groups. One undo
+// step.
+function moveSemanticGroup(kind, key, dir) {
+    pushUndo();
+    state.semanticTokens = moveGroup(state.semanticTokens, kind, key, dir);
+    renderAll();
+}
+
+// Moves a token into an existing group (or out to the ungrouped tail, when
+// `groupKey` is falsy) - the Summary tab row's "move to group" select. One
+// undo step; an emptied group is pruned from the registry in the same step.
+function setSemanticTokenGroup(kind, name, groupKey) {
+    pushUndo();
+    state.semanticTokens = setTokenGroup(state.semanticTokens, kind, name, groupKey || null);
+    state.semanticGroups = pruneEmptyGroups(state.semanticGroups, state.semanticTokens);
+    renderAll();
+}
+
+// The "New group…" flow (a row's group-select): registers a brand-new group
+// and moves `name` (of `kind`) into it, in ONE undo step - an empty group can
+// never exist, so creating one always comes with its first member. Returns
+// an error string on failure (nothing changed), or null on success.
+function addTokenToNewGroup(kind, name, rawLabel) {
+    const err = groupLabelError(rawLabel, state.semanticGroups);
+    if (err) return err;
+    pushUndo();
+    const created = addGroup(state.semanticGroups, rawLabel);
+    state.semanticGroups = created.groups;
+    state.semanticTokens = setTokenGroup(state.semanticTokens, kind, name, created.key);
+    openGroups.add(created.key);
+    renderAll();
+    return null;
+}
+
+// Renames a group's label (the Summary tab fold header's own rename control -
+// reuses the exact click/Enter/Escape machinery a token rename uses, see
+// confirmRenameInput below). The key (and so every token's `.group`, and
+// this group's own fold-open state) is untouched. Returns an error string on
+// failure, or null - including the no-op case (unchanged label), which
+// pushes no undo step, mirroring renameSemanticToken.
+function renameSemanticGroupByKey(key, rawLabel) {
+    const trimmed = String(rawLabel === undefined || rawLabel === null ? '' : rawLabel).trim();
+    const current = state.semanticGroups.find(g => g.key === key);
+    if (current && current.label === trimmed) return null;
+    const others = state.semanticGroups.filter(g => g.key !== key);
+    const err = groupLabelError(trimmed, others);
+    if (err) return err;
+    pushUndo();
+    state.semanticGroups = renameGroup(state.semanticGroups, key, trimmed);
+    renderAll();
+    return null;
+}
+
+// --- Semantic roles (Summary tab) ---
+// The color roles as foldable groups, rendered into the Summary panel's
+// #semanticRolesMount so a role can still be re-linked through the palette
+// popover and reconciled with what the work actually uses. Order and
+// grouping are read straight from state.semanticTokens/state.semanticGroups
+// (semanticSections, card 16) - no separate "current key" indirection is
+// needed any more: a section already holds the CURRENT token objects, not a
+// fixed field-key list, so a renamed or deleted built-in is simply wherever
+// its token now sits (or gone, for a delete) with no special-casing here.
+function renderFoldableColorGroups(container) {
     container.innerHTML = '';
     const vars = currentVars();
+    const sections = semanticSections(state.semanticTokens, 'color');
+    const namedSections = sections.filter(s => s.group !== null && s.tokens.length);
 
-    groups.forEach(group => {
-        // A field whose built-in role has been DELETED (card 15) - never
-        // merely renamed - is dropped from its group entirely: builtinTokenName's
-        // own fallback (the role's own, now-orphaned name) exists only so a
-        // chrome var/export never dangles, not as a signal the role is still
-        // "there" to show a row for. A group left with nothing survives it
-        // (every one of its roles deleted) renders no <details> at all, same
-        // as an empty foldable section anywhere else in this app.
-        const fields = group.fields.filter(([key]) => hasBuiltinToken(state.semanticTokens, key));
-        if (!fields.length) return;
+    sections.forEach(section => {
+        if (!section.tokens.length) return;
+
+        if (section.group === null) {
+            // The ungrouped tail: plain rows, no fold - always last (see the
+            // reorder-and-group card: "ungrouped tokens render as plain rows
+            // after the last fold").
+            const body = document.createElement('div');
+            body.className = 'color-group-body';
+            section.tokens.forEach(t => body.appendChild(createColorFieldRow(t.name, vars)));
+            container.appendChild(body);
+            return;
+        }
+
+        const groupInfo = state.semanticGroups.find(g => g.key === section.group) || { key: section.group, label: section.group };
+        const ni = namedSections.findIndex(s => s.group === section.group);
 
         const details = document.createElement('details');
         details.className = 'color-group';
-        details.dataset.group = group.key;
-        details.open = openGroups.has(group.key);
+        details.dataset.group = groupInfo.key;
+        details.open = openGroups.has(groupInfo.key);
         details.addEventListener('toggle', () => {
-            if (details.open) openGroups.add(group.key); else openGroups.delete(group.key);
+            if (details.open) openGroups.add(groupInfo.key); else openGroups.delete(groupInfo.key);
         });
 
         const summary = document.createElement('summary');
         summary.className = 'color-group-label';
-        const summaryText = document.createElement('span');
-        summaryText.textContent = group.label;
+        summary.dataset.renameKind = 'group';
+        summary.dataset.renameName = groupInfo.key;
+
+        const nameWrap = document.createElement('span');
+        nameWrap.className = 'color-group-name';
+        const nameBtn = document.createElement('button');
+        nameBtn.type = 'button';
+        nameBtn.className = 'color-group-name-btn';
+        nameBtn.dataset.renameToggle = '';
+        nameBtn.textContent = groupInfo.label;
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'color-group-name-input';
+        nameInput.dataset.renameInput = '';
+        nameInput.value = groupInfo.label;
+        nameInput.hidden = true;
+        const nameError = document.createElement('span');
+        nameError.className = 'color-group-name-error';
+        nameError.dataset.renameError = '';
+        nameError.hidden = true;
+        nameWrap.append(nameBtn, nameInput, nameError);
+
+        const moveWrap = document.createElement('span');
+        moveWrap.className = 'color-group-move';
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.className = 'color-group-move-btn';
+        upBtn.title = 'Move group up';
+        upBtn.dataset.moveGroupKey = groupInfo.key;
+        upBtn.dataset.dir = '-1';
+        upBtn.disabled = ni <= 0;
+        upBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.className = 'color-group-move-btn';
+        downBtn.title = 'Move group down';
+        downBtn.dataset.moveGroupKey = groupInfo.key;
+        downBtn.dataset.dir = '1';
+        downBtn.disabled = ni === -1 || ni >= namedSections.length - 1;
+        downBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+        moveWrap.append(upBtn, downBtn);
+
         const summarySwatches = document.createElement('span');
         summarySwatches.className = 'color-group-fold-swatches';
-        fields.forEach(([key]) => {
+        section.tokens.forEach(t => {
             const dot = document.createElement('span');
             dot.className = 'color-group-fold-swatch';
-            dot.style.backgroundColor = cssColorToHex(vars[groupFieldCurrentKey(key)]) || '#000000';
+            dot.style.backgroundColor = cssColorToHex(vars[t.name]) || '#000000';
             summarySwatches.appendChild(dot);
         });
-        summary.append(summaryText, summarySwatches);
+        summary.append(nameWrap, moveWrap, summarySwatches);
         details.appendChild(summary);
 
         const body = document.createElement('div');
         body.className = 'color-group-body';
-        fields.forEach(([key]) => body.appendChild(createColorFieldRow(groupFieldCurrentKey(key), vars)));
+        section.tokens.forEach(t => body.appendChild(createColorFieldRow(t.name, vars)));
         details.appendChild(body);
         container.appendChild(details);
     });
@@ -823,26 +985,7 @@ function renderSemanticRoles() {
 
     const groups = document.createElement('div');
     groups.className = 'color-groups';
-    renderFoldableGroups(ALL_COLOR_GROUPS, groups);
-
-    // User-added tokens (no builtin identity - see semantic.js's field on
-    // the token record) render as ungrouped rows directly above the add row.
-    // A RENAMED built-in keeps its builtin identity through the rename (only
-    // `name` moves), so it stays inside its group via groupFieldCurrentKey
-    // above and never lands here, even though its CURRENT name is no longer
-    // one of SEMANTIC_COLOR_ROLES' original 33 - see the Reorder-and-group
-    // card for where a genuine user token eventually gets its own group.
-    const userNames = linkableColorKeys().filter(name => {
-        const token = state.semanticTokens.find(t => t && t.kind === 'color' && t.name === name);
-        return !token || !token.builtin;
-    });
-    if (userNames.length) {
-        const body = document.createElement('div');
-        body.className = 'color-group-body';
-        const vars = currentVars();
-        userNames.forEach(name => body.appendChild(createColorFieldRow(name, vars)));
-        groups.appendChild(body);
-    }
+    renderFoldableColorGroups(groups);
     mount.appendChild(groups);
 
     mount.appendChild(buildAddSemanticTokenRow());
@@ -955,24 +1098,81 @@ function createColorFieldRow(key, vars) {
     deleteError.dataset.deleteError = '';
     deleteError.hidden = true;
 
-    row.append(swatch, nameWrap, input, paletteBtn, resetBtn, deleteBtn, deleteError);
+    // --- Move up/down within the current group (or the ungrouped tail) and
+    // "move to group" (card 16) --------------------------------------------
+    const section = semanticSections(state.semanticTokens, 'color').find(s => s.tokens.some(t => t.name === key));
+    const idxInSection = section ? section.tokens.findIndex(t => t.name === key) : -1;
+    const token = section ? section.tokens[idxInSection] : null;
+
+    const moveWrap = document.createElement('span');
+    moveWrap.className = 'color-field-move';
+    const upBtn = document.createElement('button');
+    upBtn.type = 'button';
+    upBtn.className = 'color-field-move-btn';
+    upBtn.title = 'Move up';
+    upBtn.dataset.moveToken = `color.${key}`;
+    upBtn.dataset.dir = '-1';
+    upBtn.disabled = idxInSection <= 0;
+    upBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+    const downBtn = document.createElement('button');
+    downBtn.type = 'button';
+    downBtn.className = 'color-field-move-btn';
+    downBtn.title = 'Move down';
+    downBtn.dataset.moveToken = `color.${key}`;
+    downBtn.dataset.dir = '1';
+    downBtn.disabled = !section || idxInSection === -1 || idxInSection >= section.tokens.length - 1;
+    downBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+    moveWrap.append(upBtn, downBtn);
+
+    const groupWrap = document.createElement('span');
+    groupWrap.className = 'color-field-group';
+    groupWrap.dataset.groupControl = `color.${key}`;
+    const groupSelect = document.createElement('select');
+    groupSelect.className = 'color-field-group-select';
+    groupSelect.dataset.groupSelect = `color.${key}`;
+    groupSelect.title = 'Group';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = 'No group';
+    groupSelect.appendChild(noneOpt);
+    const currentGroup = token && token.group ? token.group : null;
+    state.semanticGroups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.key;
+        opt.textContent = g.label;
+        groupSelect.appendChild(opt);
+    });
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = 'New group…';
+    groupSelect.appendChild(newOpt);
+    groupSelect.value = currentGroup || '';
+
+    const groupInput = document.createElement('input');
+    groupInput.type = 'text';
+    groupInput.className = 'color-field-group-input';
+    groupInput.dataset.newGroupInput = '';
+    groupInput.placeholder = 'Group name';
+    groupInput.hidden = true;
+    const groupError = document.createElement('span');
+    groupError.className = 'color-field-group-error';
+    groupError.dataset.newGroupError = '';
+    groupError.hidden = true;
+    groupWrap.append(groupSelect, groupInput, groupError);
+
+    row.append(swatch, nameWrap, input, paletteBtn, moveWrap, groupWrap, resetBtn, deleteBtn, deleteError);
     return row;
 }
 
 // Jump to a role's row in the Summary tab (used when a tooltip names a role).
-// A built-in role opens its group; a user-added token has no group, so it
-// only needs the row itself to already be in the DOM (renderSemanticRoles
-// renders it ungrouped, above the add row).
+// A grouped token opens its fold; an ungrouped one has no fold to open, so
+// it only needs the row itself to already be in the DOM
+// (renderFoldableColorGroups renders the ungrouped tail as plain rows,
+// after every fold).
 function revealSemanticRow(key) {
-    // `key` is the token's CURRENT name, which for a renamed built-in no
-    // longer matches ALL_COLOR_GROUPS' hardcoded field key (that's the
-    // original built-in name) - go through the token's own builtin identity
-    // first, same as groupFieldCurrentKey does in reverse.
+    if (!linkableColorKeys().includes(key)) return;
     const token = state.semanticTokens.find(t => t && t.kind === 'color' && t.name === key);
-    const builtinKey = token && token.builtin;
-    const group = builtinKey ? ALL_COLOR_GROUPS.find(g => g.fields.some(([k]) => k === builtinKey)) : null;
-    if (group) openGroups.add(group.key);
-    else if (!linkableColorKeys().includes(key)) return;
+    if (token && token.group) openGroups.add(token.group);
     showSidebarTab('summary');
     const row = document.querySelector(`.color-field-row[data-key="${CSS.escape(key)}"]`);
     if (!row) return;
@@ -1498,7 +1698,8 @@ function buildSystemSnapshot() {
         tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
         components: { ...state.components },
         customScale: cloneCustomScale(state.customScale),
-        semanticTokens: state.semanticTokens.map(t => ({ ...t }))
+        semanticTokens: state.semanticTokens.map(t => ({ ...t })),
+        semanticGroups: state.semanticGroups.map(g => ({ ...g }))
     };
 }
 
@@ -1545,20 +1746,40 @@ function cssVarBlockFor(vars, links) {
 
     // Semantic non-color tokens (space.card-padding, …) as var(--space-N)
     // into whichever step they currently target - see semantic.js
-    // semanticVarLines. Re-targeting a token only ever rewrites this one
-    // line; every part assigned to the token keeps pointing at its var.
+    // semanticVarLinesGrouped (card 16: the same lines semanticVarLines
+    // produces, with a `/* <group label> */` comment per contiguous group -
+    // in practice always the ungrouped case for these kinds today, since
+    // only the color kind's Summary section exposes group controls, but the
+    // emitter is kind-agnostic like every other card 16 helper). Re-targeting
+    // a token only ever rewrites this one line; every part assigned to the
+    // token keeps pointing at its var.
     SEMANTIC_SCALE_KINDS.forEach(kind => {
-        const block = semanticVarLines(state.semanticTokens, kind);
+        const block = semanticVarLinesGrouped(state.semanticTokens, kind, state.semanticGroups);
         if (block) lines.push(block);
     });
 
+    // Semantic color roles, in list order, one `/* <group label> */` comment
+    // per contiguous group (card 16) - the ungrouped tail (or every role,
+    // for a system that has never been grouped/reordered) carries no comment
+    // at all, so an untouched export's :root block reads exactly as before
+    // this card.
     const emitted = new Set();
-    linkableColorKeys().forEach(key => {
-        if (vars[key] === undefined) return;
-        const link = links[key];
-        const linked = isLinkInPalette(link) && (isSpecialName(link.name) || !!paletteEntryByName(source, link.name));
-        lines.push(`  --${key}: ${linked ? `var(${refToVar(`palette.${link.name}`)})` : vars[key]};`);
-        emitted.add(key);
+    semanticSections(state.semanticTokens, 'color').forEach(section => {
+        const body = [];
+        section.tokens.forEach(t => {
+            const key = t.name;
+            if (vars[key] === undefined) return;
+            const link = links[key];
+            const linked = isLinkInPalette(link) && (isSpecialName(link.name) || !!paletteEntryByName(source, link.name));
+            body.push(`  --${key}: ${linked ? `var(${refToVar(`palette.${link.name}`)})` : vars[key]};`);
+            emitted.add(key);
+        });
+        if (!body.length) return;
+        if (section.group) {
+            const g = state.semanticGroups.find(x => x.key === section.group);
+            lines.push(`  /* ${g ? g.label : section.group} */`);
+        }
+        lines.push(...body);
     });
 
     // Preview-chrome aliases (card 14): preview/pages.css paints the page
@@ -1856,11 +2077,20 @@ function describeRef(ref) {
 // The Colors tab's semantic row (ctx.semantic): every semantic role as an
 // assignable color.<role> ref, painted at its current value, with
 // describeRef()'s chain ("color.primary → neutral-900 (#171717)") ready to
-// use as the swatch's tooltip.
+// use as the swatch's tooltip. `gapBefore` (card 16) marks the first entry of
+// a new group - the row's own visual break, matching the Summary tab's order
+// and grouping (DoD line 4) without repeating the fold labels themselves
+// (per the no-unasked-chrome rule: a gap reads as "these are related",
+// a label would be an affordance the DoD never asked for here).
 function semanticColorEntries() {
-    return linkableColorKeys().map(role => {
+    let prevGroup;
+    return semanticSections(state.semanticTokens, 'color').flatMap(s => s.tokens).map((token, i) => {
+        const role = token.name;
         const ref = `color.${role}`;
-        return { role, ref, hex: cssColorToHex(currentVars()[role] || '') || '#000000', tip: describeRef(ref) };
+        const group = token.group || null;
+        const gapBefore = i > 0 && group !== prevGroup;
+        prevGroup = group;
+        return { role, ref, hex: cssColorToHex(currentVars()[role] || '') || '#000000', tip: describeRef(ref), gapBefore };
     });
 }
 
@@ -2064,23 +2294,68 @@ function cancelRenameInput(input) {
     if (els.error) { els.error.hidden = true; els.error.textContent = ''; }
 }
 
-// Enter - validates and applies via renameSemanticToken. An error stays
-// inline and keeps editing (per the DoD: "a colliding or invalid name is
-// refused inline"); success lets renameSemanticToken's own renderAll()
-// rebuild the row from scratch, so there's nothing left to clean up here.
+// Enter - validates and applies via renameSemanticToken (a group's OWN fold
+// header shares this exact control - card 16 - and instead applies via
+// renameSemanticGroupByKey, dataset.renameKind === 'group', renameName the
+// group's KEY). An error stays inline and keeps editing (per the DoD: "a
+// colliding or invalid name is refused inline"); success lets the rename
+// function's own renderAll() rebuild the row from scratch, so there's
+// nothing left to clean up here.
 function confirmRenameInput(input) {
     const els = renameRowEls(input);
     if (!els) return;
-    const err = renameSemanticToken(els.row.dataset.renameKind, els.row.dataset.renameName, input.value);
+    const err = els.row.dataset.renameKind === 'group'
+        ? renameSemanticGroupByKey(els.row.dataset.renameName, input.value)
+        : renameSemanticToken(els.row.dataset.renameKind, els.row.dataset.renameName, input.value);
     if (err && els.error) {
         els.error.textContent = err;
         els.error.hidden = false;
     }
 }
 
+// The "New group…" flow (a Summary-tab row's group-select, card 16): Enter
+// registers the group and moves the row's own token into it (one undo step -
+// see addTokenToNewGroup); Escape reverts to the select, discarding whatever
+// was typed. Both mirror confirmRenameInput/cancelRenameInput's own
+// button<->input toggle, just keyed by [data-group-control] instead of
+// [data-rename-kind].
+function confirmNewGroupInput(input) {
+    const wrap = input.closest('[data-group-control]');
+    if (!wrap) return;
+    const parsed = parseRef(wrap.dataset.groupControl);
+    if (!parsed) return;
+    const errorEl = wrap.querySelector('[data-new-group-error]');
+    const err = addTokenToNewGroup(parsed.kind, parsed.name, input.value);
+    if (err && errorEl) {
+        errorEl.textContent = err;
+        errorEl.hidden = false;
+    }
+}
+
+function cancelNewGroupInput(input) {
+    const wrap = input.closest('[data-group-control]');
+    if (!wrap) return;
+    const select = wrap.querySelector('[data-group-select]');
+    input.hidden = true;
+    if (select) select.hidden = false;
+    const errorEl = wrap.querySelector('[data-new-group-error]');
+    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+}
+
 // One delegated keydown listener for every rename input (see the
 // DOMContentLoaded wiring below).
 function onPanelKeydown(e) {
+    const newGroupInput = e.target.closest('[data-new-group-input]');
+    if (newGroupInput && newGroupInput.closest('#panelBody')) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmNewGroupInput(newGroupInput);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelNewGroupInput(newGroupInput);
+        }
+        return;
+    }
     const input = e.target.closest('[data-rename-input]');
     if (!input || !input.closest('#panelBody')) return;
     if (e.key === 'Enter') {
@@ -2095,9 +2370,27 @@ function onPanelKeydown(e) {
 // One delegated click handler for every panel: chips choose the prop a kind
 // assigns; refs assign to the active token of their kind.
 function onPanelClick(e) {
+    // A group's rename/move controls (card 16) live INSIDE a <summary> (the
+    // fold header) - without this, clicking any of them would ALSO toggle
+    // the fold itself (a <summary>'s native disclosure behaviour), which the
+    // DoD's own "renamed, still open" check rules out.
+    if (e.target.closest('.color-group-label') && e.target.closest('button, input')) {
+        e.preventDefault();
+    }
     const renameToggle = e.target.closest('[data-rename-toggle]');
     if (renameToggle && renameToggle.closest('#panelBody')) {
         openRenameInput(renameToggle);
+        return;
+    }
+    const moveTokenBtn = e.target.closest('[data-move-token]');
+    if (moveTokenBtn && moveTokenBtn.closest('#panelBody')) {
+        const parsed = parseRef(moveTokenBtn.dataset.moveToken);
+        if (parsed) moveSemanticToken(parsed.kind, parsed.name, Number(moveTokenBtn.dataset.dir));
+        return;
+    }
+    const moveGroupBtn = e.target.closest('[data-move-group-key]');
+    if (moveGroupBtn && moveGroupBtn.closest('#panelBody')) {
+        moveSemanticGroup('color', moveGroupBtn.dataset.moveGroupKey, Number(moveGroupBtn.dataset.dir));
         return;
     }
     const chip = e.target.closest('[data-prop]');
@@ -2159,6 +2452,24 @@ function onPanelClick(e) {
 // buildSemanticScaleAddRowHtml) re-points that token, or (inside the add
 // row) has no token yet to re-point and is simply read at "+ Add" time.
 function onPanelChange(e) {
+    const groupSelect = e.target.closest('[data-group-select]');
+    if (groupSelect && groupSelect.closest('#panelBody')) {
+        const parsed = parseRef(groupSelect.dataset.groupSelect);
+        if (!parsed) return;
+        if (groupSelect.value === '__new__') {
+            const wrap = groupSelect.closest('[data-group-control]');
+            const input = wrap && wrap.querySelector('[data-new-group-input]');
+            if (input) {
+                groupSelect.hidden = true;
+                input.hidden = false;
+                input.value = '';
+                input.focus();
+            }
+            return;
+        }
+        setSemanticTokenGroup(parsed.kind, parsed.name, groupSelect.value || null);
+        return;
+    }
     const select = e.target.closest('[data-semantic-target]');
     if (!select || !select.closest('#panelBody')) return;
     const parsed = parseRef(select.dataset.semanticTarget);
@@ -2236,7 +2547,13 @@ function switchPaletteSource(next) {
 // --- Export ---
 const TOKEN_LINKS_MARKER = 'theme-editor:token-links';
 
+// Order and grouping (card 16): a genuinely untouched system is exported
+// with `.group` stripped and an empty registry, so dtcg.js's own SET-based
+// "is this default" check stays exactly as it was before this card (see
+// semanticIsCustomized) - an ordinary export/save of a system nobody has
+// reordered or grouped stays byte-identical to before this card existed.
 function exportCtx() {
+    const customized = semanticIsCustomized();
     return {
         name: state.themeName,
         source: activePaletteSource,
@@ -2245,7 +2562,8 @@ function exportCtx() {
         links: tokenLinks,
         components: state.components,
         typeSets: TYPE_SETS,
-        semanticTokens: state.semanticTokens
+        semanticTokens: customized ? state.semanticTokens : state.semanticTokens.map(t => { const c = { ...t }; delete c.group; return c; }),
+        semanticGroups: customized ? state.semanticGroups : []
     };
 }
 
@@ -2281,7 +2599,7 @@ function buildAnnotatedCss() {
         });
     });
     const components = typeof componentVarLines === 'function' ? componentVarLines(state.components, activePaletteSource) : '';
-    const semantic = SEMANTIC_SCALE_KINDS.map(kind => semanticVarLines(state.semanticTokens, kind)).filter(Boolean).join('\n');
+    const semantic = SEMANTIC_SCALE_KINDS.map(kind => semanticVarLinesGrouped(state.semanticTokens, kind, state.semanticGroups)).filter(Boolean).join('\n');
     const parts = [components, semantic].filter(Boolean).join('\n');
     return `:root {\n${block('light')}\n}\n\n.dark {\n${block('dark')}\n}\n\n/* component part tokens (${activePaletteSource} scales) */\n:root {\n${parts}\n}\n\n/* ${TOKEN_LINKS_MARKER}\n${JSON.stringify(tokenMap, null, 2)}\n*/`;
 }
@@ -2433,8 +2751,12 @@ function applyTokensImport(parsed) {
     // The file's own semantic-token list (dtcg.js already falls back to the
     // 33 built-ins + any non-built-in color leaf it found) - never the
     // CURRENTLY loaded system's list, which applyLoaded is about to replace.
-    const semanticTokens = normalizeSemanticTokens(parsed.semanticTokens);
-    const colorKeys = semanticNames(semanticTokens, 'color');
+    // parsed.semanticGroups is undefined for a file with no `groups` key (an
+    // interim card 8-15 export, or no $extensions.semantic at all) - falls
+    // back to the built-in grouping, same rule as a saved system predating
+    // this card (see resolveSemanticState).
+    const resolvedSemantic = resolveSemanticState(parsed.semanticTokens, parsed.semanticGroups);
+    const colorKeys = semanticNames(resolvedSemantic.tokens, 'color');
     // Anything the file left unlinked still gets its nearest swatch so the
     // subset can be derived and the summary line is honest.
     ['light', 'dark'].forEach(mode => {
@@ -2447,7 +2769,8 @@ function applyTokensImport(parsed) {
         vars, links,
         families: parsed.families,
         components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) },
-        semanticTokens
+        semanticTokens: resolvedSemantic.tokens,
+        semanticGroups: resolvedSemantic.groups
     });
 }
 
@@ -2693,7 +3016,9 @@ document.addEventListener('DOMContentLoaded', () => {
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
-        state.semanticTokens = normalizeSemanticTokens(state.loadedSemanticTokens);
+        const resolved = resolveSemanticState(state.loadedSemanticTokens, state.loadedSemanticGroups);
+        state.semanticTokens = resolved.tokens;
+        state.semanticGroups = resolved.groups;
         renderAll();
     });
 

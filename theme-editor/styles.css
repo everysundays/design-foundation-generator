@@ -348,7 +348,6 @@ body.resizing-sidebar .preview-frame {
 .color-group-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   font-size: 11px;
   font-weight: 700;
@@ -364,10 +363,96 @@ body.resizing-sidebar .preview-frame {
   display: none;
 }
 
+/* --- Rename/move a group (card 16): the fold header's own controls, same
+   click-to-edit / Enter-confirms / Escape-cancels shape as a token's own
+   rename (styles.css's .color-field-name-*) and move (.color-field-move-*),
+   reusing the SAME [data-rename-*]/[data-move-group-key] wiring - see
+   scripts.js renderFoldableColorGroups / onPanelClick's guard against the
+   <summary>'s own native toggle. Takes the remaining row width so the move
+   buttons and fold-swatches sit flush right, whatever the label's length. */
+.color-group-name {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.color-group-name-btn,
+.color-group-name-input {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.color-group-name-btn {
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.color-group-name-btn:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.color-group-name-input {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  text-transform: none;
+}
+
+.color-group-name-error {
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ui-warning);
+}
+
+.color-group-name-error[hidden] {
+  display: none;
+}
+
+.color-group-move {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.color-group-move-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px;
+  font-size: 10px;
+}
+
+.color-group-move-btn:hover:not(:disabled) {
+  color: var(--ui-text);
+}
+
+.color-group-move-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .color-group-fold-swatches {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+  flex-shrink: 0;
   justify-content: flex-end;
 }
 
@@ -579,6 +664,75 @@ body.resizing-sidebar .preview-frame {
 .color-field-palette-btn:hover {
   background: var(--ui-bg-subtle);
   color: var(--ui-text);
+}
+
+/* --- Reorder and group a semantic token (card 16): a sibling of the
+   palette/reset/delete buttons - see scripts.js createColorFieldRow /
+   onPanelClick's [data-move-token]/[data-group-select] branches. The
+   non-color Summary rows' equivalent (panels.js buildTokenMoveHtml) is
+   panels.css's .fp-move(-btn). */
+.color-field-move {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.color-field-move-btn {
+  border: none;
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  padding: 4px 2px;
+  font-size: 10px;
+}
+
+.color-field-move-btn:hover:not(:disabled) {
+  color: var(--ui-text);
+}
+
+.color-field-move-btn:disabled {
+  color: var(--ui-border);
+  cursor: default;
+}
+
+/* "New group…" (the select's last option) swaps the select for
+   .color-field-group-input in place (scripts.js onPanelChange's
+   [data-group-select] branch / confirmNewGroupInput/cancelNewGroupInput) -
+   Enter registers the group and moves this row's token into it in one undo
+   step, Escape reverts to the select untouched. */
+.color-field-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex-shrink: 0;
+  width: 104px;
+}
+
+.color-field-group-select,
+.color-field-group-input {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: 11px;
+}
+
+.color-field-group-input {
+  border-color: var(--ui-accent);
+}
+
+.color-field-group-error {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--ui-warning);
+}
+
+.color-field-group-error[hidden] {
+  display: none;
 }
 
 .color-field-reset {

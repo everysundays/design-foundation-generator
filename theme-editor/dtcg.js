@@ -176,7 +176,30 @@ function buildTokensJson(ctx) {
     // extension key.
     const roleSet = new Set(roles);
     const rolesAreDefault = roleSet.size === DTCG_COLOR_ROLES.length && DTCG_COLOR_ROLES.every(r => roleSet.has(r));
-    const tokensAreDefault = rolesAreDefault && ctxNonColorTokens.length === 0;
+    // Order and grouping (card 16): `ctx.semanticGroups` is the live
+    // { key, label } registry (scripts.js state.semanticGroups) - present
+    // (even []) only when the caller has already decided the live order/
+    // grouping is worth exporting (see scripts.js exportCtx/
+    // semanticIsCustomized, which strips a token's `.group` and passes []
+    // right back for a genuinely untouched system, so an ordinary export
+    // stays byte-identical to before this card - dtcg.js itself never makes
+    // that "is this the built-in default" judgment call, it has no access to
+    // the built-in grouping table). `tokenGroupLabels` is the DoD's own
+    // export shape: token NAME -> group LABEL (not key - a label survives a
+    // re-import with a freshly minted key just fine, and needs no separate
+    // order field, since a token's position in `tokens` already carries the
+    // order - see parseTokensJson's read-back).
+    const ctxSemanticGroups = Array.isArray(ctx.semanticGroups) ? ctx.semanticGroups : [];
+    const groupLabelByKey = {};
+    ctxSemanticGroups.forEach(g => { if (g && typeof g.key === 'string' && typeof g.label === 'string') groupLabelByKey[g.key] = g.label; });
+    const tokenGroupLabels = {};
+    if (ctxAllTokens) {
+        ctxAllTokens.forEach(t => {
+            if (t && t.group && groupLabelByKey[t.group]) tokenGroupLabels[t.name] = groupLabelByKey[t.group];
+        });
+    }
+    const hasGroupingInfo = Object.keys(tokenGroupLabels).length > 0;
+    const tokensAreDefault = rolesAreDefault && ctxNonColorTokens.length === 0 && !hasGroupingInfo;
     // Non-color tokens as real alias tokens under global.semantic.<kind-path>
     // (KIND_PREFIX - the exact same group nesting a plain ref already uses,
     // e.g. borderWidth -> "border.width") - so `{semantic.space.card-padding}`
@@ -296,8 +319,18 @@ function buildTokensJson(ctx) {
                     // doesn't strip it (see parseTokensJson's matching
                     // read-back); omitted entirely for a plain/never-renamed
                     // entry, so an export with no renamed role stays exactly
-                    // byte-identical to before this field existed.
-                    ? { semantic: { tokens: ctxAllTokens.map(t => (t.builtin ? { kind: t.kind, name: t.name, builtin: t.builtin } : { kind: t.kind, name: t.name })) } }
+                    // byte-identical to before this field existed. `groups`
+                    // (card 16) is added only when at least one token is
+                    // actually grouped - an extension written for the
+                    // "tokens aren't default" reason alone (a rename, a user
+                    // token, a non-color token) still carries no `groups` key
+                    // when nothing is grouped, matching every pre-card-16 test.
+                    ? {
+                        semantic: Object.assign(
+                            { tokens: ctxAllTokens.map(t => (t.builtin ? { kind: t.kind, name: t.name, builtin: t.builtin } : { kind: t.kind, name: t.name })) },
+                            hasGroupingInfo ? { groups: tokenGroupLabels } : null
+                        )
+                    }
                     : null
             )
         }
@@ -535,6 +568,48 @@ function parseTokensJson(obj) {
         });
         extra.sort();
         result.semanticTokens = DTCG_COLOR_ROLES.map(name => ({ kind: 'color', name })).concat(extra.map(name => ({ kind: 'color', name })));
+    }
+
+    // Order and grouping (card 16): $extensions['theme-editor'].semantic.
+    // groups, when present, is the DoD's own shape - token NAME -> group
+    // LABEL (buildTokensJson's tokenGroupLabels) - read back here into a
+    // fresh { key, label } registry (a label's key is minted from the label
+    // itself via the same slugging rule semantic.js's cssIdentFromLabel
+    // uses, duplicated rather than imported - dtcg.js must never call into
+    // semantic.js, see the file header) and a `.group` on each named token.
+    // `result.semanticGroups` stays undefined - never [] - when the key is
+    // absent (an interim card 8-15 export, or a file with no extension at
+    // all): scripts.js's own applyTokensImport is what falls back to the
+    // built-in grouping for a missing/undefined value, exactly as it does
+    // for a missing `semanticTokens` today; a present-but-empty `groups: {}`
+    // (an export that never customized grouping) reads back as `[]`, a
+    // meaningfully different "yes, deliberately ungrouped" signal.
+    const rawGroupLabels = ext.semantic && ext.semantic.groups && typeof ext.semantic.groups === 'object' && !Array.isArray(ext.semantic.groups)
+        ? ext.semantic.groups : null;
+    if (rawGroupLabels) {
+        const registry = [];
+        const keyByLabel = new Map();
+        const usedKeys = new Set();
+        const slug = (label) => {
+            const base = String(label).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'group';
+            if (!usedKeys.has(base)) return base;
+            let i = 2;
+            while (usedKeys.has(`${base}-${i}`)) i++;
+            return `${base}-${i}`;
+        };
+        result.semanticTokens = result.semanticTokens.map(t => {
+            const label = typeof rawGroupLabels[t.name] === 'string' ? rawGroupLabels[t.name].trim() : '';
+            if (!label) return t;
+            let key = keyByLabel.get(label);
+            if (!key) {
+                key = slug(label);
+                usedKeys.add(key);
+                keyByLabel.set(label, key);
+                registry.push({ key, label });
+            }
+            return Object.assign({}, t, { group: key });
+        });
+        result.semanticGroups = registry;
     }
 
     // font.family.* -> font-sans|serif|mono in both modes

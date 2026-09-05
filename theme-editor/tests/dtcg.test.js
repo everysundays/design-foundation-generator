@@ -841,4 +841,130 @@ test("atlassian source: a type token's target set is unchanged - TYPE_SETS is fo
     assert.strictEqual(parsed.components['card.body.type'], 'type.nav');
 });
 
+// --- Reorder and group semantic tokens (card 16) ----------------------------
+// ctx.semanticGroups is the live { key, label } registry (scripts.js
+// state.semanticGroups); a token's own `.group` names one by key. The
+// exported shape is the DoD's own: token NAME -> group LABEL (never the
+// internal key), so the export is identical whatever key scripts.js/an
+// import happened to mint - see the "any key, same export" case below.
+
+test('buildTokensJson: ctx.semanticGroups adds a `groups` map only when a token is actually grouped, keyed by token name -> label', () => {
+    const base = tailwindCtx();
+    const semanticTokens = ROLES.map(name => ({ kind: 'color', name }));
+    semanticTokens.find(t => t.name === 'primary').group = 'brand';
+    semanticTokens.find(t => t.name === 'primary-foreground').group = 'brand';
+    const f = buildTokensJson({ ...base, semanticTokens, semanticGroups: [{ key: 'brand', label: 'Brand' }] });
+
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, {
+        tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })),
+        groups: { primary: 'Brand', 'primary-foreground': 'Brand' }
+    }, 'the exported tokens list drops .group (unchanged shape); groups is a separate name -> label map');
+    // light.color/dark.color key order still follows `tokens` (unchanged by
+    // this card - grouping doesn't reorder the color sets' own key order,
+    // only the extension's own bookkeeping array does that job).
+    assert.deepStrictEqual(Object.keys(f.light.color), ROLES);
+
+    const n = assertAllRefsResolve(f, 'grouped export');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with a grouped export is deep-equal');
+    assert.strictEqual(parsed.semanticTokens.find(t => t.name === 'primary').group, parsed.semanticTokens.find(t => t.name === 'primary-foreground').group,
+        'both grouped tokens round-trip to the SAME (freshly minted) key');
+    assert.deepStrictEqual(parsed.semanticGroups, [{ key: 'brand', label: 'Brand' }], 'round-trip mints "brand" back from the label "Brand" - the same key, though nothing requires that');
+});
+
+test('buildTokensJson: the exported file is identical whatever internal key a group happens to use - only the label is ever written', () => {
+    const base = tailwindCtx();
+    const semanticTokens = ROLES.map(name => ({ kind: 'color', name }));
+    semanticTokens.find(t => t.name === 'primary').group = 'brand';
+    const withNaturalKey = buildTokensJson({ ...base, semanticTokens, semanticGroups: [{ key: 'brand', label: 'Brand' }] });
+
+    const semanticTokens2 = ROLES.map(name => ({ kind: 'color', name }));
+    semanticTokens2.find(t => t.name === 'primary').group = 'g1';
+    const withOddKey = buildTokensJson({ ...base, semanticTokens: semanticTokens2, semanticGroups: [{ key: 'g1', label: 'Brand' }] });
+
+    assert.deepStrictEqual(withOddKey, withNaturalKey, 'the internal group key never leaks into the exported file - only the label does');
+});
+
+test('buildTokensJson: ctx.semanticGroups present but empty and no token grouped -> no `groups` key (an untouched export stays exactly as before this card)', () => {
+    const withEmptyGroups = buildTokensJson({ ...ctx, semanticGroups: [] });
+    assert.deepStrictEqual(withEmptyGroups, file, 'identical to an export with no ctx.semanticGroups at all');
+
+    // A non-default token list (a renamed/added role) with NO grouping still
+    // carries no `groups` key - only `tokens` (unaffected by this card).
+    const withUser = buildTokensJson({ ...ctx, semanticTokens: [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'color', name: 'warning' }], semanticGroups: [] });
+    assert.strictEqual(withUser.global.$extensions['theme-editor'].semantic.groups, undefined, 'no groups key when nothing is grouped, even though tokens is present for another reason');
+});
+
+test('buildTokensJson: a token\'s .group with no matching entry in ctx.semanticGroups is silently ignored (not exported, does not force a `groups` key)', () => {
+    const semanticTokens = ROLES.map(name => ({ kind: 'color', name }));
+    semanticTokens.find(t => t.name === 'primary').group = 'ghost';   // no such key in semanticGroups
+    const f = buildTokensJson({ ...ctx, semanticTokens, semanticGroups: [{ key: 'brand', label: 'Brand' }] });
+    assert.strictEqual(f.global.$extensions['theme-editor'].semantic, undefined, 'a dangling/unregistered group reference never triggers the extension - roles are still exactly the 33 defaults');
+});
+
+test('parseTokensJson: reads $extensions.semantic.groups back, minting keys from labels, and attaches .group only to the named tokens', () => {
+    const base = tailwindCtx();
+    const semanticTokens = ROLES.map(name => ({ kind: 'color', name }));
+    semanticTokens.find(t => t.name === 'destructive').group = 'urgent';
+    semanticTokens.find(t => t.name === 'destructive-foreground').group = 'urgent';
+    const f = JSON.parse(JSON.stringify(buildTokensJson({ ...base, semanticTokens, semanticGroups: [{ key: 'urgent', label: 'Danger Zone!' }] })));
+    const parsed = parseTokensJson(f);
+
+    const dTok = parsed.semanticTokens.find(t => t.name === 'destructive');
+    const dfTok = parsed.semanticTokens.find(t => t.name === 'destructive-foreground');
+    assert.strictEqual(dTok.group, dfTok.group, 'both tokens named in the groups map resolve to the SAME key');
+    assert.deepStrictEqual(parsed.semanticGroups, [{ key: 'danger-zone', label: 'Danger Zone!' }], 'the key is slugified from the label ("Danger Zone!" -> "danger-zone")');
+    assert.strictEqual(dTok.group, 'danger-zone');
+    parsed.semanticTokens.filter(t => !['destructive', 'destructive-foreground'].includes(t.name)).forEach(t => {
+        assert(!('group' in t), `${t.kind}.${t.name}: not named in the groups map, so it stays ungrouped`);
+    });
+});
+
+test('parseTokensJson: two different labels that slugify to the same base key are disambiguated, never merged', () => {
+    const base = tailwindCtx();
+    const semanticTokens = ROLES.map(name => ({ kind: 'color', name }));
+    semanticTokens.find(t => t.name === 'primary').group = 'a';
+    semanticTokens.find(t => t.name === 'secondary').group = 'b';
+    const f = JSON.parse(JSON.stringify(buildTokensJson({
+        ...base, semanticTokens,
+        semanticGroups: [{ key: 'a', label: 'Brand!' }, { key: 'b', label: 'Brand?' }]   // both slugify to "brand"
+    })));
+    const parsed = parseTokensJson(f);
+    const primaryGroup = parsed.semanticTokens.find(t => t.name === 'primary').group;
+    const secondaryGroup = parsed.semanticTokens.find(t => t.name === 'secondary').group;
+    assert.notStrictEqual(primaryGroup, secondaryGroup, 'two distinct labels never collapse into one group, even when their slugs collide');
+    assert.strictEqual(parsed.semanticGroups.length, 2, 'both groups survive as separate registry entries');
+});
+
+test('parseTokensJson: `groups` missing entirely reads back as undefined (an interim/legacy export, or none at all) - the caller\'s cue to fall back to the built-in grouping; an EMPTY `groups: {}` reads back as [], a deliberately-ungrouped export', () => {
+    // No $extensions.semantic at all.
+    assert.strictEqual(parseTokensJson(JSON.parse(JSON.stringify(file))).semanticGroups, undefined, 'no extension at all -> semanticGroups undefined');
+
+    // An interim card 8-15 style export: $extensions.semantic.tokens present
+    // (e.g. a renamed role), but no `groups` key yet.
+    const withTokensOnly = JSON.parse(JSON.stringify(file));
+    withTokensOnly.global.$extensions['theme-editor'].semantic = { tokens: [{ kind: 'color', name: 'primary' }] };
+    assert.strictEqual(parseTokensJson(withTokensOnly).semanticGroups, undefined, 'tokens present but no groups key -> semanticGroups still undefined (caller falls back to built-in grouping)');
+
+    // A deliberate, empty groups map (grouping was touched and ended up with
+    // nothing grouped) - meaningfully different from "missing": the caller
+    // must NOT fall back to the built-in grouping here.
+    const withEmptyGroups = JSON.parse(JSON.stringify(file));
+    withEmptyGroups.global.$extensions['theme-editor'].semantic = { tokens: ROLES.map(name => ({ kind: 'color', name })), groups: {} };
+    assert.deepStrictEqual(parseTokensJson(withEmptyGroups).semanticGroups, [], 'an explicit empty groups map reads back as [] (deliberately ungrouped), not undefined');
+});
+
+test('parseTokensJson: a groups entry naming a token that gets dropped (no color value) is simply absent from the result, not an error', () => {
+    const f = JSON.parse(JSON.stringify(file));
+    f.global.$extensions['theme-editor'].semantic = {
+        tokens: [{ kind: 'color', name: 'primary' }, { kind: 'color', name: 'ghost' }],
+        groups: { primary: 'Brand', ghost: 'Brand' }
+    };
+    const parsed = parseTokensJson(f);
+    assert.deepStrictEqual(parsed.semanticTokens, [{ kind: 'color', name: 'primary', group: 'brand' }], '"ghost" is dropped (no value in light/dark) and never reaches the groups pass');
+    assert.deepStrictEqual(parsed.semanticGroups, [{ key: 'brand', label: 'Brand' }], 'the group itself still exists once, for the surviving token');
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

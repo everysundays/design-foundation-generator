@@ -31,7 +31,9 @@ const g = vm.runInContext(`({
     semanticTypeFallbackKey, resolveTypeSetForRef, resolveSemanticTypeSet, typeTokenNameError, semanticTypeAliasLines,
     isTokenRenamable, builtinTokenName, hasBuiltinToken, renameToken, SEMANTIC_FIXED_USERS, semanticTokenUsers, deleteSemanticToken,
     parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale, buildTokensJson, parseTokensJson,
-    componentUsage
+    componentUsage,
+    semanticSections, moveToken, setTokenGroup, moveGroup, groupLabelError, cssIdentFromLabel, addGroup, renameGroup,
+    pruneEmptyGroups, normalizeSemanticGroups, builtInGrouping, semanticVarLinesGrouped
 })`, ctx);
 
 // vm-context arrays/objects carry that realm's own Array/Object prototypes,
@@ -695,6 +697,245 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
         semanticTokens: deletedSpace.semanticTokens
     });
     ok(exportedNoSpace.global.semantic === undefined, 'tokens.json: no global.semantic.space.card-padding left behind once the token is deleted');
+}
+
+// --- Reorder and group semantic tokens (card 16) ----------------------------
+// Every case below runs against a list carrying BOTH the 33 built-in color
+// roles AND two INJECTED space tokens (never added through
+// addSemanticScaleToken) - proving move/group/registry operations are
+// kind-agnostic, per the DoD ("the node test moves/groups a synthetic space
+// token to prove the operations are kind-agnostic").
+
+const namesOf = (list, kind) => list.filter(t => t && t.kind === kind).map(t => t.name);
+
+// --- moveToken: within-kind, within-group(or-tail), boundary-safe ----------
+{
+    const spaceA = { kind: 'space', name: 'gutter', ref: 'space.6' };
+    const spaceB = { kind: 'space', name: 'inset', ref: 'space.4' };
+    const base = [...g.defaultSemanticTokens(), spaceA, spaceB];
+
+    // Nothing is grouped yet - every kind's own subsequence is one ungrouped
+    // "tail" bucket, so an ordinary adjacent swap is exactly a plain reorder.
+    const movedDown = g.moveToken(base, 'color', 'primary', 1);
+    eq(namesOf(movedDown, 'color').slice(0, 3), ['primary-foreground', 'primary', 'secondary'], 'moveToken(color, "primary", +1) swaps with its immediate successor');
+    ok(namesOf(movedDown, 'space').join(',') === 'gutter,inset', 'moving a color token never touches the space kind\'s order');
+
+    const movedUp = g.moveToken(movedDown, 'color', 'primary', -1);
+    eq(namesOf(movedUp, 'color'), g.SEMANTIC_COLOR_ROLES, 'moving it back up restores the original order exactly');
+
+    // The SAME function, same call shape, reorders the injected space kind.
+    const spaceSwapped = g.moveToken(base, 'space', 'inset', -1);
+    eq(namesOf(spaceSwapped, 'space'), ['inset', 'gutter'], 'moveToken(space, "inset", -1): kind-agnostic - swaps the two injected space tokens');
+    eq(namesOf(spaceSwapped, 'color'), g.SEMANTIC_COLOR_ROLES, 'moving a space token never touches the color kind\'s order');
+
+    // Boundary: the first entry of a kind can never move up, the last can
+    // never move down - a no-op, not an error, not a wrap-around.
+    eq(g.moveToken(base, 'color', 'primary', -1), base, 'moveToken at the top boundary (dir -1) is a no-op');
+    eq(g.moveToken(base, 'space', 'inset', 1), base, 'moveToken at the bottom boundary (dir +1) is a no-op');
+    eq(g.moveToken(base, 'color', 'no-such-token', 1), base, 'moveToken for an unknown name is a safe no-op');
+
+    // Multiset invariant: every name still appears exactly once, whichever
+    // kind or direction was moved.
+    [movedDown, movedUp, spaceSwapped].forEach(list => {
+        eq(new Set(namesOf(list, 'color')).size, 33, 'every move keeps exactly 33 distinct color names');
+        eq(new Set(list.map(t => `${t.kind}:${t.name}`)).size, list.length, 'every move keeps every kind:name pair unique (nothing duplicated or dropped)');
+    });
+
+    // Purity: the input array/entries are never mutated.
+    ok(base[0].name === 'primary', 'moveToken never mutates the array it was given');
+}
+
+// --- setTokenGroup: move into/out of a group, kind-agnostic -----------------
+{
+    const spaceA = { kind: 'space', name: 'gutter', ref: 'space.6' };
+    const spaceB = { kind: 'space', name: 'inset', ref: 'space.4' };
+    const base = [...g.defaultSemanticTokens(), spaceA, spaceB];
+
+    const grouped = g.setTokenGroup(base, 'color', 'primary', 'brand');
+    const primaryTok = grouped.find(t => t.kind === 'color' && t.name === 'primary');
+    ok(primaryTok.group === 'brand', 'setTokenGroup sets the token\'s own .group field');
+    eq(g.semanticSections(grouped, 'color')[0], { group: 'brand', tokens: [primaryTok] }, 'a freshly grouped lone token forms its own one-member section, in its original slot');
+
+    // A second token joining an EXISTING group is appended as its newest
+    // member - the two now sit contiguously, in join order, regardless of
+    // how far apart they started.
+    const withTwo = g.setTokenGroup(grouped, 'color', 'destructive', 'brand');
+    const sections = g.semanticSections(withTwo, 'color');
+    eq(sections[0].group, 'brand');
+    eq(sections[0].tokens.map(t => t.name), ['primary', 'destructive'], 'a token moved into an existing group lands right after its current last member');
+
+    // Ungrouping: moves the token to the end of the (always-trailing)
+    // ungrouped tail, dropping its `.group` field entirely (not merely null).
+    const ungrouped = g.setTokenGroup(withTwo, 'color', 'primary', null);
+    const primaryAfter = ungrouped.find(t => t.kind === 'color' && t.name === 'primary');
+    ok(!('group' in primaryAfter), 'ungrouping drops the .group field entirely, not just sets it to null');
+    const tailSection = g.semanticSections(ungrouped, 'color').find(s => s.group === null);
+    ok(tailSection.tokens[tailSection.tokens.length - 1].name === 'primary', 'the ungrouped token becomes the newest (last) member of the ungrouped tail');
+
+    // No-op: already in that exact group (or already ungrouped).
+    eq(g.setTokenGroup(grouped, 'color', 'primary', 'brand'), grouped, 'setTokenGroup to the SAME group is a no-op');
+    eq(g.setTokenGroup(base, 'color', 'primary', null), base, 'setTokenGroup(null) on an already-ungrouped token is a no-op');
+    eq(g.setTokenGroup(base, 'color', 'no-such-token', 'brand'), base, 'setTokenGroup for an unknown name is a safe no-op');
+
+    // Kind-agnostic: the exact same function groups the injected space token.
+    const spaceGrouped = g.setTokenGroup(base, 'space', 'gutter', 'layout');
+    const spaceSections = g.semanticSections(spaceGrouped, 'space');
+    eq(spaceSections[0], { group: 'layout', tokens: [{ kind: 'space', name: 'gutter', ref: 'space.6', group: 'layout' }] }, 'setTokenGroup groups a space-kind token exactly like a color one');
+    eq(namesOf(spaceGrouped, 'color'), g.SEMANTIC_COLOR_ROLES, 'grouping a space token never touches the color kind at all');
+
+    // Multiset invariant, every case above.
+    [grouped, withTwo, ungrouped, spaceGrouped].forEach(list => {
+        eq(new Set(list.map(t => `${t.kind}:${t.name}`)).size, list.length, 'setTokenGroup never duplicates or drops a token');
+    });
+}
+
+// --- moveGroup: the whole named block moves, the ungrouped tail never does -
+{
+    const base = g.defaultSemanticTokens();
+    let list = g.setTokenGroup(base, 'color', 'primary', 'brand');
+    list = g.setTokenGroup(list, 'color', 'primary-foreground', 'brand');
+    list = g.setTokenGroup(list, 'color', 'destructive', 'feedback');
+    list = g.setTokenGroup(list, 'color', 'destructive-foreground', 'feedback');
+
+    let sections = g.semanticSections(list, 'color');
+    eq(sections.map(s => s.group), ['brand', 'feedback', null], 'two named groups, brand first (created first), feedback second, then the ungrouped tail');
+
+    const swapped = g.moveGroup(list, 'color', 'feedback', -1);
+    sections = g.semanticSections(swapped, 'color');
+    eq(sections.map(s => s.group), ['feedback', 'brand', null], 'moveGroup(-1) swaps feedback ahead of brand, as ONE block each');
+    eq(sections[0].tokens.map(t => t.name), ['destructive', 'destructive-foreground'], 'feedback\'s own two members keep their relative order after the block move');
+    eq(sections[1].tokens.map(t => t.name), ['primary', 'primary-foreground'], "brand's members are untouched by the block move");
+
+    // Boundary: the first named group can't move further up; the ungrouped
+    // tail is never a participant (it always renders/exports last).
+    eq(g.moveGroup(swapped, 'color', 'feedback', -1), swapped, 'moveGroup at the top boundary is a no-op');
+    eq(g.moveGroup(list, 'color', 'feedback', 1), list, 'moveGroup(+1) on the LAST named group is a no-op (the tail never participates)');
+    eq(g.moveGroup(list, 'color', 'no-such-group', 1), list, 'moveGroup for an unknown key is a safe no-op');
+
+    eq(new Set(swapped.map(t => `${t.kind}:${t.name}`)).size, swapped.length, 'moveGroup never duplicates or drops a token');
+}
+
+// --- Group registry: groupLabelError / cssIdentFromLabel / addGroup /
+// renameGroup / pruneEmptyGroups / normalizeSemanticGroups -----------------
+{
+    const groups = [{ key: 'brand', label: 'Brand' }, { key: 'feedback', label: 'Feedback' }];
+
+    ok(g.groupLabelError('', groups) === 'Enter a name.', 'groupLabelError refuses a blank label');
+    ok(g.groupLabelError('   ', groups) === 'Enter a name.', 'groupLabelError refuses a whitespace-only label');
+    ok(typeof g.groupLabelError('Brand', groups) === 'string', 'groupLabelError refuses an exact duplicate label');
+    ok(typeof g.groupLabelError('brand', groups) === 'string', 'groupLabelError refuses a duplicate label case-insensitively');
+    ok(g.groupLabelError('Identity', groups) === null, 'groupLabelError accepts a genuinely new label');
+    ok(g.groupLabelError('  Identity  ', groups) === null, 'groupLabelError trims surrounding whitespace before checking');
+
+    ok(g.cssIdentFromLabel('Brand New!', []) === 'brand-new', 'cssIdentFromLabel slugifies to lowercase-kebab');
+    ok(g.cssIdentFromLabel('   ', []) === 'group', 'cssIdentFromLabel falls back to "group" when nothing alphanumeric survives');
+    ok(g.cssIdentFromLabel('Brand', groups) === 'brand-2', 'cssIdentFromLabel appends -2 on a key collision against the existing registry');
+    ok(g.cssIdentFromLabel('Brand', [...groups, { key: 'brand-2', label: 'x' }]) === 'brand-3', 'cssIdentFromLabel keeps counting up past an already-taken -2');
+
+    const added = g.addGroup(groups, 'Identity');
+    ok(added.key === 'identity', 'addGroup mints a fresh key from the label');
+    eq(added.groups, [...groups, { key: 'identity', label: 'Identity' }], 'addGroup appends the new entry, leaving the existing ones untouched');
+    eq(groups, [{ key: 'brand', label: 'Brand' }, { key: 'feedback', label: 'Feedback' }], 'addGroup never mutates the array it was given');
+
+    const renamed = g.renameGroup(groups, 'brand', 'Core');
+    eq(renamed, [{ key: 'brand', label: 'Core' }, { key: 'feedback', label: 'Feedback' }], 'renameGroup changes only the label, keeping the key');
+    eq(g.renameGroup(groups, 'no-such-key', 'X'), groups, 'renameGroup for an unknown key is a no-op (still a fresh array)');
+
+    const tokensUsingBrandOnly = [{ kind: 'color', name: 'primary', group: 'brand' }];
+    eq(g.pruneEmptyGroups(groups, tokensUsingBrandOnly), [{ key: 'brand', label: 'Brand' }], 'pruneEmptyGroups drops a group nothing references any more ("feedback" here)');
+    eq(g.pruneEmptyGroups(groups, []), [], 'pruneEmptyGroups drops every group when nothing is grouped at all');
+
+    // normalizeSemanticGroups: a saved/imported registry, made safe.
+    eq(g.normalizeSemanticGroups(undefined, tokensUsingBrandOnly), [], 'normalizeSemanticGroups(undefined) -> []');
+    eq(g.normalizeSemanticGroups('nope', tokensUsingBrandOnly), [], 'normalizeSemanticGroups(a string) -> []');
+    const messy = [
+        { key: 'brand', label: 'Brand' },
+        { key: 'Not-Valid!', label: 'Bad key' },      // not a valid identifier
+        { key: 'no-label', label: '' },               // blank label
+        { key: 'brand', label: 'Duplicate key' },     // duplicate key, first wins
+        { key: 'feedback', label: 'Feedback' }        // valid, but no token references it
+    ];
+    eq(g.normalizeSemanticGroups(messy, tokensUsingBrandOnly), [{ key: 'brand', label: 'Brand' }], 'normalizeSemanticGroups drops invalid/duplicate entries, then prunes anything unreferenced');
+}
+
+// --- builtInGrouping: the import/legacy-load fallback, kind-agnostic -------
+// `groupTable` mirrors scripts.js colorGroupTable()'s shape - a SUBSET here
+// (three groups) is enough to prove the reordering/registry contract without
+// depending on the live app's full ALL_COLOR_GROUPS.
+{
+    const groupTable = [
+        { key: 'primary', label: 'Primary', roleNames: ['primary', 'primary-foreground'] },
+        { key: 'secondary', label: 'Secondary', roleNames: ['secondary', 'secondary-foreground'] },
+        { key: 'destructive', label: 'Destructive', roleNames: ['destructive', 'destructive-foreground'] }
+    ];
+    const spaceA = { kind: 'space', name: 'gutter', ref: 'space.6' };
+    const spaceB = { kind: 'space', name: 'inset', ref: 'space.4' };
+    const base = [...g.defaultSemanticTokens(), spaceA, spaceB];
+
+    const built = g.builtInGrouping(base, groupTable);
+    eq(built.groups, [{ key: 'primary', label: 'Primary' }, { key: 'secondary', label: 'Secondary' }, { key: 'destructive', label: 'Destructive' }],
+        'builtInGrouping registers every table entry that actually matched a current token, in table order');
+
+    const sections = g.semanticSections(built.tokens, 'color');
+    eq(sections.map(s => s.group), ['primary', 'secondary', 'destructive', null], 'built-in grouping orders sections exactly per the table, ungrouped tail last');
+    eq(sections[0].tokens.map(t => t.name), ['primary', 'primary-foreground'], 'the "primary" section holds exactly its own two roles, in their relative order');
+    eq(sections[3].tokens.map(t => t.name), namesOf(base, 'color').filter(n => !['primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'destructive', 'destructive-foreground'].includes(n)),
+        'every role the table does not mention (accent, background, chart-1, …) lands in the ungrouped tail, in its original relative order');
+
+    // Every kind:name pair survives untouched in content - only order/`.group`
+    // change; a non-color entry (the injected space tokens) is byte-identical
+    // and keeps its absolute slot (builtInGrouping only reorders the color
+    // subsequence, per its own contract).
+    eq(namesOf(built.tokens, 'space'), ['gutter', 'inset'], "a non-color kind's order is completely untouched by builtInGrouping");
+    eq(built.tokens[built.tokens.length - 2], spaceA, 'a non-color token is byte-identical (no stray .group, no reordering)');
+    eq(new Set(built.tokens.map(t => `${t.kind}:${t.name}`)).size, built.tokens.length, 'builtInGrouping keeps every token exactly once');
+
+    // A role the table doesn't cover, and a plain user-added token
+    // (builtin: null) never get grouped, whatever their name.
+    const withUser = [...base, { kind: 'color', name: 'brandish', builtin: null }];
+    const builtWithUser = g.builtInGrouping(withUser, groupTable);
+    const brandish = builtWithUser.tokens.find(t => t.name === 'brandish');
+    ok(!brandish.group, 'a plain user-added color token (builtin: null) is never swept into a built-in group');
+
+    // Idempotent-ish and stale-group-safe: running it again on its OWN output
+    // (which already carries .group fields) reproduces the exact same result -
+    // builtInGrouping always drops a color token's existing .group FIRST, so a
+    // stale group from a different table/Foundation never lingers.
+    const builtTwice = g.builtInGrouping(built.tokens, groupTable);
+    eq(builtTwice, built, 'builtInGrouping is idempotent when re-applied to its own output with the same table');
+
+    // A table entry that matches NOTHING (every one of its roles missing or
+    // renamed away) contributes no group at all - never an empty fold.
+    const noMatchTable = [{ key: 'ghost', label: 'Ghost', roleNames: ['not-a-real-role'] }];
+    eq(g.builtInGrouping(base, noMatchTable).groups, [], 'a table entry matching zero current tokens registers no group');
+}
+
+// --- semanticVarLinesGrouped: the design-system CSS emitter, grouped -------
+{
+    const spaceA = { kind: 'space', name: 'gutter', ref: 'space.6' };
+    const spaceB = { kind: 'space', name: 'inset', ref: 'space.4' };
+
+    // Ungrouped: identical output to the plain semanticVarLines (no comment).
+    const plain = [spaceA, spaceB];
+    ok(g.semanticVarLinesGrouped(plain, 'space', []) === g.semanticVarLines(plain, 'space'), 'semanticVarLinesGrouped matches semanticVarLines exactly when nothing is grouped');
+    ok(g.semanticVarLinesGrouped([], 'space', []) === '', "semanticVarLinesGrouped([], kind, []) is ''");
+
+    // Grouped: one comment per contiguous run, using the registry's label.
+    const grouped = [{ ...spaceA, group: 'layout' }, { ...spaceB, group: 'layout' }];
+    const lines = g.semanticVarLinesGrouped(grouped, 'space', [{ key: 'layout', label: 'Layout' }]).split('\n');
+    eq(lines[0], '  /* Layout */', 'one group comment precedes the whole contiguous run, not once per token');
+    eq(lines.length, 3, 'exactly one comment line + one line per token (two tokens, one shared group)');
+    ok(lines[1] === g.semanticVarLines([spaceA], 'space') && lines[2] === g.semanticVarLines([spaceB], 'space'), 'the token lines themselves are unchanged by grouping');
+
+    // A dangling group key (not in the registry) still renders SOMETHING
+    // (the bare key) rather than throwing or showing "undefined".
+    const dangling = [{ ...spaceA, group: 'ghost' }];
+    ok(g.semanticVarLinesGrouped(dangling, 'space', []) === `  /* ghost */\n${g.semanticVarLines([spaceA], 'space')}`, 'an unregistered group key falls back to showing the bare key as its own label');
+
+    // A mix - one named group, then ungrouped tokens with no comment at all.
+    const mixed = [{ ...spaceA, group: 'layout' }, spaceB];
+    const mixedLines = g.semanticVarLinesGrouped(mixed, 'space', [{ key: 'layout', label: 'Layout' }]);
+    ok(mixedLines === `  /* Layout */\n${g.semanticVarLines([spaceA], 'space')}\n${g.semanticVarLines([spaceB], 'space')}`, 'an ungrouped tail after a named group carries no comment of its own');
 }
 
 console.log(`semantic.test.js: ${checks} checks passed`);

@@ -123,14 +123,19 @@ function panelSemanticSwatchHtml(ctx, s) {
 }
 
 // The semantic role row - every ctx.semantic entry as an assignable swatch,
-// above the palette ramps. Empty ctx.semantic (or none supplied) renders
-// nothing.
+// above the palette ramps, in the SAME order and grouping as the Summary
+// tab (card 16, DoD line 4): `s.gapBefore` (scripts.js semanticColorEntries)
+// marks the first entry of a new group and renders as a blank spacer row -
+// no group labels here, per the no-unasked-chrome rule; a plain fixture with
+// no `gapBefore` field at all (every pre-card-16 test) renders exactly as
+// before. Empty ctx.semantic (or none supplied) renders nothing.
 function buildSemanticRowHtml(ctx) {
     const list = ctx.semantic || [];
     if (!list.length) return '';
+    const swatches = list.map(s => (s.gapBefore ? '<span class="fp-semantic-gap"></span>' : '') + panelSemanticSwatchHtml(ctx, s)).join('');
     return `<div class="fp-ramp fp-ramp-semantic">
   <span class="fp-ramp-label">semantic</span>
-  <div class="fp-swatches">${list.map(s => panelSemanticSwatchHtml(ctx, s)).join('')}</div>
+  <div class="fp-swatches">${swatches}</div>
 </div>`;
 }
 
@@ -418,6 +423,20 @@ function buildTokenRenameHtml(name) {
   <input type="text" class="fp-rename-input" data-rename-input value="${panelEsc(name)}" hidden>`;
 }
 
+// Move-up/move-down controls (card 16), shared by every non-color Summary-
+// tab token row - the color row's DOM-built equivalent is scripts.js
+// createColorFieldRow's own move buttons. Disabled at a kind's own boundary:
+// non-color kinds have no grouping (no "move to group" picker either - see
+// the reorder-and-group card, grouping is built on the color kind alone), so
+// "within its kind" is simply the whole filtered list here (semantic.js
+// moveToken, called with no group to stop at other than that one).
+function buildTokenMoveHtml(ref, isFirst, isLast) {
+    return `<span class="fp-move">
+  <button type="button" class="fp-move-btn" data-move-token="${panelEsc(ref)}" data-dir="-1" title="Move up"${isFirst ? ' disabled' : ''}><i class="fas fa-chevron-up"></i></button>
+  <button type="button" class="fp-move-btn" data-move-token="${panelEsc(ref)}" data-dir="1" title="Move down"${isLast ? ' disabled' : ''}><i class="fas fa-chevron-down"></i></button>
+</span>`;
+}
+
 // The delete control shared by every non-color Summary-tab token row (card
 // 15: "Delete a semantic token") - an icon button (scripts.js onPanelClick's
 // [data-delete-token] branch / removeSemanticToken) plus its own inline-error
@@ -445,13 +464,14 @@ function semanticTargetOptionsHtml(ctx, kind, selectedName) {
 // step-picker for what it targets (scripts.js setSemanticTokenTarget) -
 // re-pointing it here moves every part assigned to the token, without
 // touching those parts' own assignments.
-function buildSemanticTokenSummaryRowHtml(ctx, kind, token) {
+function buildSemanticTokenSummaryRowHtml(ctx, kind, token, isFirst, isLast) {
     const ref = scaleRef(kind, token.name);
     const targetParsed = parseRef(token.ref);
     const targetName = targetParsed ? targetParsed.name : null;
     return `<div class="fp-semantic-token-row" data-rename-kind="${panelEsc(kind)}" data-rename-name="${panelEsc(token.name)}">
   ${buildTokenRenameHtml(token.name)}
   <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTargetOptionsHtml(ctx, kind, targetName)}</select>
+  ${buildTokenMoveHtml(ref, isFirst, isLast)}
   ${buildTokenDeleteHtml(ref)}
   <span class="fp-rename-error" data-rename-error hidden></span>
 </div>`;
@@ -476,7 +496,7 @@ function buildSemanticScaleAddRowHtml(ctx, kind) {
 // Width/Style split on the Border tab).
 function buildSemanticScaleTokensHtml(ctx, kind) {
     const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === kind);
-    return `${tokens.map(t => buildSemanticTokenSummaryRowHtml(ctx, kind, t)).join('\n')}
+    return `${tokens.map((t, i) => buildSemanticTokenSummaryRowHtml(ctx, kind, t, i === 0, i === tokens.length - 1)).join('\n')}
 ${buildSemanticScaleAddRowHtml(ctx, kind)}`;
 }
 
@@ -521,13 +541,14 @@ function semanticTypeTargetOptionsHtml(ctx, selectedKey) {
 // onPanelChange's kind==='type' branch) - re-pointing it here re-styles
 // every part assigned to the token without touching those parts' own
 // assignments.
-function buildSemanticTypeTokenRowHtml(ctx, token) {
+function buildSemanticTypeTokenRowHtml(ctx, token, isFirst, isLast) {
     const ref = `type.${token.name}`;
     const targetParsed = parseRef(token.ref);
     const targetKey = targetParsed && targetParsed.kind === 'type' ? targetParsed.name : null;
     return `<div class="fp-semantic-token-row" data-rename-kind="type" data-rename-name="${panelEsc(token.name)}">
   ${buildTokenRenameHtml(token.name)}
   <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTypeTargetOptionsHtml(ctx, targetKey)}</select>
+  ${buildTokenMoveHtml(ref, isFirst, isLast)}
   ${buildTokenDeleteHtml(ref)}
   <span class="fp-rename-error" data-rename-error hidden></span>
 </div>`;
@@ -553,7 +574,7 @@ function buildSemanticTypeSectionHtml(ctx) {
     const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === 'type');
     return `<div class="fp-section" data-kind="type">
 <h3 class="fp-section-title">${panelEsc(PANEL_KIND_LABELS.type)}</h3>
-${tokens.map(t => buildSemanticTypeTokenRowHtml(ctx, t)).join('\n')}
+${tokens.map((t, i) => buildSemanticTypeTokenRowHtml(ctx, t, i === 0, i === tokens.length - 1)).join('\n')}
 ${buildSemanticTypeAddRowHtml(ctx)}
 </div>`;
 }
