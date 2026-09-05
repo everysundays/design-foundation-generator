@@ -718,4 +718,67 @@ test('atlassian source: border tokens\' own component refs are source-independen
     assert.strictEqual(parsed.components['input.border.style'], 'border.style.divider');
 });
 
+// --- Non-color semantic tokens: shadow (card 12: "Semantic shadow tokens") -
+// Same kind-generic machinery as space/radius/border above, exercised with
+// the last SEMANTIC_SCALE_KINDS entry - confirms buildTokensJson/
+// parseTokensJson need no per-kind change for shadow's KIND_PREFIX ('shadow',
+// a single segment unlike border's nested 'border.width'/'border.style').
+// The token is named "floating", not the DoD's literal "raised" example -
+// tests/semantic.test.js's shadow case shows "raised" is one of the two
+// named var collisions a real "raised" token would be refused for, so it can
+// never actually reach this layer; buildTokensJson/parseTokensJson don't
+// validate names (that's semantic.js's job), so any non-colliding name
+// stands in for a token that could really be added through the UI. Both
+// ctx fixtures already carry a plain (non-token) 'card.shadow' literal
+// ('shadow.sm' / 'shadow.elevation.shadow.raised' - see tailwindCtx/
+// atlassianCtx above); it is overridden here exactly like card 11's
+// 'input.border.width' override.
+
+test('buildTokensJson: a shadow token exports as a real alias under global.semantic, and a component ref to it translates to {semantic.<ref>}', () => {
+    const base = tailwindCtx();
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'shadow', name: 'floating', ref: 'shadow.md' }];
+    const ctxWithToken = {
+        ...base,
+        components: { ...base.components, 'card.shadow': 'shadow.floating' },
+        semanticTokens
+    };
+    const f = buildTokensJson(ctxWithToken);
+
+    assert.deepStrictEqual(f.global.semantic.shadow.floating, { $type: 'boxShadow', $value: '{shadow.md}' });
+    assert.deepStrictEqual(f.component.component.card.shadow, { $type: 'boxShadow', $value: '{semantic.shadow.floating}' });
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })) });
+
+    const n = assertAllRefsResolve(f, 'tailwind + shadow token');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with a shadow token is deep-equal');
+    assert.deepStrictEqual(
+        parsed.semanticTokens.find(t => t.kind === 'shadow'),
+        { kind: 'shadow', name: 'floating', ref: 'shadow.md' },
+        'round-trip keeps the token, with its resolved target ref restored from global.semantic'
+    );
+    assert.strictEqual(parsed.components['card.shadow'], 'shadow.floating', 'the component leaf survives the {semantic….} round-trip, not dropped');
+});
+
+test('atlassian source: a shadow token\'s own component ref is source-independent - only global.semantic\'s target changes', () => {
+    const abase = atlassianCtx();
+    const shadowToken = { kind: 'shadow', name: 'floating', ref: 'shadow.elevation.shadow.raised' };
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), shadowToken];
+    const actxWithToken = {
+        ...abase,
+        components: { ...abase.components, 'card.shadow': 'shadow.floating' },
+        semanticTokens
+    };
+    const af = buildTokensJson(actxWithToken);
+    assert.deepStrictEqual(af.global.semantic.shadow.floating, { $type: 'boxShadow', $value: '{shadow.elevation.shadow.raised}' });
+    assert.deepStrictEqual(af.component.component.card.shadow, { $type: 'boxShadow', $value: '{semantic.shadow.floating}' });
+    assertAllRefsResolve(af, 'atlassian + shadow token');
+
+    const { parsed, rebuilt } = roundTrip(af, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, af, 'round-trip with a shadow token (atlassian) is deep-equal');
+    assert.deepStrictEqual(parsed.semanticTokens.find(t => t.kind === 'shadow'), shadowToken);
+    assert.strictEqual(parsed.components['card.shadow'], 'shadow.floating');
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

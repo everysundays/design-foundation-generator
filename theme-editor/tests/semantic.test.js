@@ -139,9 +139,14 @@ eq(new Set(g.SEMANTIC_COLOR_ROLES), new Set(g.DTCG_COLOR_ROLES), 'SEMANTIC_COLOR
 }
 
 // --- Non-color semantic scale tokens (card 9: "Semantic space tokens") -----
-// Parameterised over every kind in SEMANTIC_SCALE_KINDS; space/radius/
-// borderWidth/borderStyle are filled in (cards 9-11) - card 12 adds its own
-// shadow case object without touching the loop below.
+// Parameterised over every kind in SEMANTIC_SCALE_KINDS; card 12 (shadow)
+// fills in the last of the five (space/radius/borderWidth/borderStyle/
+// shadow, cards 9-12) and adds one optional case field, `backStepName` -
+// shadow remaps by INDEX POSITION (foundation.js remapRef), not nearest-rem
+// (shadow steps carry no rem), so quantizing Tailwind's 8 steps down to
+// Atlassian's 4 and back is lossy and lands on a different step than it
+// started; every other kind's round trip is exact and omits the field
+// (falling back to `stepName`, i.e. unchanged from before this card).
 ok(JSON.stringify(g.SEMANTIC_SCALE_KINDS) === JSON.stringify(['space', 'radius', 'borderWidth', 'borderStyle', 'shadow']),
     'SEMANTIC_SCALE_KINDS lists the five non-color scale kinds, space first');
 
@@ -192,8 +197,30 @@ const SCALE_TOKEN_CASES = {
         stepName: 'dashed',
         atlassianStepName: 'dashed',   // remapRef never touches borderStyle refs ("style keeps its value" - card 11's DoD), and both foundations define "dashed" anyway
         stepCollisionName: 'solid'     // an existing step name, verbatim (both foundations)
+    },
+    // card 12: "Semantic shadow tokens". The DoD's own two named var-collision
+    // examples - refToVar('shadow.<name>') equalling the var of the Tailwind
+    // "md" step or the Atlassian "elevation.shadow.raised" step - are used
+    // verbatim as stepCollisionName/crossSourceCollisionName below; the first
+    // of those ("raised") is also the DoD's example name for the token
+    // ITSELF, which is self-contradictory (a token literally named "raised"
+    // would be refused by this exact check, since it is checked against every
+    // FOUNDATION source, not just the active one) - the board's correction
+    // (critic-notes.md, cluster B) is "floating" for the actual add-token
+    // example, kept here as `name`. remapRef maps shadow by INDEX POSITION
+    // (Tailwind ships 8 steps, Atlassian 4): "md" (index 4 of 8) rounds to
+    // Atlassian's index 2 ("elevation.shadow.overflow"), and mapping THAT
+    // back rounds to Tailwind's index 5 ("lg"), not back to "md" - the round
+    // trip is genuinely lossy, unlike every other kind above.
+    shadow: {
+        name: 'floating',
+        stepName: 'md',
+        atlassianStepName: 'elevation.shadow.overflow',
+        backStepName: 'lg',
+        stepCollisionName: 'md',                // the DoD's own first example: an existing Tailwind step, verbatim
+        crossSourceCollisionName: 'raised',     // the DoD's own second example; not a Tailwind step, matches Atlassian's "elevation.shadow.raised" by var
+        crossSourceCollisionStepName: 'elevation.shadow.raised'
     }
-    // shadow: { … }  (card 12)
 };
 
 Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
@@ -270,7 +297,13 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
         const expectedAtlassianRef = g.scaleRef(kind, c.atlassianStepName);
         eq(toAtlassian, [{ kind, name: c.name, ref: expectedAtlassianRef }], `${kind}: remapSemanticTokens tailwind -> atlassian re-targets the nearest step, keeps the name`);
         const backToTailwind = g.remapSemanticTokens(toAtlassian, 'atlassian', 'tailwind');
-        eq(backToTailwind, [token], `${kind}: remapSemanticTokens atlassian -> tailwind returns to the original target`);
+        // `backStepName` (shadow, card 12 only): an index-position remap over
+        // unequal-length scales is lossy, so going there and back can land on
+        // a different step than the original (see the case comment above);
+        // every other kind's round trip is exact and omits the field, so this
+        // falls back to `stepName` and the assertion is unchanged from before.
+        const expectedBackRef = g.scaleRef(kind, c.backStepName || c.stepName);
+        eq(backToTailwind, [{ kind, name: c.name, ref: expectedBackRef }], `${kind}: remapSemanticTokens atlassian -> tailwind returns to the expected target`);
         const withColor = [{ kind: 'color', name: 'primary' }];
         eq(g.remapSemanticTokens(withColor, 'tailwind', 'atlassian'), withColor, `${kind}: remapSemanticTokens leaves color tokens untouched`);
     }

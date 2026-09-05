@@ -424,9 +424,9 @@ ${buildSemanticScaleAddRowHtml(ctx, kind)}`;
 
 // A kind's Summary-tab section: its existing tokens (if any) + the add row -
 // always rendered, even with zero tokens, so "Add token" stays reachable on
-// an empty system. Space and radius (cards 9/10) call it now; shadow (a
-// later card) adds its own call, unchanged. Border width/style (card 11)
-// share one "Border" section instead - see buildSemanticBorderSectionHtml.
+// an empty system. Space, radius and shadow (cards 9/10/12) call it now;
+// border width/style (card 11) share one "Border" section instead - see
+// buildSemanticBorderSectionHtml.
 function buildSemanticScaleSectionHtml(ctx, kind) {
     return `<div class="fp-section" data-kind="${panelEsc(kind)}">
 <h3 class="fp-section-title">${panelEsc(PANEL_KIND_LABELS[kind] || kind)}</h3>
@@ -469,5 +469,6 @@ ${sections}${empty}
 ${buildSemanticScaleSectionHtml(ctx, 'space')}
 ${buildSemanticScaleSectionHtml(ctx, 'radius')}
 ${buildSemanticBorderSectionHtml(ctx)}
+${buildSemanticScaleSectionHtml(ctx, 'shadow')}
 </div>`;
 }
