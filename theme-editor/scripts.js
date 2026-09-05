@@ -1749,7 +1749,8 @@ async function buildDesignSystemCss() {
 const EXPORT_TABS = {
     tokens: { filename: 'tokens.json', build: async () => JSON.stringify(typeof buildTokensJson === 'function' ? buildTokensJson(exportCtx()) : { error: 'dtcg.js not loaded' }, null, 2) },
     css: { filename: 'design-system.css', build: buildDesignSystemCss },
-    annotated: { filename: 'theme.css', build: async () => buildAnnotatedCss() }
+    annotated: { filename: 'theme.css', build: async () => buildAnnotatedCss() },
+    tailwind: { filename: 'tailwind.css', build: async () => (typeof buildTailwindCss === 'function' ? buildTailwindCss(exportCtx()) : '/* tailwind.js not loaded */') }
 };
 let activeExportTab = 'tokens';
 
@@ -2223,8 +2224,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Download zip - every EXPORT_TABS format (tokens.json, design-system.css,
-    // theme.css) bundled into one file, downloaded immediately. No server,
-    // no separate Export-tab-by-tab download.
+    // theme.css, tailwind.css) bundled into one file, downloaded immediately.
+    // No server, no separate Export-tab-by-tab download.
     const downloadZipButton = document.getElementById('downloadZipButton');
     if (downloadZipButton) downloadZipButton.addEventListener('click', async () => {
         const name = document.getElementById('saveNameInput').value.trim() || state.themeName || 'design-system';

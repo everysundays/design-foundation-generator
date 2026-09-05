@@ -15,6 +15,7 @@
     <script src="components.js"></script>
     <script src="panels.js"></script>
     <script src="dtcg.js"></script>
+    <script src="tailwind.js"></script>
 </head>
 <body>
     <div class="app">
@@ -143,6 +144,7 @@
                 <button class="export-tab active" data-export-tab="tokens">tokens.json</button>
                 <button class="export-tab" data-export-tab="css">design-system.css</button>
                 <button class="export-tab" data-export-tab="annotated">annotated CSS</button>
+                <button class="export-tab" data-export-tab="tailwind">tailwind.css</button>
             </nav>
             <pre id="exportOutput" class="code-output"></pre>
             <div class="modal-actions">
@@ -176,7 +178,7 @@
                 <h2>Save design system</h2>
                 <button id="closeSaveModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
             </div>
-            <p class="import-hint">Save keeps it in this browser (localStorage). Save to repo also writes theme-editor/systems/&lt;name&gt;.json via the local save-server (theme-editor/save-server/). Download zip needs neither - tokens.json, design-system.css and theme.css land in one file, right away.</p>
+            <p class="import-hint">Save keeps it in this browser (localStorage). Save to repo also writes theme-editor/systems/&lt;name&gt;.json via the local save-server (theme-editor/save-server/). Download zip needs neither - tokens.json, design-system.css, theme.css and tailwind.css land in one file, right away.</p>
             <input type="text" id="saveNameInput" class="theme-search-input" placeholder="System name">
             <div class="modal-actions">
                 <button id="confirmSaveButton" class="toolbar-button">Save</button>
