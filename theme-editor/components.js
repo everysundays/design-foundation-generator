@@ -899,8 +899,9 @@ function renderSideMenu(state, title, itemsHtml) {
 
 // A phone-width frame (chrome, preview/pages.css .gallery-phone - not itself
 // token-painted) around a mobile specimen; the frame carries no data-part/
-// data-element, so a click on its own padding clears the selection like a
-// click anywhere else outside a specimen.
+// data-element, so a click on its own background (the frame is taller than
+// the bar it holds) clears the selection like a click anywhere else outside
+// a specimen.
 function renderPhoneFrame(innerHtml) {
     return `<div class="gallery-phone">${innerHtml}</div>`;
 }
