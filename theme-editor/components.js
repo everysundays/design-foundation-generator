@@ -72,7 +72,7 @@ const FORM_STATES = ['default', 'hover', 'focus', 'disabled'];
 const ELEMENT_CATEGORIES = [
     { key: 'actions',    label: 'Actions',    elements: ['button'] },
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
-    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip'] },
+    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
     { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
@@ -137,7 +137,9 @@ const ELEMENTS = [
     _el('dropdown-menu', 'Dropdown menu', null, ['default'],
         [_bg(), _text(), _border(), _radius(), _padding(), _gap(), _shadow()]),
     _el('combobox', 'Combobox', null, FORM_STATES,
-        [_bg(), _text(), _colorPart('placeholder', 'Placeholder'), _icon(), _border(), _radius(), _paddingXY(), _shadow(), _ring()])
+        [_bg(), _text(), _colorPart('placeholder', 'Placeholder'), _icon(), _border(), _radius(), _paddingXY(), _shadow(), _ring()]),
+    _el('toast', 'Toast', ['default', 'destructive'], ['default'],
+        [_bg(), _border(), _radius(), _padding(), _gap(), _shadow(), _icon(), _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -363,7 +365,20 @@ const SEED_SPEC = {
             radius: THEME_RADIUS_SEED, padding: 'space.1', gap: 'space.1', shadow: 'shadow.md'
         }
     },
-    combobox: FIELD_TRIGGER_SEED
+    combobox: FIELD_TRIGGER_SEED,
+    toast: {
+        base: {
+            bg: 'color.popover', 'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            radius: THEME_RADIUS_SEED, padding: 'space.4', gap: 'space.3', shadow: 'shadow.lg', icon: 'color.foreground',
+            'title.color': 'color.popover-foreground', 'title.type': 'type.label',
+            'description.color': 'color.muted-foreground', 'description.type': 'type.caption',
+            close: 'color.muted-foreground'
+        },
+        variants: {
+            default: {},
+            destructive: { 'border.color': 'color.destructive', icon: 'color.destructive', 'title.color': 'color.destructive', close: 'color.destructive' }
+        }
+    }
 };
 
 // --- Spec lookups ------------------------------------------------------------
@@ -790,6 +805,13 @@ const GALLERY_RENDERERS = {
         galleryIcon('chevrons', 'ds-combobox-icon', 'icon') +
         '</span>' +
         renderGalleryInstance('dropdown-menu', null, 'default') +
+        '</div>',
+    toast: (variant, state) =>
+        `<div role="status" ${rootAttrs('toast', variant, state, 'bg')}>` +
+        galleryIcon(variant === 'destructive' ? 'alert' : 'check', 'ds-toast-icon', 'icon') +
+        `<p class="ds-toast-title" data-part="title">${variant === 'destructive' ? 'Something went wrong' : 'Saved'}</p>` +
+        `<p class="ds-toast-description" data-part="description">${variant === 'destructive' ? 'There was a problem with your request.' : 'Your changes have been saved.'}</p>` +
+        galleryIcon('x', 'ds-toast-close', 'close') +
         '</div>'
 };
 

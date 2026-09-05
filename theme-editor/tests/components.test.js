@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -108,6 +108,9 @@ SOURCES.forEach(source => {
     ok(seeds['table-row.bg.hover'] === 'color.muted', `${source}: row hover`);
     ok(seeds['list-item.bg.active'] === 'color.accent', `${source}: list-item active`);
     ok(seeds['alert.destructive.title.color'] === 'color.destructive', `${source}: alert destructive title`);
+    ok(seeds['toast.destructive.border.color'] === 'color.destructive', `${source}: toast destructive border`);
+    ok(seeds['toast.destructive.icon'] === 'color.destructive', `${source}: toast destructive icon`);
+    ok(seeds['toast.destructive.title.color'] === 'color.destructive', `${source}: toast destructive title`);
 });
 // theme radius seeding
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0.5 })['button.primary.radius'] === 'radius.lg', 'radius 0.5rem -> lg');
@@ -161,6 +164,20 @@ SOURCES.forEach(source => {
     ok(seeds['combobox.bg'] === 'color.background', `${source}: combobox bg seed`);
     ok(seeds['combobox.placeholder'] === 'color.muted-foreground', `${source}: combobox placeholder seed`);
 });
+
+// --- Toast spot checks -------------------------------------------------------
+ok(g.propKind('toast', 'close') === 'color', 'toast.close kind');
+ok(g.propKind('toast', 'title', 'type') === 'type', 'toast title type kind');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['toast.default.bg'] === 'color.popover', `${source}: toast default bg seed`);
+    ok(seeds['toast.default.border.color'] === 'color.border', `${source}: toast default border`);
+    ok(seeds['toast.default.close'] === 'color.muted-foreground', `${source}: toast default close`);
+    ok(seeds['toast.destructive.close'] === 'color.destructive', `${source}: toast destructive close`);
+    assertRefValid(seeds['toast.default.shadow'], 'shadow', source, `${source} toast shadow seed`);
+});
+ok(g.componentVarLines({}, 'tailwind').includes('  --toast-destructive-border-color: var(--destructive);'), 'toast destructive border line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --toast-default-title-type-family: var(--type-label-family);'), 'toast title type expands');
 
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
@@ -228,6 +245,10 @@ ok(wiring.includes('[data-element="combobox"]:is(:hover:not([data-state]), [data
 ok(wiring.includes('[data-element="combobox"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {'), 'combobox disabled selector verbatim');
 ok(wiring.includes('--_placeholder: var(--combobox-placeholder);'), 'combobox placeholder private');
 ok(wiring.includes('--_ring-color: var(--combobox-ring-color);'), 'combobox ring private');
+ok(wiring.includes('[data-element="toast"][data-variant="default"] {\n  --_bg: var(--toast-default-bg);'), 'toast default block');
+ok(wiring.includes('[data-element="toast"][data-variant="destructive"] {\n  --_bg: var(--toast-destructive-bg);'), 'toast destructive block');
+ok(wiring.includes('--_close: var(--toast-default-close);'), 'toast close private');
+ok(!wiring.includes('[data-element="toast"][data-variant="default"]:is(') && !wiring.includes('[data-element="toast"][data-variant="destructive"]:is('), 'toast has no state rules');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -296,6 +317,7 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
 ok(html.indexOf('id="gallery-combobox"') > html.indexOf('id="gallery-switch"'), 'combobox appears after switch in the gallery');
+ok(html.indexOf('id="gallery-toast"') > html.indexOf('id="gallery-tooltip"'), 'toast appears after tooltip in the gallery');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -339,6 +361,17 @@ ok(html.indexOf('id="gallery-combobox"') > html.indexOf('id="gallery-switch"'), 
     ok(comboHtml.indexOf('</svg></span>') > -1 && comboHtml.indexOf('</svg></span>') < comboHtml.indexOf('<div role="menu"'), 'trigger closes before the dropdown menu opens (siblings, not nested)');
     ok(!comboHtml.includes('gallery-stage'), 'combobox instance carries no nested stage markup');
     ok(!comboHtml.includes('id="gallery-dropdown-menu"') && !comboHtml.includes('id="gallery-list-item"'), 'nested instances are not full gallery sections');
+}
+// --- Toast gallery markup ----------------------------------------------------
+{
+    const toastHtml = g.renderGalleryInstance('toast', 'destructive', 'default');
+    ok(toastHtml.includes('data-variant="destructive"'), 'toast destructive variant marks the root');
+    ok(toastHtml.includes('data-part="bg"'), 'toast root carries data-part="bg"');
+    ok(toastHtml.includes('data-part="icon"'), 'toast icon part');
+    ok(toastHtml.includes('data-part="title"'), 'toast title part');
+    ok(toastHtml.includes('data-part="description"'), 'toast description part');
+    ok(toastHtml.includes('data-part="close"'), 'toast close part');
+    ok(!/<h[1-6][ >]/.test(toastHtml), 'toast copy is not a heading element');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');
