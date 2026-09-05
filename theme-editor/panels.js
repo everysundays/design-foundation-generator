@@ -167,6 +167,12 @@ function panelSampleHtml(kind, entry) {
     }
 }
 
+// A delete control is a SIBLING of the entry button, never nested inside it
+// (a <button> inside a <button> is invalid HTML and the parser would hoist
+// it out, breaking the delegated click) - see scripts.js onPanelClick's
+// [data-delete-ref] branch and foundation.js deleteScaleEntry. Revealed on
+// .fp-entry-row:hover/:focus-within (panels.css) so keyboard users can tab
+// to it too, not just a mouse-hover affordance.
 function panelEntryHtml(ctx, kind, entry) {
     const ref = scaleRef(kind, entry.name);
     const mark = panelMark(ctx, ref);
@@ -174,12 +180,15 @@ function panelEntryHtml(ctx, kind, entry) {
     const tip = panelTip(entry.name, value === entry.name ? '' : value, mark);
     const readout = (entry.rem !== null && entry.rem !== undefined && kind !== 'borderStyle')
         ? `${entry.px}px` : (kind === 'borderStyle' ? '' : entry.value);
-    return `<button type="button" class="fp-entry" ${panelMarkAttrs(ref, tip, mark)}>
-  ${panelSampleHtml(kind, entry)}
-  <span class="fp-entry-name">${panelEsc(entry.name)}</span>
-  <span class="fp-entry-value">${panelEsc(readout)}</span>
-  ${panelBadgeHtml(mark)}
-</button>`;
+    return `<div class="fp-entry-row">
+  <button type="button" class="fp-entry" ${panelMarkAttrs(ref, tip, mark)}>
+    ${panelSampleHtml(kind, entry)}
+    <span class="fp-entry-name">${panelEsc(entry.name)}</span>
+    <span class="fp-entry-value">${panelEsc(readout)}</span>
+    ${panelBadgeHtml(mark)}
+  </button>
+  <button type="button" class="fp-entry-delete" data-delete-ref="${panelEsc(ref)}" aria-label="Delete ${panelEsc(entry.name)}">&times;</button>
+</div>`;
 }
 
 // A kind's "value" field takes a different shape per kind - shown as the
@@ -219,6 +228,7 @@ ${buildPropChipsHtml(ctx, kind)}
 <div class="fp-entries">
 ${entries.map(e => panelEntryHtml(ctx, kind, e)).join('\n')}
 </div>
+<span class="fp-scale-error" data-scale-error hidden></span>
 ${opts.allowAdd ? buildScaleAddRowHtml(kind) : ''}
 </div>`;
 }

@@ -207,6 +207,62 @@
   gap: 2px;
 }
 
+/* Each step is a row: the assignable entry button plus a sibling delete
+   control (see panels.js panelEntryHtml - never nested inside the button,
+   that would be invalid HTML). The delete control keeps its own reserved
+   column so revealing it on hover never reflows the entry next to it. */
+.fp-entry-row {
+  display: grid;
+  grid-template-columns: 1fr 20px;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.fp-entry-delete {
+  align-self: center;
+  justify-self: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fp-entry-row:hover .fp-entry-delete,
+.fp-entry-row:focus-within .fp-entry-delete {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.fp-entry-delete:hover {
+  background: var(--ui-bg-subtle);
+  color: var(--ui-danger);
+}
+
+.fp-entry-delete:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+/* Refusal message for a delete on an in-use step (foundation.js
+   deleteScaleEntry) - one per kind, filled in by scripts.js onPanelClick's
+   [data-delete-ref] branch. Same treatment as .fp-add-error below: no
+   `display` of its own, so the `hidden` attribute keeps working. */
+.fp-scale-error {
+  font-size: 10px;
+  color: var(--ui-warning, #b45309);
+}
+
 .fp-entry {
   display: grid;
   grid-template-columns: 64px 1fr auto;

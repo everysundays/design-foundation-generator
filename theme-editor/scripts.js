@@ -165,6 +165,11 @@ let state = {
     // scale (see foundation.js's CUSTOM_SCALE) - points at that source's slot.
     customScale: emptyCustomScale(),
     loadedCustomScale: emptyCustomScale(),
+    // Deleted built-in Space/Radius/Border/Shadow step NAMES (see
+    // foundation.js's REMOVED_SCALE) - a sibling of customScale, not a field
+    // inside it, and points at that source's slot the same way.
+    removedScale: emptyRemovedScale(),
+    loadedRemovedScale: emptyRemovedScale(),
     // Which sidebar tab is showing (summary | colors | space | radius |
     // border | shadow | type) - the tab decides which prop KIND a click assigns.
     activeTab: 'colors',
@@ -302,7 +307,7 @@ function isLinkInPalette(link) {
 
 // --- Load / undo ---
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, removedScale: state.removedScale });
 }
 
 function restoreSnapshot(json) {
@@ -318,6 +323,7 @@ function restoreSnapshot(json) {
     state.components = snap.components || state.components;
     state.palette = snap.palette || state.palette;
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
+    state.removedScale = setRemovedScaleFor(activePaletteSource, cloneRemovedScale(snap.removedScale));
 }
 
 function pushUndo() {
@@ -339,7 +345,7 @@ function seedComponentsFor(vars) {
     return typeof seedComponentTokens === 'function' ? seedComponentTokens(activePaletteSource, { radiusRem }) : {};
 }
 
-function applyLoaded({ name, vars, links, families, components, customScale }) {
+function applyLoaded({ name, vars, links, families, components, customScale, removedScale }) {
     state.themeName = name;
     state.vars = { light: { ...vars.light }, dark: { ...vars.dark } };
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
@@ -353,6 +359,12 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
     // saved system) before calling applyLoaded.
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
     state.loadedCustomScale = cloneCustomScale(state.customScale);
+    // Missing on a system saved before this card shipped, and always missing
+    // from a tokens.json import (applyTokensImport never passes it) - both
+    // default to empty (every foundation step present), never inherited from
+    // whatever was loaded before.
+    state.removedScale = setRemovedScaleFor(activePaletteSource, cloneRemovedScale(removedScale));
+    state.loadedRemovedScale = cloneRemovedScale(state.removedScale);
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -369,7 +381,8 @@ function loadTheme(name) {
             name, vars, links,
             families: saved.palette && saved.palette.families,
             components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
-            customScale: saved.customScale
+            customScale: saved.customScale,
+            removedScale: saved.removedScale
         });
         return;
     }
@@ -478,6 +491,29 @@ function addCustomScaleEntry(kind, rawName, rawValue, rawLeading) {
     }
     pushUndo();
     state.customScale[kind].push(entry);
+    renderAll();
+    return null;
+}
+
+// Deletes a step from the active source's Space/Radius/Border width/Border
+// style/Shadow scale (see panels.js panelEntryHtml's delete control and
+// foundation.js removeScaleEntry, the pure state mutation this wraps).
+// Refused - nothing changes - when any component-part token resolves to it
+// (components.js scaleEntryUsers: every default-state id plus explicit state
+// overrides, so a step only referenced through a seeded hover/focus/disabled
+// delta still counts). This refusal is deliberately a single swappable
+// function: a later card replaces it with an inline confirm that retargets
+// those ids to the nearest remaining step instead of blocking the delete.
+// Returns an error string listing what uses it, or null on success.
+function deleteScaleEntry(kind, name) {
+    const users = typeof scaleEntryUsers === 'function' ? scaleEntryUsers(state.components, activePaletteSource, kind, name) : [];
+    if (users.length) {
+        const shown = users.slice(0, 6);
+        const rest = users.length - shown.length;
+        return `"${name}" is used by ${shown.join(', ')}${rest > 0 ? ` (+${rest})` : ''} - re-point them first.`;
+    }
+    pushUndo();
+    removeScaleEntry(activePaletteSource, kind, name);
     renderAll();
     return null;
 }
@@ -1176,7 +1212,8 @@ function buildSystemSnapshot() {
         vars: { light: { ...state.vars.light }, dark: { ...state.vars.dark } },
         tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
         components: { ...state.components },
-        customScale: cloneCustomScale(state.customScale)
+        customScale: cloneCustomScale(state.customScale),
+        removedScale: cloneRemovedScale(state.removedScale)
     };
 }
 
@@ -1627,6 +1664,22 @@ function onPanelClick(e) {
         }
         return;
     }
+    const delBtn = e.target.closest('[data-delete-ref]');
+    if (delBtn && delBtn.closest('#panelBody')) {
+        const parsed = parseRef(delBtn.dataset.deleteRef);
+        if (!parsed) return;
+        // Captured before deleteScaleEntry runs: on success it re-renders the
+        // panel itself (a fresh, error-free one), so this reference is only
+        // ever written to on a refusal, where nothing else touches the DOM.
+        const panel = delBtn.closest('.fp-panel-scale');
+        const errorEl = panel && panel.querySelector('[data-scale-error]');
+        const err = deleteScaleEntry(parsed.kind, parsed.name);
+        if (errorEl) {
+            errorEl.textContent = err || '';
+            errorEl.hidden = !err;
+        }
+        return;
+    }
     const target = e.target.closest('[data-ref]');
     if (!target || !target.closest('#panelBody')) return;
     const ref = target.dataset.ref;
@@ -1676,10 +1729,11 @@ function switchPaletteSource(next) {
     if (prev === next) return;
     const snapshot = undoSnapshot();
     setPaletteSourceUi(next);
-    // Custom entries are per-source (foundation.js's CUSTOM_SCALE) - repoint
-    // at `next`'s slot rather than remap; `prev`'s slot is untouched, so
-    // switching back restores them.
+    // Custom entries and deletions are per-source (foundation.js's
+    // CUSTOM_SCALE/REMOVED_SCALE) - repoint at `next`'s slot rather than
+    // remap; `prev`'s slot is untouched, so switching back restores them.
     state.customScale = customScaleFor(next);
+    state.removedScale = removedScaleFor(next);
     ['light', 'dark'].forEach(mode => {
         tokenLinks[mode] = { ...tokenLinks[mode], ...snapVarsToPalette(state.vars[mode], next, LINKABLE_COLOR_KEYS) };
         snapTypeToScale(state.vars[mode]);
@@ -2139,6 +2193,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
+        state.removedScale = setRemovedScaleFor(activePaletteSource, cloneRemovedScale(state.loadedRemovedScale));
         renderAll();
     });
 

@@ -181,6 +181,49 @@ function customScaleFor(sourceKey) {
     return CUSTOM_SCALE[sourceKey];
 }
 
+// --- Removed (deleted) built-in scale steps ---
+// A SIBLING of CUSTOM_SCALE, never a field inside it - customScale's shape is
+// "every key holds an array of entry objects" (dtcg.js's import walks it that
+// way), which a `removed` map of plain names would break. Holds, per source,
+// the built-in step NAMES a user has deleted (see scripts.js deleteScaleEntry
+// / panels.js panelEntryHtml's delete control). scaleEntries filters these
+// out of the BASE list only - a custom entry of the same name still shows
+// (re-adding a deleted built-in), and baseScaleEntry/remapRef's from-side
+// deliberately ignore this map so a seeded ref naming a since-deleted step
+// still resolves by its original value.
+function emptyRemovedScale() {
+    return { space: [], radius: [], borderWidth: [], borderStyle: [], shadow: [], typeSize: [], typeLeading: [] };
+}
+
+function cloneRemovedScale(removedScale) {
+    const src = removedScale || {};
+    return {
+        space: [...(src.space || [])], radius: [...(src.radius || [])],
+        borderWidth: [...(src.borderWidth || [])], borderStyle: [...(src.borderStyle || [])],
+        shadow: [...(src.shadow || [])],
+        // Missing on a system saved before this card shipped (or on a
+        // tokens.json import, which never carries deletions at all) -
+        // default to [], same convention as cloneCustomScale.
+        typeSize: [...(src.typeSize || [])], typeLeading: [...(src.typeLeading || [])]
+    };
+}
+
+const REMOVED_SCALE = { tailwind: emptyRemovedScale(), atlassian: emptyRemovedScale() };
+
+// Points REMOVED_SCALE[sourceKey] at a specific object (on load / undo-
+// restore), like setCustomScaleFor.
+function setRemovedScaleFor(sourceKey, removedScale) {
+    REMOVED_SCALE[sourceKey] = removedScale || emptyRemovedScale();
+    return REMOVED_SCALE[sourceKey];
+}
+
+// Get-or-create: what scripts.js's Foundation-switch handler points
+// state.removedScale at while `sourceKey` is the active source.
+function removedScaleFor(sourceKey) {
+    if (!REMOVED_SCALE[sourceKey]) REMOVED_SCALE[sourceKey] = emptyRemovedScale();
+    return REMOVED_SCALE[sourceKey];
+}
+
 // Type size/leading are the one pair of scales a user reasons about by rem
 // order (a slider walks them low-to-high), so an added step has to land
 // between its neighbours rather than trailing the built-ins like every other
@@ -188,12 +231,42 @@ function customScaleFor(sourceKey) {
 const SORTED_KINDS = new Set(['typeSize', 'typeLeading']);
 
 function scaleEntries(sourceKey, kind) {
-    const base = foundationOf(sourceKey)[kind] || [];
+    const removedNames = (REMOVED_SCALE[sourceKey] && REMOVED_SCALE[sourceKey][kind]) || [];
+    const wholeBase = foundationOf(sourceKey)[kind] || [];
+    const base = removedNames.length ? wholeBase.filter(e => !removedNames.includes(e.name)) : wholeBase;
     const custom = (CUSTOM_SCALE[sourceKey] && CUSTOM_SCALE[sourceKey][kind]) || [];
     if (!custom.length) return base;
     if (!SORTED_KINDS.has(kind)) return [...base, ...custom];
     const remOf = (e) => (e.rem === null || e.rem === undefined ? Infinity : e.rem);
     return [...base, ...custom].sort((a, b) => remOf(a) - remOf(b));
+}
+
+// Unfiltered FOUNDATION lookup - ignores removedScale (and customScale), so a
+// seeded ref that names a step the user has since deleted (SEED_SPEC
+// hard-codes Tailwind names like "space.4"/"radius.sm"/"shadow.xs") still
+// resolves to its original value. Only ever a fallback: scaleEntries/
+// findScaleEntry (the live, filtered-and-merged view) are tried first.
+function baseScaleEntry(sourceKey, kind, name) {
+    return (foundationOf(sourceKey)[kind] || []).find(e => e.name === name) || null;
+}
+
+// Deletes a step from `sourceKey`'s `kind` scale. A custom entry the user
+// added is spliced out entirely; a built-in step is hidden by recording its
+// name in removedScale - its FOUNDATION data never changes, so a custom
+// step re-added under the same name (or a tokens.json import) can always
+// find it via baseScaleEntry. Pure state mutation with no usage check - see
+// scripts.js deleteScaleEntry for the in-use refusal built on top. Returns
+// true when something changed, false for a name that isn't a real step at
+// all (nothing for the caller to undo).
+function removeScaleEntry(sourceKey, kind, name) {
+    const custom = customScaleFor(sourceKey)[kind];
+    const ci = custom.findIndex(e => e.name === name);
+    if (ci !== -1) { custom.splice(ci, 1); return true; }
+    const removed = removedScaleFor(sourceKey)[kind];
+    if (removed.includes(name)) return false;
+    if (!baseScaleEntry(sourceKey, kind, name)) return false;
+    removed.push(name);
+    return true;
 }
 
 function scaleRef(kind, name) {
@@ -278,7 +351,12 @@ function remapRef(ref, fromSource, toSource) {
     if (!parsed) return ref;
     const { kind, name } = parsed;
     if (['space', 'radius', 'borderWidth', 'typeSize', 'typeLeading'].includes(kind)) {
-        const entry = findScaleEntry(fromSource, kind, name);
+        // findScaleEntry first (the live, filtered-and-merged view - honours a
+        // custom step that re-added this name with a new value); baseScaleEntry
+        // as a fallback so a from-side step the user has since deleted (a
+        // dangling SEED_SPEC ref, e.g. "space.4") still remaps by its
+        // original value instead of passing the ref through unchanged.
+        const entry = findScaleEntry(fromSource, kind, name) || baseScaleEntry(fromSource, kind, name);
         if (!entry) return ref;
         if (entry.rem === null) {
             const full = scaleEntries(toSource, kind).find(e => e.rem === null);
@@ -288,11 +366,21 @@ function remapRef(ref, fromSource, toSource) {
         return nearest ? scaleRef(kind, nearest.name) : ref;
     }
     if (kind === 'shadow') {
-        const from = scaleEntries(fromSource, kind);
         const to = scaleEntries(toSource, kind);
-        const i = from.findIndex(e => e.name === name);
-        if (i === -1) return ref;
-        const j = Math.min(to.length - 1, Math.round(i / Math.max(1, from.length - 1) * (to.length - 1)));
+        if (!to.length) return ref;
+        const from = scaleEntries(fromSource, kind);
+        let i = from.findIndex(e => e.name === name);
+        let total = from.length;
+        if (i === -1) {
+            // Same from-side fallback as above, by index instead of rem
+            // (shadow has no length to snap to): the step's position in the
+            // UNFILTERED base list stands in for its position in the live one.
+            const base = foundationOf(fromSource)[kind] || [];
+            i = base.findIndex(e => e.name === name);
+            if (i === -1) return ref;
+            total = base.length;
+        }
+        const j = Math.min(to.length - 1, Math.round(i / Math.max(1, total - 1) * (to.length - 1)));
         return scaleRef(kind, to[j].name);
     }
     return ref;

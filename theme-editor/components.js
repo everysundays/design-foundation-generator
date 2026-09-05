@@ -596,6 +596,31 @@ function remapComponentTokens(components, from, to) {
     return out;
 }
 
+// The component-part token ids that resolve to one foundation scale entry -
+// what foundation.js:deleteScaleEntry refuses a deletion against and lists in
+// its message. `source` is explicit (never the activePaletteSource global)
+// so a step can be checked against any source, not just the one currently
+// active in the editor. Mirrors componentUsage's two passes (every default-
+// state id, resolved through seeding/explicit overrides; every explicit
+// state-override id set directly on `components`) but scoped to one ref.
+function scaleEntryUsers(components, source, kind, name) {
+    const ref = scaleRef(kind, name);
+    const comps = components || {};
+    const ids = [];
+    componentTokenIds().forEach(id => {
+        if (resolveComponentRef(id, comps, source) === ref) ids.push(id);
+    });
+    Object.keys(comps).forEach(id => {
+        const parts = tokenIdParts(id);
+        if (parts && parts.state !== 'default' && comps[id] === ref) ids.push(id);
+    });
+    return ids;
+}
+
+function isScaleEntryInUse(components, source, kind, name) {
+    return scaleEntryUsers(components, source, kind, name).length > 0;
+}
+
 // --- Gallery -----------------------------------------------------------------
 
 const _SVG_ATTRS = 'viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';

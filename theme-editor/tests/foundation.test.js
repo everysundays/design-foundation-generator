@@ -2,12 +2,12 @@
 // Loads the palette data, foundation.js and components.js into one vm
 // context (they are plain browser globals) and checks the Foundation scales
 // layer's contract: built-in scale data per source, user-added custom-scale
-// entries (steps beyond a source's fixed scale), and the ref <-> CSS
-// custom-property mapping.
+// entries (steps beyond a source's fixed scale), deleted (removed) scale
+// steps, and the ref <-> CSS custom-property mapping.
 //
-// components.js is included in the loader (unused by this file's own cases)
-// so sibling test groups that need it can be appended here without adding a
-// second vm bootstrap.
+// components.js is loaded alongside foundation.js because deleting a step
+// must refuse when a component-part token resolves to it - see
+// scaleEntryUsers/isScaleEntryInUse, below.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -22,7 +22,9 @@ const ctx = vm.createContext({ console });
 // test needs out of the shared global lexical scope.
 const g = vm.runInContext(`({ FOUNDATION, customScaleFor, setCustomScaleFor, emptyCustomScale,
     cloneCustomScale, scaleEntries, refToVar, remEntry, pxEntry, findScaleEntry, nearestScaleEntry,
-    scaleEntryForRem, pairedLeadingRem, parseRef, cssIdent })`, ctx);
+    scaleEntryForRem, pairedLeadingRem, parseRef, cssIdent, removedScaleFor, setRemovedScaleFor,
+    emptyRemovedScale, cloneRemovedScale, baseScaleEntry, removeScaleEntry, remapRef,
+    scaleEntryUsers, isScaleEntryInUse, componentTokenIds, seedComponentTokens })`, ctx);
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -210,6 +212,211 @@ function ok(cond, msg) { checks++; assert.ok(cond, msg); }
     const found = g.scaleEntryForRem('tailwind', 'typeSize', 1.6);
     ok(found && found.name === '2.5xl', "scaleEntryForRem('tailwind', 'typeSize', 1.6).name === '2.5xl'");
     g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+}
+
+// --- Deleting a built-in step -----------------------------------------------
+// "Delete a step from a Foundation scale": an unused built-in name is hidden
+// from scaleEntries per source/kind, without ever touching FOUNDATION itself.
+{
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+
+    const before = g.scaleEntries('tailwind', 'space');
+    ok(before.some(e => e.name === '14'), "space '14' starts present");
+
+    ok(g.removeScaleEntry('tailwind', 'space', '14') === true, 'removeScaleEntry reports a change');
+    const after = g.scaleEntries('tailwind', 'space');
+    ok(after.length === before.length - 1, 'one step removed');
+    ok(!after.some(e => e.name === '14'), "scaleEntries omits the removed name '14'");
+    ok(g.findScaleEntry('tailwind', 'space', '14') === null, 'findScaleEntry no longer finds it');
+    ok(!!g.baseScaleEntry('tailwind', 'space', '14'), 'baseScaleEntry (unfiltered) still finds it');
+    ok(g.FOUNDATION.tailwind.space.some(e => e.name === '14'), 'FOUNDATION.tailwind.space itself is untouched - only the live view is filtered');
+
+    // A removal on Tailwind does not touch Atlassian, or another kind of
+    // Tailwind's own scale.
+    ok(g.scaleEntries('atlassian', 'space').length === g.FOUNDATION.atlassian.space.length, 'atlassian space untouched by a tailwind removal');
+    ok(g.scaleEntries('tailwind', 'radius').length === g.FOUNDATION.tailwind.radius.length, 'tailwind radius untouched by a tailwind SPACE removal');
+
+    // Removing the same name again is a no-op (not double-recorded); removing
+    // a name that was never a real step at all is also a no-op.
+    ok(g.removeScaleEntry('tailwind', 'space', '14') === false, 'removing an already-removed name reports no change');
+    ok(g.removedScaleFor('tailwind').space.filter(n => n === '14').length === 1, 'the removed list holds the name once, not duplicated');
+    ok(g.removeScaleEntry('tailwind', 'space', 'not-a-real-step') === false, 'removing a made-up name is a no-op');
+
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    ok(g.scaleEntries('tailwind', 'space').length === before.length, 'reset back to every built-in step present');
+}
+
+// --- Deleting a custom step --------------------------------------------------
+// A user-added entry is spliced out of customScale entirely - never recorded
+// in removedScale, which only ever names a BASE built-in step.
+{
+    g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.customScaleFor('tailwind').radius.push(g.remEntry('xxl-custom', 3));
+    ok(g.scaleEntries('tailwind', 'radius').some(e => e.name === 'xxl-custom'), 'the custom step is listed');
+
+    ok(g.removeScaleEntry('tailwind', 'radius', 'xxl-custom') === true, 'removing a custom step reports a change');
+    ok(!g.scaleEntries('tailwind', 'radius').some(e => e.name === 'xxl-custom'), 'the custom step is gone');
+    ok(g.customScaleFor('tailwind').radius.length === 0, 'spliced out of the custom slot');
+    ok(g.removedScaleFor('tailwind').radius.length === 0, "removedScale never records a custom-only name (it isn't a base step)");
+}
+
+// --- A deleted built-in name can be re-added as a custom step ---------------
+// "the list then shows the custom value": scaleEntries filters the removed
+// base name out entirely, so the merged list ends up with exactly one entry
+// under that name - the custom one. (The custom value is deliberately
+// DIFFERENT from the built-in's own - Tailwind's built-in space.4 is already
+// 1rem, so re-adding "4" = 1rem would prove nothing about which value is
+// showing; 1.5rem makes the swap unmistakable.)
+{
+    g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+
+    g.removeScaleEntry('tailwind', 'space', '4');
+    ok(!g.scaleEntries('tailwind', 'space').some(e => e.name === '4'), "'4' is gone after removal");
+
+    g.customScaleFor('tailwind').space.push(g.remEntry('4', 1.5));
+    const entries = g.scaleEntries('tailwind', 'space');
+    const fours = entries.filter(e => e.name === '4');
+    ok(fours.length === 1, "scaleEntries lists exactly one '4' once the built-in is removed and a custom '4' is added");
+    ok(fours[0].value === '1.5rem' && fours[0].rem === 1.5, "the one '4' carries the CUSTOM value (1.5rem), not the built-in's (1rem)");
+
+    g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+}
+
+// --- scaleEntryUsers / isScaleEntryInUse ------------------------------------
+// "Deleting a step in use ... is refused with a message listing the parts
+// that use it": must catch a step reached only through a SEEDED default
+// (nothing explicit in `components` at all) and an EXPLICIT state-override
+// entry - the exact gap the DoD's "count badge > 0" wording would otherwise
+// miss, since the badge (scripts.js computeMarks) only ever walks
+// default-state ids - and correctly report nothing for a step no seed or
+// override ever touches.
+{
+    // Tailwind's real SEED_SPEC seeds every button variant's padding.x onto
+    // space.4 (components.js SEED_SPEC.button.base['padding.x']) - a
+    // completely empty `components` object still finds it, because
+    // resolveComponentRef falls through to the seed.
+    const seedUsers = g.scaleEntryUsers({}, 'tailwind', 'space', '4');
+    ok(seedUsers.includes('button.primary.padding.x'), 'a seeded default (no explicit override at all) counts as in use');
+    ok(g.isScaleEntryInUse({}, 'tailwind', 'space', '4') === true, 'isScaleEntryInUse mirrors scaleEntryUsers as a boolean');
+
+    // An EXPLICIT non-default-state override - what the badge alone misses.
+    const withStateOverride = { 'button.primary.padding.x.hover': 'space.6' };
+    const stateUsers = g.scaleEntryUsers(withStateOverride, 'tailwind', 'space', '6');
+    ok(stateUsers.includes('button.primary.padding.x.hover'), 'an explicit non-default-state override counts as in use too');
+
+    // A step no seed or override ever touches: nothing.
+    ok(g.scaleEntryUsers({}, 'tailwind', 'space', '14').length === 0, "an unreferenced step ('14') has no users");
+    ok(g.isScaleEntryInUse({}, 'tailwind', 'space', '14') === false, 'isScaleEntryInUse false for an unused step');
+
+    // `source` is explicit, never a global default - the same NAME means
+    // nothing on a source where it isn't even a real step.
+    ok(g.scaleEntryUsers({}, 'atlassian', 'space', '4').length === 0, "tailwind's users of space '4' say nothing about atlassian, which has no step named '4' at all");
+}
+
+// --- nearestScaleEntry / remapRef never land on a removed step -------------
+{
+    g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.setRemovedScaleFor('atlassian', g.emptyRemovedScale());
+
+    // nearestScaleEntry: '4' (1rem) is nearest to 0.95rem before it is
+    // removed; once removed the search must skip it and land on a step that
+    // is actually still present.
+    let nearest = g.nearestScaleEntry('tailwind', 'space', 0.95);
+    ok(nearest.name === '4', "'4' (1rem) is nearest to 0.95rem before it is removed");
+    g.removeScaleEntry('tailwind', 'space', '4');
+    nearest = g.nearestScaleEntry('tailwind', 'space', 0.95);
+    ok(nearest.name !== '4', 'nearestScaleEntry never returns a removed step');
+    ok(g.scaleEntries('tailwind', 'space').some(e => e.name === nearest.name), 'it lands on a step that is actually still present');
+
+    // remapRef, length-based kinds: the FROM-side step was deleted (a
+    // dangling seed - SEED_SPEC hard-codes "space.4") but must still remap by
+    // its original value via baseScaleEntry, not pass the ref through
+    // unchanged.
+    const mapped = g.remapRef('space.4', 'tailwind', 'atlassian');
+    ok(mapped !== 'space.4', "remapRef doesn't just return the from-side ref unchanged once it's been deleted");
+    ok(mapped === 'space.space.200', "space.4 (1rem/16px) still maps to Atlassian's space.200 (16px) by value, even though tailwind's own space.4 was just deleted");
+
+    // remapRef, TO-side: once the mapped-to step is ALSO removed (on the
+    // target source), the result must skip it too.
+    g.removeScaleEntry('atlassian', 'space', 'space.200');
+    const remapped2 = g.remapRef('space.4', 'tailwind', 'atlassian');
+    ok(remapped2 !== 'space.space.200', 'remapRef never lands the TO-side on a removed step either');
+    ok(g.scaleEntries('atlassian', 'space').some(e => remapped2 === `space.${e.name}`), 'it lands on a still-present Atlassian step instead');
+
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.setRemovedScaleFor('atlassian', g.emptyRemovedScale());
+}
+
+// --- remapRef, shadow: from-side index fallback when the step is deleted ---
+// Shadow has no rem to snap to (it maps by index position) - SEED_SPEC also
+// hard-codes a raw shadow ref ("shadow.xs"), so it needs the same from-side
+// fallback as the length-based kinds above, just computed differently.
+{
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.setRemovedScaleFor('atlassian', g.emptyRemovedScale());
+
+    const before = g.remapRef('shadow.xs', 'tailwind', 'atlassian');
+    ok(g.scaleEntries('atlassian', 'shadow').some(e => `shadow.${e.name}` === before), 'shadow.xs maps to a real Atlassian shadow step before any removal');
+
+    g.removeScaleEntry('tailwind', 'shadow', 'xs');
+    const after = g.remapRef('shadow.xs', 'tailwind', 'atlassian');
+    ok(after !== 'shadow.xs', 'remapRef does not return the ref unchanged once the from-side shadow step is deleted');
+    ok(g.scaleEntries('atlassian', 'shadow').some(e => `shadow.${e.name}` === after), 'it still lands on a real Atlassian shadow step');
+    ok(after === before, 'the deleted from-side step maps to the SAME target as before deletion (position-based, unaffected by the deletion itself)');
+
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+}
+
+// --- emptyRemovedScale / cloneRemovedScale ----------------------------------
+// A system saved before this card shipped (or a tokens.json import, which
+// never carries deletions - see scripts.js applyTokensImport) has no
+// removedScale at all; cloning it must default every kind to [] (every
+// built-in step present), never drop the kinds a partial shape DID have.
+{
+    const empty = g.emptyRemovedScale();
+    ['space', 'radius', 'borderWidth', 'borderStyle', 'shadow', 'typeSize', 'typeLeading'].forEach(kind => {
+        ok(Array.isArray(empty[kind]) && empty[kind].length === 0, `emptyRemovedScale().${kind} is []`);
+    });
+
+    const clonedFromUndefined = g.cloneRemovedScale(undefined);
+    ok(Array.isArray(clonedFromUndefined.space) && clonedFromUndefined.space.length === 0, 'cloneRemovedScale(undefined) defaults every kind to []');
+
+    const legacyShape = { space: ['14'] }; // a partial/pre-card-3 shape
+    const cloned = g.cloneRemovedScale(legacyShape);
+    ok(JSON.stringify(cloned.space) === JSON.stringify(['14']), 'cloneRemovedScale keeps the kinds a partial shape did have');
+    ok(Array.isArray(cloned.radius) && cloned.radius.length === 0, 'cloneRemovedScale defaults a missing kind to []');
+
+    cloned.space.push('should-not-appear-in-source');
+    ok(legacyShape.space.length === 1, 'cloneRemovedScale copies arrays by value, not by reference');
+}
+
+// --- removedScaleFor / setRemovedScaleFor: isolation + the undo/save shape -
+{
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.setRemovedScaleFor('atlassian', g.emptyRemovedScale());
+
+    g.removedScaleFor('tailwind').space.push('9');
+    ok(g.removedScaleFor('atlassian').space.length === 0, 'removedScaleFor is isolated per source (mirrors customScaleFor)');
+
+    const slot = g.removedScaleFor('tailwind');
+    const roundTripped = JSON.parse(JSON.stringify(slot));
+    ok(JSON.stringify(roundTripped) === JSON.stringify(slot), 'removedScale round-trips through JSON (the undo/save shape)');
+
+    // setRemovedScaleFor points at a NEW object rather than mutating in place
+    // (mirrors setCustomScaleFor) - a reference held before the call (e.g. a
+    // just-taken undo snapshot) never sees a later push.
+    const held = g.removedScaleFor('tailwind');
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.removedScaleFor('tailwind').space.push('should-not-reach-held');
+    ok(held.space.includes('9') && !held.space.includes('should-not-reach-held'), 'setRemovedScaleFor repoints rather than mutating a held reference');
+
+    g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
+    g.setRemovedScaleFor('atlassian', g.emptyRemovedScale());
 }
 
 console.log(`foundation.test.js: ${checks} checks passed`);
