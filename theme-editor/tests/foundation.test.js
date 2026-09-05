@@ -611,4 +611,166 @@ function resetFoundationTestState() {
     resetFoundationTestState();
 }
 
+// --- Deleting a step from Type size / Type leading ("Delete a step from the
+// Foundation Type size and Type leading scales") --------------------------
+// The removal mechanics themselves (scaleEntries filtering, removeScaleEntry,
+// nearestRemainingScaleEntry, cloneRemovedScale defaults) are already
+// exercised generically above for every kind, typeSize/typeLeading included
+// - this card's own gap is the two things that are NOT generic: (1) the
+// per-entry leading PAIRING (pairedLeadingRem) must never keep pointing at a
+// leading step that has since been removed, and (2) "the snap helper" (the
+// nearest-remaining lookup) exercised specifically for these two kinds on
+// both sources. Which Type SETS sit on a step and the confirm-and-retarget
+// flow itself (scripts.js typeStepUsers/retargetTypeSets) are DOM/state-
+// dependent - not loaded into this vm context - and are live-checked in the
+// browser instead (see the card's liveChecks).
+{
+    // scaleEntries omits removed typeSize/typeLeading names, per source.
+    resetFoundationTestState();
+
+    const sizeBaseline = g.scaleEntries('tailwind', 'typeSize');
+    ok(sizeBaseline.some(e => e.name === '2xl'), "tailwind Type size '2xl' starts present");
+    ok(g.removeScaleEntry('tailwind', 'typeSize', '2xl') === true, 'removeScaleEntry reports a change');
+    const sizeAfter = g.scaleEntries('tailwind', 'typeSize');
+    ok(sizeAfter.length === sizeBaseline.length - 1, 'one Type size step removed');
+    ok(!sizeAfter.some(e => e.name === '2xl'), "scaleEntries omits the removed Type size name '2xl'");
+    ok(sizeBaseline.filter(e => e.name !== '2xl').every(e => sizeAfter.some(a => a.name === e.name)), 'every OTHER Type size name is still present');
+    ok(!!g.baseScaleEntry('tailwind', 'typeSize', '2xl'), 'baseScaleEntry (unfiltered) still finds the removed built-in');
+    ok(g.scaleEntries('atlassian', 'typeSize').length === g.FOUNDATION.atlassian.typeSize.length, "an Atlassian typeSize removal (none here) - atlassian untouched by a tailwind Type size removal");
+
+    const leadingBaseline = g.scaleEntries('tailwind', 'typeLeading');
+    ok(leadingBaseline.some(e => e.name === '8'), "tailwind Type leading '8' starts present");
+    ok(g.removeScaleEntry('tailwind', 'typeLeading', '8') === true, 'removeScaleEntry reports a change');
+    const leadingAfter = g.scaleEntries('tailwind', 'typeLeading');
+    ok(leadingAfter.length === leadingBaseline.length - 1, 'one Type leading step removed');
+    ok(!leadingAfter.some(e => e.name === '8'), "scaleEntries omits the removed Type leading name '8'");
+    ok(g.scaleEntries('tailwind', 'typeSize').length === sizeAfter.length, 'the Type leading removal left the Type size scale untouched (kinds are independent)');
+
+    resetFoundationTestState();
+
+    // Same, on Atlassian - "per source" is not just a claim about Tailwind.
+    ok(g.removeScaleEntry('atlassian', 'typeSize', 'font.size.300') === true, 'atlassian: removeScaleEntry reports a change');
+    ok(!g.scaleEntries('atlassian', 'typeSize').some(e => e.name === 'font.size.300'), "atlassian: scaleEntries omits removed Type size 'font.size.300'");
+    ok(g.scaleEntries('tailwind', 'typeSize').some(e => e.name === '2xl'), "a tailwind removal earlier in this block does not leak into a fresh reset - '2xl' is back");
+    ok(g.removeScaleEntry('atlassian', 'typeLeading', 'font.lineHeight.300') === true, 'atlassian: removeScaleEntry reports a change (typeLeading)');
+    ok(!g.scaleEntries('atlassian', 'typeLeading').some(e => e.name === 'font.lineHeight.300'), "atlassian: scaleEntries omits removed Type leading 'font.lineHeight.300'");
+
+    resetFoundationTestState();
+}
+
+// --- pairedLeadingRem never references a removed leading step --------------
+// The DoD's own wording ("typeSizeLeading() derived from the remaining
+// entries never references a removed size") names a function card 2 deleted
+// (typeSizeLeading was replaced by the per-entry pairedLeadingRem); read
+// literally the pairing maps a SIZE to a LEADING, so the thing it must never
+// reference is a removed LEADING. 'lg' and 'xl' both ship paired to leading
+// '7' (1.75rem) - removing '7' must move BOTH onto the nearest step that is
+// actually still there, never leave them pointing at 1.75rem.
+{
+    resetFoundationTestState();
+
+    const lg = g.FOUNDATION.tailwind.typeSize.find(e => e.name === 'lg');
+    const xl = g.FOUNDATION.tailwind.typeSize.find(e => e.name === 'xl');
+    ok(lg.leading === 1.75 && xl.leading === 1.75, "sanity: 'lg' and 'xl' both ship paired to Type leading '7' (1.75rem)");
+
+    g.removeScaleEntry('tailwind', 'typeLeading', '7');
+    const lgLeading = g.pairedLeadingRem('tailwind', lg);
+    const xlLeading = g.pairedLeadingRem('tailwind', xl);
+    ok(lgLeading !== 1.75 && xlLeading !== 1.75, "neither 'lg' nor 'xl' pairs to the removed leading (1.75rem) any more");
+    ok(lgLeading === 1.5 && xlLeading === 1.5, "both land on '6' (1.5rem, dist 0.25) over '9'/'8'... - '6' (dist 0.25) ties '8' (2rem, dist 0.25); the earlier entry wins");
+
+    // Every REMAINING Type size entry's pairedLeadingRem resolves to a rem
+    // that is actually in the (filtered) Type leading scale - the general
+    // form of the DoD line, not just the two entries that happened to be
+    // paired to the removed step.
+    g.scaleEntries('tailwind', 'typeSize').forEach(entry => {
+        const rem = g.pairedLeadingRem('tailwind', entry);
+        ok(g.scaleEntries('tailwind', 'typeLeading').some(e => e.rem === rem), `${entry.name}: pairedLeadingRem lands on a Type leading step that is actually still present (never the removed '7')`);
+    });
+
+    resetFoundationTestState();
+}
+
+// --- "the snap helper returns the nearest remaining step for a removed
+// one" - typeSize/typeLeading, both sources -------------------------------
+// nearestScaleEntry/scaleEntryForRem (used by snapTypeToScale, the app's own
+// snap) and nearestRemainingScaleEntry (the in-use-delete retarget target)
+// are already generic - this exercises them for the two Type kinds
+// specifically, on both sources, the same way the "Delete a Foundation step
+// that is in use" tests do for space/radius/shadow/borderStyle above.
+{
+    resetFoundationTestState();
+
+    // typeSize, tailwind: '2xl' (1.5rem) removed - nearest by |rem diff| is
+    // 'xl' (1.25rem, dist 0.25) over '3xl' (1.875rem, dist 0.375).
+    const beforeSize = g.nearestRemainingScaleEntry('tailwind', 'typeSize', '2xl');
+    ok(beforeSize.name === 'xl', "tailwind Type size '2xl' (1.5rem) -> 'xl' (1.25rem, dist 0.25) over '3xl' (1.875rem, dist 0.375)");
+    g.removeScaleEntry('tailwind', 'typeSize', '2xl');
+    const afterSize = g.nearestRemainingScaleEntry('tailwind', 'typeSize', '2xl');
+    ok(afterSize.name === beforeSize.name, 'nearestRemainingScaleEntry gives the same answer before and after the Type size step is actually removed');
+    ok(g.nearestScaleEntry('tailwind', 'typeSize', 1.5).name !== '2xl', 'nearestScaleEntry never returns the removed Type size step itself');
+    ok(g.nearestScaleEntry('tailwind', 'typeSize', 1.5).name === 'xl', 'nearestScaleEntry(1.5rem) lands on the same nearest-remaining step, xl');
+    ok(g.scaleEntryForRem('tailwind', 'typeSize', 1.5) === null, "scaleEntryForRem no longer finds an EXACT match at the removed step's own rem (1.5rem is now off-scale)");
+
+    // typeLeading, tailwind: '8' (2rem) removed - '7' (1.75rem, dist 0.25)
+    // ties '9' (2.25rem, dist 0.25); the earlier entry wins.
+    const beforeLeading = g.nearestRemainingScaleEntry('tailwind', 'typeLeading', '8');
+    ok(beforeLeading.name === '7', "tailwind Type leading '8' (2rem) -> '7' (1.75rem, dist 0.25) ties '9' (2.25rem, dist 0.25) - earlier wins");
+    g.removeScaleEntry('tailwind', 'typeLeading', '8');
+    const afterLeading = g.nearestRemainingScaleEntry('tailwind', 'typeLeading', '8');
+    ok(afterLeading.name === beforeLeading.name, 'nearestRemainingScaleEntry gives the same answer before and after the Type leading step is actually removed');
+    ok(g.scaleEntryForRem('tailwind', 'typeLeading', 2.0) === null, "scaleEntryForRem no longer finds an EXACT match at the removed leading's own rem (2rem)");
+
+    resetFoundationTestState();
+
+    // Same shape, atlassian - "per source" again: font.size.300 (20px/1.25rem)
+    // ties font.size.200 (16px/1rem, dist 0.25) and font.size.400 (24px/1.5rem,
+    // dist 0.25); font.lineHeight.300 (24px/1.5rem) ties font.lineHeight.200
+    // (20px/1.25rem, dist 0.25) and font.lineHeight.400 (28px/1.75rem, dist
+    // 0.25). Both ties resolve to the EARLIER entry.
+    ok(g.nearestRemainingScaleEntry('atlassian', 'typeSize', 'font.size.300').name === 'font.size.200',
+        'atlassian Type size font.size.300 ties font.size.200/font.size.400 (both 0.25rem away) - the earlier entry wins');
+    ok(g.nearestRemainingScaleEntry('atlassian', 'typeLeading', 'font.lineHeight.300').name === 'font.lineHeight.200',
+        'atlassian Type leading font.lineHeight.300 ties font.lineHeight.200/font.lineHeight.400 (both 0.25rem away) - the earlier entry wins');
+
+    resetFoundationTestState();
+}
+
+// --- A deleted built-in Type size/leading name can be re-added as a custom
+// step, and the list shows the custom value ---------------------------------
+{
+    resetFoundationTestState();
+
+    g.removeScaleEntry('tailwind', 'typeSize', '2xl');
+    ok(!g.scaleEntries('tailwind', 'typeSize').some(e => e.name === '2xl'), "'2xl' is gone after removal");
+
+    // The re-added value (1.6rem) is deliberately different from the
+    // built-in's own (1.5rem) so the swap is unmistakable - same convention
+    // as the space '4' case above.
+    g.customScaleFor('tailwind').typeSize.push({ ...g.remEntry('2xl', 1.6), leading: 2 });
+    const reAdded = g.scaleEntries('tailwind', 'typeSize');
+    const twoXls = reAdded.filter(e => e.name === '2xl');
+    ok(twoXls.length === 1, "scaleEntries lists exactly one '2xl' once the built-in is removed and a custom '2xl' is added");
+    ok(twoXls[0].value === '1.6rem' && twoXls[0].rem === 1.6, "the one '2xl' carries the CUSTOM value (1.6rem), not the built-in's (1.5rem)");
+
+    // Still sorted into position (SORTED_KINDS applies to a re-added name
+    // exactly like a brand-new one): 1.6rem sits between 'xl' (1.25rem) and
+    // '3xl' (1.875rem).
+    const ixl = reAdded.findIndex(e => e.name === 'xl');
+    const i2xl = reAdded.findIndex(e => e.name === '2xl');
+    const i3xl = reAdded.findIndex(e => e.name === '3xl');
+    ok(ixl >= 0 && i2xl === ixl + 1 && i3xl === i2xl + 1, "the re-added custom '2xl' (1.6rem) sorts between xl and 3xl, same as any new step would");
+
+    resetFoundationTestState();
+
+    // Same for Type leading: removed '8' (2rem), re-added at 2.1rem.
+    g.removeScaleEntry('tailwind', 'typeLeading', '8');
+    g.customScaleFor('tailwind').typeLeading.push(g.remEntry('8', 2.1));
+    const reAddedLeading = g.scaleEntries('tailwind', 'typeLeading');
+    const eights = reAddedLeading.filter(e => e.name === '8');
+    ok(eights.length === 1 && eights[0].rem === 2.1, "Type leading: exactly one '8', carrying the custom value (2.1rem) not the built-in's (2rem)");
+
+    resetFoundationTestState();
+}
+
 console.log(`foundation.test.js: ${checks} checks passed`);

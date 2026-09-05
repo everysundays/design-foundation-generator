@@ -179,23 +179,47 @@ function pendingDeleteIdLabel(ctx, id) {
     return parts.state && parts.state !== 'default' ? `${label} · ${parts.state}` : label;
 }
 
+// "Body (light, dark), Caption (light)" - the Type size/leading counterpart
+// to pendingDeleteIdLabel's token-id breadcrumb: a Type set's usage is a
+// literal rem value on its own var (scripts.js typeStepUsers), never a
+// component-part token id, so there is nothing to look up via
+// ctx.elementLabel here.
+function typeStepUsersLabel(typeUsers) {
+    return typeUsers.map(u => `${u.set.label} (${u.modes.join(', ')})`).join(', ');
+}
+
 // Inline confirm shown under the entry a delete would remove, when it's in
 // use (ctx.pendingDelete, set by scripts.js deleteScaleEntry when
-// components.js scaleEntryUsers finds users; cleared by the
-// [data-delete-cancel]/[data-delete-confirm] branches of onPanelClick).
-// Replaces the plain refusal from "Delete a step from a Foundation scale":
-// an in-use step never just refuses, it asks whether to move those tokens
-// onto the nearest remaining step (foundation.js nearestRemainingScaleEntry,
-// already resolved into `pending.target` by pendingDeleteInfo) first. The
-// id list is capped like panelTip's "used by:" line - it can run longer than
-// the entry's own count badge, which only ever counts default-state ids.
+// components.js scaleEntryUsers or scripts.js typeStepUsers finds users;
+// cleared by the [data-delete-cancel]/[data-delete-confirm] branches of
+// onPanelClick). Replaces the plain refusal from "Delete a step from a
+// Foundation scale": an in-use step never just refuses, it asks whether to
+// move those tokens/sets onto the nearest remaining step (foundation.js
+// nearestRemainingScaleEntry, already resolved into `pending.target` by
+// pendingDeleteInfo) first. `pending.typeUsers` (only ever non-empty for a
+// Type size/leading step - see typeStepUsers) names which Type sets and in
+// which mode, "Delete a step from the Foundation Type size and Type leading
+// scales"'s own wording, and is checked before the component-token id list
+// since the two are mutually exclusive (no component-part token can ever
+// resolve to a Type size/leading step). The id list is capped like
+// panelTip's "used by:" line - it can run longer than the entry's own count
+// badge, which only ever counts default-state ids.
 function buildScaleDeleteConfirmHtml(ctx, pending) {
+    const targetName = pending.target ? pending.target.name : null;
+    if (pending.typeUsers && pending.typeUsers.length) {
+        return `<div class="fp-delete-confirm">
+  <p class="fp-delete-confirm-text">Used by ${panelEsc(typeStepUsersLabel(pending.typeUsers))} - move to "${panelEsc(targetName)}"?</p>
+  <div class="fp-delete-confirm-actions">
+    <button type="button" class="fp-delete-confirm-btn" data-delete-confirm>Move</button>
+    <button type="button" class="fp-delete-cancel-btn" data-delete-cancel>Cancel</button>
+  </div>
+</div>`;
+    }
     const ids = pending.ids || [];
     const shown = ids.slice(0, 6);
     const rest = ids.length - shown.length;
     const list = shown.map(id => `<li>${panelEsc(pendingDeleteIdLabel(ctx, id))}</li>`).join('') +
         (rest > 0 ? `<li>+${rest} more</li>` : '');
-    const targetName = pending.target ? pending.target.name : null;
     return `<div class="fp-delete-confirm">
   <p class="fp-delete-confirm-text">${ids.length} token${ids.length === 1 ? '' : 's'} use "${panelEsc(pending.name)}" - move to "${panelEsc(targetName)}"?</p>
   <ul class="fp-delete-confirm-list">${list}</ul>
@@ -300,21 +324,37 @@ function panelTypeSetStyle(vars, set) {
     return `font-family: ${family}; font-weight: ${weight}; font-size: ${size}; line-height: ${leading}; letter-spacing: ${tracking};`;
 }
 
-// Read-only rows for the Type size / Type leading scales (add-row: see
-// scripts.js addCustomScaleEntry). Styled like a Space-tab entry (name · px)
-// but never assignable - a set's size/leading comes from the sliders below,
-// not from clicking a ref - so these carry no data-ref at all rather than
-// leaning on the click handler to no-op.
+// A Type size/leading row: the same read-only "static" entry as before (no
+// data-ref - clicking never assigns anything, a set's size/leading comes
+// from the sliders below) but now with a sibling delete control + confirm
+// row, "Delete a step from the Foundation Type size and Type leading
+// scales"'s own delete control - same .fp-entry-row wrapper/.fp-entry-delete
+// button/buildScaleDeleteConfirmHtml as panelEntryHtml's assignable rows, so
+// hover-reveal and the confirm markup/CSS are shared rather than a second
+// delete UI. "Used by" here means a Type SET's slider sits on this step
+// (ctx.pendingDelete.typeUsers, from scripts.js typeStepUsers), not a
+// component-part token, but buildScaleDeleteConfirmHtml already branches on
+// that.
+function panelTypeEntryHtml(ctx, kind, entry) {
+    const ref = scaleRef(kind, entry.name);
+    const value = panelEntryValue(kind, entry);
+    const tip = panelTip(entry.name, value === entry.name ? '' : value, { ids: [], roles: [] });
+    const pending = ctx.pendingDelete && ctx.pendingDelete.kind === kind && ctx.pendingDelete.name === entry.name ? ctx.pendingDelete : null;
+    return `<div class="fp-entry-row">
+  <div class="fp-entry fp-entry-static" data-tip="${panelEsc(tip)}">
+    <span class="fp-entry-name">${panelEsc(entry.name)}</span>
+    <span class="fp-entry-value">${panelEsc(value)}</span>
+  </div>
+  <button type="button" class="fp-entry-delete" data-delete-ref="${panelEsc(ref)}" aria-label="Delete ${panelEsc(entry.name)}">&times;</button>
+</div>
+${pending ? buildScaleDeleteConfirmHtml(ctx, pending) : ''}`;
+}
+
+// Step list + add-row for the Type size / Type leading scales (add-row: see
+// scripts.js addCustomScaleEntry).
 function buildTypeScaleListHtml(kind, ctx) {
     const entries = scaleEntries(ctx.source, kind);
-    const rows = entries.map(entry => {
-        const value = panelEntryValue(kind, entry);
-        const tip = panelTip(entry.name, value === entry.name ? '' : value, { ids: [], roles: [] });
-        return `<div class="fp-entry fp-entry-static" data-tip="${panelEsc(tip)}">
-  <span class="fp-entry-name">${panelEsc(entry.name)}</span>
-  <span class="fp-entry-value">${panelEsc(value)}</span>
-</div>`;
-    }).join('\n');
+    const rows = entries.map(entry => panelTypeEntryHtml(ctx, kind, entry)).join('\n');
     return `<div class="fp-section" data-kind="${panelEsc(kind)}">
 <div class="fp-entries">
 ${rows}

@@ -502,24 +502,75 @@ function addCustomScaleEntry(kind, rawName, rawValue, rawLeading) {
     return null;
 }
 
+// Which Type sets (TYPE_SETS) currently have their size ('typeSize' kind) or
+// leading ('typeLeading' kind) sitting exactly on `name` of the active
+// source's scale, and in which mode(s) - "Delete a step from the Foundation
+// Type size and Type leading scales"'s own usage check. A set's size/leading
+// is a literal rem value on its --type-<key>-size/-leading var (never a ref
+// into a scale like a component-part token), so this is deleteScaleEntry's
+// Type-tab counterpart to components.js scaleEntryUsers, not something that
+// call can see - no component-part token can ever resolve to a
+// font.size.*/font.lineHeight.* ref (REF_KIND_TO_PROP_KIND has no such
+// kind), so scaleEntryUsers always reports empty for these two kinds.
+// Returns [{ set, modes }, ...] (modes a subset of ['light','dark']), only
+// for sets that land on `name` in at least one mode; [] for every other kind.
+function typeStepUsers(kind, name) {
+    if (kind !== 'typeSize' && kind !== 'typeLeading') return [];
+    const prop = kind === 'typeSize' ? 'size' : 'leading';
+    const out = [];
+    TYPE_SETS.forEach(set => {
+        const modes = ['light', 'dark'].filter(mode => {
+            const raw = state.vars[mode][typeVarKey(set.key, prop)];
+            if (raw === undefined) return false;
+            const entry = scaleEntryForRem(activePaletteSource, kind, measurementToRem(raw, set[prop]));
+            return !!entry && entry.name === name;
+        });
+        if (modes.length) out.push({ set, modes });
+    });
+    return out;
+}
+
+// The Type-tab counterpart to components.js retargetRemovedRefs: moves every
+// Type set typeStepUsers(kind, name) finds sitting on `name` (in every mode
+// it actually landed in) onto foundation.js nearestRemainingScaleEntry's
+// pick - same "recompute the target itself" contract as retargetRemovedRefs,
+// so it stays correct and idempotent no matter when it runs relative to the
+// removal. Mutates state.vars directly (like snapTypeToScale), never via
+// setVar: this only ever runs inside deleteScaleStepInUse's own single
+// pushUndo/renderAll, and a per-call undo/render here would fragment the
+// "one undo step" the DoD asks for. No-op for every other kind, or when
+// there is nowhere left to move to.
+function retargetTypeSets(kind, name) {
+    if (kind !== 'typeSize' && kind !== 'typeLeading') return;
+    const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(activePaletteSource, kind, name) : null;
+    if (!target) return;
+    const prop = kind === 'typeSize' ? 'size' : 'leading';
+    typeStepUsers(kind, name).forEach(({ set, modes }) => {
+        modes.forEach(mode => { state.vars[mode][typeVarKey(set.key, prop)] = `${target.rem}rem`; });
+    });
+}
+
 // Deletes a step from the active source's Space/Radius/Border width/Border
-// style/Shadow scale (see panels.js panelEntryHtml's delete control and
-// foundation.js removeScaleEntry, the pure state mutation this wraps). A
-// step no component-part token resolves to (components.js scaleEntryUsers:
-// every default-state id plus explicit state overrides, so a step only
-// referenced through a seeded hover/focus/disabled delta still counts) is
-// removed immediately, one undo step. A step IN USE never refuses - this
-// opens the inline confirm (state.pendingDelete, read by panelCtx's
-// pendingDeleteInfo/panels.js buildScaleDeleteConfirmHtml) asking whether to
-// move those tokens onto the nearest remaining step first; see
-// deleteScaleStepInUse, below, for what actually happens on confirm. A
-// renderPanel() alone is enough here - nothing about the design system has
-// changed yet, just what the panel shows. Silently does nothing (no control
-// to offer) when deleting `name` would leave the scale with nothing left to
-// move onto - foundation.js nearestRemainingScaleEntry returning null.
+// style/Shadow/Type size/Type leading scale (see panels.js panelEntryHtml/
+// panelTypeEntryHtml's delete control and foundation.js removeScaleEntry,
+// the pure state mutation this wraps). A step nothing resolves to - no
+// component-part token (components.js scaleEntryUsers: every default-state
+// id plus explicit state overrides, so a step only referenced through a
+// seeded hover/focus/disabled delta still counts) and, for the two Type
+// scales, no Type set (typeStepUsers, above) - is removed immediately, one
+// undo step. A step IN USE never refuses - this opens the inline confirm
+// (state.pendingDelete, read by panelCtx's pendingDeleteInfo/panels.js
+// buildScaleDeleteConfirmHtml) asking whether to move those tokens/sets onto
+// the nearest remaining step first; see deleteScaleStepInUse, below, for
+// what actually happens on confirm. A renderPanel() alone is enough here -
+// nothing about the design system has changed yet, just what the panel
+// shows. Silently does nothing (no control to offer) when deleting `name`
+// would leave the scale with nothing left to move onto - foundation.js
+// nearestRemainingScaleEntry returning null.
 function deleteScaleEntry(kind, name) {
     const users = typeof scaleEntryUsers === 'function' ? scaleEntryUsers(state.components, activePaletteSource, kind, name) : [];
-    if (users.length) {
+    const typeUsers = typeStepUsers(kind, name);
+    if (users.length || typeUsers.length) {
         const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(activePaletteSource, kind, name) : null;
         if (!target) return;
         state.pendingDelete = { kind, name };
@@ -534,9 +585,11 @@ function deleteScaleEntry(kind, name) {
 // Confirms a pending in-use delete (state.pendingDelete, opened by
 // deleteScaleEntry above): moves every component-part token off the step
 // (components.js retargetRemovedRefs, onto foundation.js
-// nearestRemainingScaleEntry's pick) THEN removes the step itself
-// (foundation.js removeScaleEntry) - ONE pushUndo covers both, so Undo
-// restores the step and every ref it moved together. resetSeedCache() so a
+// nearestRemainingScaleEntry's pick), moves every Type set off it too
+// (retargetTypeSets, above - a no-op for every kind but typeSize/typeLeading)
+// THEN removes the step itself (foundation.js removeScaleEntry) - ONE
+// pushUndo covers all three, so Undo restores the step, every ref it moved
+// and every Type set it snapped away from, together. resetSeedCache() so a
 // later seed fallback (a tokens.json import with no saved components, a
 // system with none saved at all) can't resolve back onto the just-deleted
 // name via components.js's stale _seedCache. Re-derives the target itself
@@ -548,6 +601,7 @@ function deleteScaleStepInUse(kind, name) {
     if (!target) { state.pendingDelete = null; renderPanel(); return; }
     pushUndo();
     state.components = retargetRemovedRefs(state.components, activePaletteSource, kind, name);
+    retargetTypeSets(kind, name);
     removeScaleEntry(activePaletteSource, kind, name);
     if (typeof resetSeedCache === 'function') resetSeedCache();
     state.pendingDelete = null;
@@ -1610,18 +1664,20 @@ function computeMarks() {
 }
 
 // What state.pendingDelete (set by deleteScaleEntry when a delete is
-// refused-turned-confirm) implies right now: { kind, name, ids, target } or
-// null. Recomputed fresh on every render, like computeMarks() above, so it
-// never goes stale even if state.components changes while the confirm sits
-// open - panels.js buildScaleDeleteConfirmHtml only ever reads this, never
-// state.pendingDelete directly (its module contract is "a pure function of
-// ctx").
+// refused-turned-confirm) implies right now: { kind, name, ids, typeUsers,
+// target } or null. Recomputed fresh on every render, like computeMarks()
+// above, so it never goes stale even if state.components/state.vars changes
+// while the confirm sits open - panels.js buildScaleDeleteConfirmHtml only
+// ever reads this, never state.pendingDelete directly (its module contract
+// is "a pure function of ctx"). `typeUsers` (typeStepUsers) is only ever
+// non-empty for kind typeSize/typeLeading - see deleteScaleEntry.
 function pendingDeleteInfo() {
     const pd = state.pendingDelete;
     if (!pd) return null;
     const ids = typeof scaleEntryUsers === 'function' ? scaleEntryUsers(state.components, activePaletteSource, pd.kind, pd.name) : [];
+    const typeUsers = typeStepUsers(pd.kind, pd.name);
     const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(activePaletteSource, pd.kind, pd.name) : null;
-    return { kind: pd.kind, name: pd.name, ids, target };
+    return { kind: pd.kind, name: pd.name, ids, typeUsers, target };
 }
 
 function panelCtx() {
