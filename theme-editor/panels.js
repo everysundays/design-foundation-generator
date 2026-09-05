@@ -304,9 +304,38 @@ function panelTypeSetStyle(vars, set) {
     return `font-family: ${family}; font-weight: ${weight}; font-size: ${size}; line-height: ${leading}; letter-spacing: ${tracking};`;
 }
 
+// A semantic type token's row on the Type tab (card 13): the same
+// `.fp-type-set` card shape as a set, but resolved through the set it
+// ALIASES (resolveSemanticTypeSet - falls back to Body, never a dangling
+// var, when that set is gone) rather than its own vars. Its own data-ref
+// (e.g. "type.nav") is what a click assigns, via the same generic data-ref
+// handler every other ref uses (scripts.js onPanelClick) - the set it
+// aliases is assigned by clicking that set's OWN card instead.
+function panelSemanticTypeTokenEntryHtml(ctx, vars, token) {
+    const ref = `type.${token.name}`;
+    const mark = panelMark(ctx, ref);
+    const set = typeof resolveSemanticTypeSet === 'function'
+        ? resolveSemanticTypeSet(ctx.semanticTokens, ref, ctx.typeSets) : null;
+    const summary = set && typeof ctx.typeSetSummary === 'function' ? ctx.typeSetSummary(vars, set) : '';
+    const tip = panelTip(`${ref} → type.${set ? set.key : '?'}`, summary, mark);
+    return `<button type="button" class="fp-type-set fp-type-set-token" ${panelMarkAttrs(ref, tip, mark)}>
+  <span class="fp-type-badge" style="--type-badge-color: ${panelEsc(set ? set.color : '')}">${panelEsc(set ? set.abbr : '?')}</span>
+  <span class="fp-type-main">
+    <span class="fp-type-label">${panelEsc(token.name)}</span>
+    <span class="fp-type-summary">${panelEsc(summary)}</span>
+    <span class="fp-type-specimen" style="${set ? panelEsc(panelTypeSetStyle(vars, set)) : ''}">The quick brown fox</span>
+  </span>
+  ${panelBadgeHtml(mark)}
+</button>`;
+}
+
 function buildTypePanelHtml(ctx) {
     const vars = (ctx.vars && ctx.vars[ctx.mode]) || {};
     const sets = ctx.typeSets || [];
+    const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === 'type');
+    const tokenRows = tokens.length ? `<div class="fp-type-sets fp-type-sets-tokens">
+${tokens.map(t => panelSemanticTypeTokenEntryHtml(ctx, vars, t)).join('\n')}
+</div>` : '';
     const cards = sets.map(set => {
         const ref = `type.${set.key}`;
         const mark = panelMark(ctx, ref);
@@ -325,6 +354,7 @@ function buildTypePanelHtml(ctx) {
     return `<div class="fp-panel fp-panel-type">
 <div class="fp-panel-head"><span class="fp-panel-title">Type sets</span><span class="fp-panel-note">click a set to assign · edit below</span></div>
 ${buildPropChipsHtml(ctx, 'type')}
+${tokenRows}
 <div class="fp-type-sets">
 ${cards}
 </div>
@@ -446,6 +476,57 @@ function buildSemanticBorderSectionHtml(ctx) {
 </div>`;
 }
 
+// --- Semantic type tokens (Summary tab "Type" section, card 13) -----------
+// A token targets a TYPE SET, not a foundation scale entry (see semantic.js
+// file header), so its picker options are ctx.typeSets - the type-kind
+// counterpart to semanticTargetOptionsHtml above.
+
+function semanticTypeTargetOptionsHtml(ctx, selectedKey) {
+    return (ctx.typeSets || []).map(set => {
+        const selected = set.key === selectedKey ? ' selected' : '';
+        return `<option value="${panelEsc(set.key)}"${selected}>${panelEsc(set.label)}</option>`;
+    }).join('');
+}
+
+// One existing type token: its name, and a set-picker for what it aliases
+// (scripts.js setSemanticTokenTarget, via onPanelChange's kind==='type'
+// branch) - re-pointing it here re-styles every part assigned to the token
+// without touching those parts' own assignments.
+function buildSemanticTypeTokenRowHtml(ctx, token) {
+    const ref = `type.${token.name}`;
+    const targetParsed = parseRef(token.ref);
+    const targetKey = targetParsed && targetParsed.kind === 'type' ? targetParsed.name : null;
+    return `<div class="fp-semantic-token-row">
+  <span class="fp-entry-name">${panelEsc(token.name)}</span>
+  <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTypeTargetOptionsHtml(ctx, targetKey)}</select>
+</div>`;
+}
+
+// The "+ Add" row: a name, a set picker, confirm and inline error - see
+// scripts.js addSemanticTypeToken and the onPanelClick
+// [data-add-semantic-confirm] branch (kind "type").
+function buildSemanticTypeAddRowHtml(ctx) {
+    return `<div class="fp-add-row" data-add-semantic-kind="type">
+  <input type="text" class="fp-add-input fp-add-input-name" placeholder="name" data-add-field="name">
+  <select class="fp-semantic-target-select" data-add-field="target">${semanticTypeTargetOptionsHtml(ctx, null)}</select>
+  <button type="button" class="fp-add-btn" data-add-semantic-confirm>+ Add</button>
+  <span class="fp-add-error" data-add-error hidden></span>
+</div>`;
+}
+
+// The Summary tab's "Type" section: existing tokens (if any) + the add row -
+// always rendered, mirroring buildSemanticScaleSectionHtml for the scale
+// kinds (space/radius/shadow), so "+ Add" stays reachable on an empty
+// system.
+function buildSemanticTypeSectionHtml(ctx) {
+    const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === 'type');
+    return `<div class="fp-section" data-kind="type">
+<h3 class="fp-section-title">${panelEsc(PANEL_KIND_LABELS.type)}</h3>
+${tokens.map(t => buildSemanticTypeTokenRowHtml(ctx, t)).join('\n')}
+${buildSemanticTypeAddRowHtml(ctx)}
+</div>`;
+}
+
 function buildSummaryPanelHtml(ctx) {
     const kinds = ['color', 'space', 'radius', 'borderWidth', 'borderStyle', 'shadow', 'type'];
     const sections = kinds.map(kind => {
@@ -470,5 +551,6 @@ ${buildSemanticScaleSectionHtml(ctx, 'space')}
 ${buildSemanticScaleSectionHtml(ctx, 'radius')}
 ${buildSemanticBorderSectionHtml(ctx)}
 ${buildSemanticScaleSectionHtml(ctx, 'shadow')}
+${buildSemanticTypeSectionHtml(ctx)}
 </div>`;
 }

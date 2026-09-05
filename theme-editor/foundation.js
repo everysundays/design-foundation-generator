@@ -115,10 +115,16 @@ const SCALE_FOR_KIND = {
     shadow: 'shadow', typeSize: 'typeSize', typeLeading: 'typeLeading'
 };
 
-// Ref prefix for each scale kind (and back).
+// Ref prefix for each scale kind (and back). `type` isn't a scale kind (a
+// type SET isn't a scaleEntries() step - see semantic.js's file header), but
+// still needs an entry here: scaleRef('type', name) is how a semantic type
+// token's ref gets built (scripts.js addSemanticTypeToken) and how dtcg.js's
+// kind-generic non-color-token export (buildTokensJson's nonColorTokenRefs)
+// recognises one, exactly the same way every other kind does - without this
+// entry scaleRef('type', …) silently returns "undefined.<name>".
 const KIND_PREFIX = {
     space: 'space', radius: 'radius', borderWidth: 'border.width', borderStyle: 'border.style',
-    shadow: 'shadow', typeSize: 'font.size', typeLeading: 'font.lineHeight'
+    shadow: 'shadow', typeSize: 'font.size', typeLeading: 'font.lineHeight', type: 'type'
 };
 
 function foundationOf(sourceKey) {

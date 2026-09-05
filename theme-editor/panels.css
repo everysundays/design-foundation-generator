@@ -472,6 +472,15 @@
   gap: 4px;
 }
 
+/* The semantic type token rows (card 13) sit above the type sets, in their
+   own sibling fp-type-sets - a dashed rule separates the two groups, same
+   treatment as fp-entries-tokens on the scale-kind tabs. */
+.fp-type-sets-tokens {
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px dashed var(--ui-border);
+}
+
 .fp-type-set {
   display: grid;
   grid-template-columns: auto 1fr;

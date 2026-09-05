@@ -24,6 +24,7 @@ const g = vm.runInContext(`({
     SEMANTIC_COLOR_ROLES, DTCG_COLOR_ROLES, SEMANTIC_SCALE_KINDS, defaultSemanticTokens, semanticNames,
     isCssIdentifier, semanticNameError, addSemanticToken, normalizeSemanticTokens,
     resolveSemanticTarget, varCollision, semanticVarCollisionMessage, remapSemanticTokens, semanticVarLines,
+    semanticTypeFallbackKey, resolveTypeSetForRef, resolveSemanticTypeSet, typeTokenNameError, semanticTypeAliasLines,
     parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale
 })`, ctx);
 
@@ -316,5 +317,79 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
         ok(g.semanticVarLines([token], kind) === expectedLine, `${kind}: semanticVarLines emits "${expectedLine}"`);
     }
 });
+
+// --- Type: a token targets a type SET, not a scale entry (card 13) --------
+// TYPE_SETS itself lives in scripts.js (not loaded here) - a small fixture
+// mirroring its real shape (only key/label are read by anything below).
+{
+    const typeSets = [
+        { key: 'display', label: 'Display' },
+        { key: 'body', label: 'Body' },
+        { key: 'label', label: 'Label' },
+        { key: 'caption', label: 'Caption' }
+    ];
+    const token = { kind: 'type', name: 'nav', ref: 'type.label' };
+
+    // --- resolution: a token's own ref vs the set it targets ----------------
+    ok(g.resolveSemanticTarget([token], 'type.nav') === 'type.label', 'resolveSemanticTarget(token ref) -> its target');
+    ok(g.resolveSemanticTarget([token], 'type.label') === null, 'resolveSemanticTarget(a literal set ref) -> null (token before step, but a set ref is not a token)');
+    ok(g.resolveSemanticTarget([token], 'type.no-such-token') === null, 'resolveSemanticTarget(unknown name) -> null');
+
+    ok(g.refToVar('type.nav') === '--type-nav', 'refToVar(token ref) uses the same --type-<name> shape as a set');
+    ok(g.refToVar('type.nav') !== g.refToVar('type.label'), "token var differs from its target set's var");
+    ok(g.scaleRef('type', 'nav') === 'type.nav', "scaleRef('type', name) builds the same ref shape as every other kind (KIND_PREFIX.type)");
+
+    // --- semanticTypeFallbackKey / resolveTypeSetForRef ---------------------
+    ok(g.semanticTypeFallbackKey(typeSets) === 'body', 'semanticTypeFallbackKey is "body" when Body exists');
+    const noBody = typeSets.filter(s => s.key !== 'body');
+    ok(g.semanticTypeFallbackKey(noBody) === 'display', 'semanticTypeFallbackKey falls back to the first set when Body is missing');
+    ok(g.semanticTypeFallbackKey([]) === null, 'semanticTypeFallbackKey([]) -> null');
+
+    eq(g.resolveTypeSetForRef('type.label', typeSets), { key: 'label', label: 'Label' }, 'resolveTypeSetForRef finds the named set');
+    eq(g.resolveTypeSetForRef('type.does-not-exist', typeSets), { key: 'body', label: 'Body' }, 'resolveTypeSetForRef falls back to Body when the named set is gone');
+    ok(g.resolveTypeSetForRef('type.label', []) === null, 'resolveTypeSetForRef(ref, []) -> null (nothing to fall back to)');
+
+    // --- resolveSemanticTypeSet: token-before-step, fallback-aware ---------
+    eq(g.resolveSemanticTypeSet([token], 'type.nav', typeSets), { key: 'label', label: 'Label' }, 'resolveSemanticTypeSet(token ref) -> the set it targets');
+    const dangling = { kind: 'type', name: 'nav', ref: 'type.does-not-exist' };
+    eq(g.resolveSemanticTypeSet([dangling], 'type.nav', typeSets), { key: 'body', label: 'Body' }, "resolveSemanticTypeSet falls back to Body when the token's own target set is gone - never null/undefined");
+    ok(g.resolveSemanticTypeSet([token], 'type.label', typeSets) === null, 'resolveSemanticTypeSet(a literal set ref, not a token) -> null - caller keeps its own direct lookup');
+
+    // --- typeTokenNameError: the usual rules + a type-set-key collision -----
+    ok(g.typeTokenNameError('nav-link', [token], typeSets) === null, '"nav-link" accepted');
+    ok(typeof g.typeTokenNameError('', [token], typeSets) === 'string', 'empty name refused');
+    ok(typeof g.typeTokenNameError('1bad', [token], typeSets) === 'string', 'an invalid identifier refused');
+    ok(typeof g.typeTokenNameError('nav', [token], typeSets) === 'string', 'an existing token name refused');
+    ['label', 'Label', 'body', 'display', 'caption'].forEach(name => {
+        ok(typeof g.typeTokenNameError(name, [token], typeSets) === 'string', `a type-set key ("${name}") is refused, built-in or any case`);
+    });
+
+    // --- semanticTypeAliasLines: the five --type-<token>-<field> lines -----
+    ok(g.semanticTypeAliasLines([], typeSets) === '', "semanticTypeAliasLines([]) is ''");
+    ok(g.semanticTypeAliasLines([{ kind: 'color', name: 'x' }], typeSets) === '', 'semanticTypeAliasLines ignores a different kind');
+    const lines = g.semanticTypeAliasLines([token], typeSets).split('\n');
+    ok(lines.length === 5, 'semanticTypeAliasLines emits exactly 5 lines');
+    ['family', 'weight', 'size', 'leading', 'tracking'].forEach((field, i) => {
+        ok(lines[i] === `  --type-nav-${field}: var(--type-label-${field});`, `line ${i} aliases ${field} to the target set ("${lines[i]}")`);
+    });
+    // A token whose set no longer exists still emits 5 well-formed lines,
+    // aliased to the fallback (Body) - never a dangling var(--type-…) with
+    // no definition anywhere.
+    const danglingLines = g.semanticTypeAliasLines([dangling], typeSets).split('\n');
+    ok(danglingLines.length === 5 && danglingLines.every(l => l.includes('var(--type-body-')),
+        'a token whose set is missing aliases to the fallback (Body), never an undefined var');
+
+    // --- remapSemanticTokens: a Foundation switch never touches a type ref -
+    // (TYPE_SETS is foundation-independent; foundation.js remapRef already
+    // returns kind "type" refs unchanged - this confirms it holds for a
+    // token's own ref field too, going through remapSemanticTokens.)
+    eq(g.remapSemanticTokens([token], 'tailwind', 'atlassian'), [token], "remapSemanticTokens leaves a type token's ref unchanged tailwind -> atlassian");
+    eq(g.remapSemanticTokens([token], 'atlassian', 'tailwind'), [token], "remapSemanticTokens leaves a type token's ref unchanged atlassian -> tailwind");
+
+    // --- normalizeSemanticTokens: the type kind survives like any other ----
+    eq(g.normalizeSemanticTokens([token]), [token], 'a valid type token survives normalize as-is');
+    eq(g.normalizeSemanticTokens([{ kind: 'type', name: 'nav' }]), g.defaultSemanticTokens(), 'a type entry with no ref is dropped (falls back to the defaults)');
+    eq(g.normalizeSemanticTokens([{ kind: 'type', name: 'nav', ref: 'not a ref!!' }]), g.defaultSemanticTokens(), 'a type entry with an unparseable ref is dropped');
+}
 
 console.log(`semantic.test.js: ${checks} checks passed`);

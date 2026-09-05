@@ -781,4 +781,64 @@ test('atlassian source: a shadow token\'s own component ref is source-independen
     assert.strictEqual(parsed.components['card.shadow'], 'shadow.floating');
 });
 
+// --- Non-color semantic tokens: type (card 13: "Semantic type tokens") -----
+// A different shape from space/radius/border/shadow above: a type token's
+// target is a TYPE_SETS entry, not a foundation scale step - KIND_PREFIX.type
+// is 'type' (a single segment, like shadow's), so buildTokensJson/
+// parseTokensJson need no per-kind change here either, same as cards 10-12.
+// Unlike every other kind, a type token's ref is IDENTICAL under both
+// sources (TYPE_SETS doesn't vary with activePaletteSource) - the atlassian
+// case below exists to confirm that, not to exercise a different target.
+
+test('buildTokensJson: a type token exports as a real alias under global.semantic, and a component ref to it translates to {semantic.<ref>}; global.type stays set-only', () => {
+    const base = tailwindCtx();
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'type', name: 'nav', ref: 'type.label' }];
+    const ctxWithToken = {
+        ...base,
+        components: { ...base.components, 'button.primary.text.type': 'type.nav' },
+        semanticTokens
+    };
+    const f = buildTokensJson(ctxWithToken);
+
+    assert.deepStrictEqual(f.global.semantic.type.nav, { $type: 'typography', $value: '{type.label}' });
+    assert.deepStrictEqual(f.component.component.button.primary.text.type, { $type: 'typography', $value: '{semantic.type.nav}' });
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })) });
+    // global.type stays a set-only group (the 7 built-in sets) - the token
+    // itself never appears there, only under global.semantic.type.
+    assert.deepStrictEqual(Object.keys(f.global.type), TYPE_SETS.map(s => s.key));
+    assert.strictEqual(f.global.type.nav, undefined, 'the token itself is not a global.type entry');
+
+    const n = assertAllRefsResolve(f, 'tailwind + type token');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with a type token is deep-equal');
+    assert.deepStrictEqual(
+        parsed.semanticTokens.find(t => t.kind === 'type'),
+        { kind: 'type', name: 'nav', ref: 'type.label' },
+        'round-trip keeps the token, with its resolved target ref restored from global.semantic'
+    );
+    assert.strictEqual(parsed.components['button.primary.text.type'], 'type.nav', 'the component leaf survives the {semantic….} round-trip, not dropped');
+});
+
+test("atlassian source: a type token's target set is unchanged - TYPE_SETS is foundation-independent, unlike every other semantic-token kind", () => {
+    const abase = atlassianCtx();
+    const typeToken = { kind: 'type', name: 'nav', ref: 'type.label' };
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), typeToken];
+    const actxWithToken = {
+        ...abase,
+        components: { ...abase.components, 'card.body.type': 'type.nav' },
+        semanticTokens
+    };
+    const af = buildTokensJson(actxWithToken);
+    assert.deepStrictEqual(af.global.semantic.type.nav, { $type: 'typography', $value: '{type.label}' });
+    assert.deepStrictEqual(af.component.component.card.body.type, { $type: 'typography', $value: '{semantic.type.nav}' });
+    assertAllRefsResolve(af, 'atlassian + type token');
+
+    const { parsed, rebuilt } = roundTrip(af, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, af, 'round-trip with a type token (atlassian) is deep-equal');
+    assert.deepStrictEqual(parsed.semanticTokens.find(t => t.kind === 'type'), typeToken);
+    assert.strictEqual(parsed.components['card.body.type'], 'type.nav');
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

@@ -208,3 +208,91 @@ function semanticVarLines(list, kind) {
         .map(t => `  ${refToVar(scaleRef(kind, t.name))}: var(${refToVar(t.ref)});`)
         .join('\n');
 }
+
+// --- Type: a token targets a type SET, not a scale entry --------------------
+// (see the file header - 'type' is deliberately left out of
+// SEMANTIC_SCALE_KINDS above). Its ref is still 'type.<setKey>' - the exact
+// shape scaleRef('type', name) already produces (KIND_PREFIX.type) and
+// parseRef/refToVar already understood before this card (a component could
+// already point straight at a set, e.g. 'type.body') - so the only new work
+// is resolving THROUGH a token to the set it aliases, with a safe fallback,
+// and a name check against the live set list instead of scaleEntries().
+// TYPE_SETS itself lives in scripts.js (typesets.js once card 39 lands) and
+// is always passed in here as `typeSets`, never read as a global, so this
+// file's only dependency stays foundation.js.
+
+// The set a token falls back to when its own target is missing: Body (the
+// natural default, and card 41's own re-point target for a removed set) -
+// never TYPE_SETS[0]/Display, the most visually extreme choice.
+const SEMANTIC_TYPE_FALLBACK_KEY = 'body';
+
+function semanticTypeFallbackKey(typeSets) {
+    const sets = Array.isArray(typeSets) ? typeSets : [];
+    if (sets.some(s => s && s.key === SEMANTIC_TYPE_FALLBACK_KEY)) return SEMANTIC_TYPE_FALLBACK_KEY;
+    return sets.length ? sets[0].key : null;
+}
+
+// A ref naming a set directly (a token's own `.ref`, e.g. 'type.label', or a
+// component pointed straight at a set) -> the TYPE_SETS entry it names, or
+// the fallback (semanticTypeFallbackKey) when that set no longer exists -
+// never null while `typeSets` is non-empty, so re-targeting or removing a
+// set can never leave a token's alias vars pointing at nothing.
+function resolveTypeSetForRef(ref, typeSets) {
+    const sets = Array.isArray(typeSets) ? typeSets : [];
+    const parsed = typeof parseRef === 'function' ? parseRef(ref) : null;
+    const direct = parsed && parsed.kind === 'type' ? sets.find(s => s && s.key === parsed.name) : null;
+    if (direct) return direct;
+    const fallbackKey = semanticTypeFallbackKey(sets);
+    return fallbackKey ? sets.find(s => s && s.key === fallbackKey) : null;
+}
+
+// A `type.<name>` ref -> the TYPE_SETS entry it renders as, when `name`
+// names a semantic type TOKEN ("token before step", see the file header):
+// resolveSemanticTarget finds the token, resolveTypeSetForRef resolves (and
+// fallback-repairs) what it targets. null when `ref` doesn't name a token at
+// all, so a literal `type.<setKey>` ref is left to the caller's own direct
+// lookup, unchanged from before this kind existed.
+function resolveSemanticTypeSet(list, ref, typeSets) {
+    const tokenTarget = resolveSemanticTarget(list, ref);
+    return tokenTarget ? resolveTypeSetForRef(tokenTarget, typeSets) : null;
+}
+
+// A candidate type-token name, refused for the usual reasons
+// (semanticNameError: identifier format, unique against every existing
+// token of any kind - a type var is always namespaced under "--type-", so
+// unlike color/scale tokens it never needs the reserved-prefix check) or
+// because it collides (by refToVar) with an existing type-SET key, built-in
+// or user-added - the reverse of a future type-set-name check (see the
+// board's "13 vs 39" note: both cards refuse the other's names off the one
+// shared `type.<x>` ref namespace). `typeSets` is the live set list
+// (TYPE_SETS today).
+function typeTokenNameError(name, list, typeSets) {
+    const err = semanticNameError(name, list, []);
+    if (err) return err;
+    const trimmed = String(name).trim();
+    const candidateVar = refToVar(`type.${trimmed}`);
+    const clash = (Array.isArray(typeSets) ? typeSets : []).find(s => s && refToVar(`type.${s.key}`) === candidateVar);
+    return clash ? `"${trimmed}" collides with the "${clash.label}" type set.` : null;
+}
+
+// The five `--type-<token>-<field>: var(--type-<set>-<field>);` design-
+// system-CSS lines for every semantic type token in `list` - the type-kind
+// counterpart to semanticVarLines, needed because a type token's target is
+// a TYPE_SETS entry rather than a scaleEntries() step, resolved (with
+// fallback) through resolveTypeSetForRef. '' when `list` has no type token.
+function semanticTypeAliasLines(list, typeSets) {
+    const tokens = (Array.isArray(list) ? list : []).filter(t => t && t.kind === 'type' && typeof t.ref === 'string');
+    if (!tokens.length) return '';
+    // Mirrors components.js TYPE_PROP_FIELDS (duplicated, not imported - the
+    // same reason dtcg.js's own DTCG_IDENT_RE mirrors this file's
+    // SEMANTIC_NAME_RE: keeps this file loadable/testable without
+    // components.js).
+    const fields = ['family', 'weight', 'size', 'leading', 'tracking'];
+    return tokens.map(t => {
+        const set = resolveTypeSetForRef(t.ref, typeSets);
+        if (!set) return '';
+        const tokenVar = refToVar(`type.${t.name}`);
+        const setVar = refToVar(`type.${set.key}`);
+        return fields.map(f => `  ${tokenVar}-${f}: var(${setVar}-${f});`).join('\n');
+    }).filter(Boolean).join('\n');
+}

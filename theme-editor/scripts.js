@@ -539,6 +539,25 @@ function addSemanticScaleToken(kind, rawName, targetStepName) {
     return null;
 }
 
+// Adds a semantic type token (Summary tab's Type "Add token" row - see
+// panels.js buildSemanticTypeSectionHtml): `targetSetKey` is the picked
+// TYPE_SETS key, not a foundation-scale step - a type token's ref names a
+// SET (see semantic.js's file header), so this doesn't reuse
+// addSemanticScaleToken, which resolves against scaleEntries(). Returns an
+// error string on failure (nothing is changed), or null on success. One
+// undo step.
+function addSemanticTypeToken(rawName, targetSetKey) {
+    const name = String(rawName || '').trim();
+    const set = TYPE_SETS.find(s => s.key === targetSetKey);
+    if (!set) return 'Pick a set.';
+    const err = typeTokenNameError(name, state.semanticTokens, TYPE_SETS);
+    if (err) return err;
+    pushUndo();
+    state.semanticTokens = addSemanticToken(state.semanticTokens, 'type', name, scaleRef('type', set.key));
+    renderAll();
+    return null;
+}
+
 // Re-points an existing semantic token at a different step (the Summary
 // tab's per-row step picker) - every part assigned to the token moves with
 // it in the preview; the parts' own assignments (the token's name) are
@@ -1382,6 +1401,14 @@ function cssVarBlockFor(vars, links) {
         });
     });
 
+    // Semantic type tokens (type.nav, …) as five var()-aliases into whichever
+    // set they currently target - see semantic.js semanticTypeAliasLines.
+    // Never touches `vars`/`emitted`: a token's vars live only in this
+    // exported string, never in state.vars (see dtcgTypeSetsFromVars, which
+    // would otherwise misread a token's own -size var as a new type set).
+    const typeTokenBlock = semanticTypeAliasLines(state.semanticTokens, TYPE_SETS);
+    if (typeTokenBlock) lines.push(typeTokenBlock);
+
     // Anything else the theme carried (its own --radius, --spacing, …) rides
     // along untouched so nothing that referenced it breaks.
     Object.entries(vars).forEach(([key, value]) => {
@@ -1613,6 +1640,14 @@ function describeRef(ref) {
         return `${ref} (${entry ? entry.hex : '?'})`;
     }
     if (kind === 'type') {
+        // Token before step (see semantic.js's file header): a semantic type
+        // token's own name never matches a real TYPE_SETS key (typeTokenNameError
+        // refuses that), so check resolveSemanticTypeSet FIRST - it resolves
+        // (with the Body fallback) only when `name` actually names a token,
+        // and returns null for a literal `type.<setKey>` ref, which then
+        // falls through to the plain lookup exactly as before this kind existed.
+        const tokenSet = resolveSemanticTypeSet(state.semanticTokens, ref, TYPE_SETS);
+        if (tokenSet) return `${ref} → type.${tokenSet.key} → ${typeSetSummary(currentVars(), tokenSet)}`;
         const set = TYPE_SETS.find(s => s.key === name);
         return set ? `${ref} → ${typeSetSummary(currentVars(), set)}` : ref;
     }
@@ -1813,7 +1848,9 @@ function onPanelClick(e) {
         const nameInput = row.querySelector('[data-add-field="name"]');
         const targetSelect = row.querySelector('[data-add-field="target"]');
         const errorEl = row.querySelector('[data-add-error]');
-        const err = addSemanticScaleToken(kind, nameInput.value, targetSelect.value);
+        const err = kind === 'type'
+            ? addSemanticTypeToken(nameInput.value, targetSelect.value)
+            : addSemanticScaleToken(kind, nameInput.value, targetSelect.value);
         if (errorEl) {
             errorEl.textContent = err || '';
             errorEl.hidden = !err;
@@ -1840,6 +1877,15 @@ function onPanelChange(e) {
     if (!select || !select.closest('#panelBody')) return;
     const parsed = parseRef(select.dataset.semanticTarget);
     if (!parsed) return;
+    // A type token's picker (panels.js semanticTypeTargetOptionsHtml) offers
+    // TYPE_SETS keys, not a foundation-scale step - resolve against that
+    // list instead of findScaleEntry/scaleEntries.
+    if (parsed.kind === 'type') {
+        const set = TYPE_SETS.find(s => s.key === select.value);
+        if (!set) return;
+        setSemanticTokenTarget('type', parsed.name, scaleRef('type', set.key));
+        return;
+    }
     const entry = findScaleEntry(activePaletteSource, parsed.kind, select.value);
     if (!entry) return;
     setSemanticTokenTarget(parsed.kind, parsed.name, scaleRef(parsed.kind, entry.name));
