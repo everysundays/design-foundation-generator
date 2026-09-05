@@ -539,6 +539,56 @@ body.resizing-sidebar .preview-frame {
   color: var(--ui-text);
 }
 
+/* --- Summary tab: "+ Add" row for a new semantic color token (see
+   scripts.js buildAddSemanticTokenRow / addSemanticColorToken) --- */
+
+.color-field-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--ui-border);
+}
+
+.color-field-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+.color-field-add-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-subtle);
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.color-field-add-btn:hover {
+  background: var(--ui-bg);
+  border-color: var(--ui-accent);
+}
+
+.color-field-add-error {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--ui-warning);
+}
+
+.color-field-add-error[hidden] {
+  display: none;
+}
+
 /* --- Typography / Other fields --- */
 
 .field-group {

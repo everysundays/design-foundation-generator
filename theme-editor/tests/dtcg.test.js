@@ -240,7 +240,17 @@ test('file has the four sets, $metadata and $themes', () => {
     assert.strictEqual(file.$themes.length, 2);
     assert.deepStrictEqual(file.$themes[0], { id: 'light', name: 'Light', group: 'mode', selectedTokenSets: { global: 'source', light: 'enabled', component: 'enabled' } });
     assert.deepStrictEqual(file.$themes[1], { id: 'dark', name: 'Dark', group: 'mode', selectedTokenSets: { global: 'source', dark: 'enabled', component: 'enabled' } });
-    assert.deepStrictEqual(file.global.$extensions['theme-editor'], { version: 2, name: 'Test system', source: 'tailwind', families: ['neutral', 'blue'] });
+    // Individual fields, not a whole-object deep-equal: later keys (semantic,
+    // groups, customElements, typeSets, …) are additive and only appear when
+    // ctx actually carries them (see the "buildTokensJson takes
+    // ctx.semanticTokens" group below) - a deep-equal here would break the
+    // moment any of those cards' ctx fixture grows past this one.
+    const ext = file.global.$extensions['theme-editor'];
+    assert.strictEqual(ext.version, 2);
+    assert.strictEqual(ext.name, 'Test system');
+    assert.strictEqual(ext.source, 'tailwind');
+    assert.deepStrictEqual(ext.families, ['neutral', 'blue']);
+    assert.strictEqual(ext.semantic, undefined, 'no semantic key when ctx carries no semanticTokens');
 });
 
 test('global palette = subset families + specials + out-of-subset link targets', () => {
@@ -423,6 +433,86 @@ test('buildTokensJson derives type sets from vars when ctx.typeSets is absent', 
     const noSets = { ...ctx, typeSets: undefined };
     const f = buildTokensJson(noSets);
     assert.deepStrictEqual(Object.keys(f.global.type).sort(), TYPE_SETS.map(s => s.key).sort());
+});
+
+// --- ctx.semanticTokens (card 8: "Add a semantic color token") -------------
+
+test('buildTokensJson takes ctx.semanticTokens: a user color token exports and round-trips', () => {
+    const base = tailwindCtx();
+    const warningLink = link('tailwind', 'amber-500');
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'color', name: 'warning' }];
+    const ctxWithToken = {
+        ...base,
+        vars: {
+            light: { ...base.vars.light, warning: warningLink.hex },
+            dark: { ...base.vars.dark, warning: warningLink.hex }
+        },
+        links: {
+            light: { ...base.links.light, warning: warningLink },
+            dark: { ...base.links.dark, warning: warningLink }
+        },
+        semanticTokens
+    };
+    const f = buildTokensJson(ctxWithToken);
+
+    assert.strictEqual(Object.keys(f.light.color).length, 34, 'light color set gains the new role');
+    assert.strictEqual(Object.keys(f.dark.color).length, 34, 'dark color set gains the new role');
+    assert.deepStrictEqual(f.light.color.warning, { $type: 'color', $value: '{palette.amber-500}' });
+    assert.deepStrictEqual(f.dark.color.warning, { $type: 'color', $value: '{palette.amber-500}' });
+    assert.deepStrictEqual(f.global.palette['amber-500'], { $type: 'color', $value: warningLink.hex });
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens });
+    const n = assertAllRefsResolve(f, 'tailwind + warning token');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with a user token is deep-equal');
+    assert.deepStrictEqual(parsed.semanticTokens, semanticTokens, 'round-trip keeps the user token, in place, in parsed.semanticTokens');
+});
+
+test('buildTokensJson emits no semantic key when ctx.semanticTokens is exactly the 33 defaults, in order', () => {
+    const withDefaults = { ...ctx, semanticTokens: ROLES.map(name => ({ kind: 'color', name })) };
+    const f = buildTokensJson(withDefaults);
+    assert.strictEqual(f.global.$extensions['theme-editor'].semantic, undefined);
+    assert.deepStrictEqual(f, file, 'identical to an export with no ctx.semanticTokens at all');
+});
+
+test('buildTokensJson emits no semantic key for the 33 defaults in a DIFFERENT order (the live app\'s own list is not sorted like DTCG_COLOR_ROLES)', () => {
+    // scripts.js/semantic.js's SEMANTIC_COLOR_ROLES groups the 33 roles for
+    // the Summary tab (primary, primary-foreground, secondary, …) - a
+    // completely different order from this file's own DTCG_COLOR_ROLES
+    // (background, foreground, card, …). The "is this the default list"
+    // check must compare as a SET, or every untouched real export would be
+    // wrongly flagged "non-default" and carry a redundant extension key.
+    const reordered = [...ROLES].reverse().map(name => ({ kind: 'color', name }));
+    assert.notDeepStrictEqual(reordered.map(t => t.name), ROLES, 'fixture precondition: genuinely a different order');
+    const f = buildTokensJson({ ...ctx, semanticTokens: reordered });
+    assert.strictEqual(f.global.$extensions['theme-editor'].semantic, undefined);
+});
+
+test('parseTokensJson: an extension token with no color leaf in either mode is dropped, with one warning', () => {
+    const f = JSON.parse(JSON.stringify(file));
+    f.global.$extensions['theme-editor'].semantic = { tokens: [{ kind: 'color', name: 'primary' }, { kind: 'color', name: 'ghost' }] };
+    const parsed = parseTokensJson(f);
+    assert.deepStrictEqual(parsed.semanticTokens, [{ kind: 'color', name: 'primary' }], '"ghost" has no value in light or dark and is dropped; "primary" (which does) survives');
+    assert.strictEqual(parsed.warnings.length, 1);
+    assert.match(parsed.warnings[0], /ghost/);
+});
+
+test('parseTokensJson: no $extensions.semantic falls back to the 33 roles + any extra valid color leaf (union of light/dark)', () => {
+    const f = JSON.parse(JSON.stringify(file));
+    assert.strictEqual(f.global.$extensions['theme-editor'].semantic, undefined, 'fixture precondition: no semantic key');
+    f.light.color.brandy = { $type: 'color', $value: '#a1b2c3' };
+    f.light.color['brand.500'] = { $type: 'color', $value: '#d4d4d4' }; // nested Penpot-style group, not a plain identifier
+    const parsed = parseTokensJson(f);
+    const names = parsed.semanticTokens.map(t => t.name);
+    assert.strictEqual(parsed.semanticTokens.length, 34, '33 built-ins + the one valid extra leaf');
+    assert(parsed.semanticTokens.every(t => t.kind === 'color'));
+    assert(names.includes('brandy'), 'a non-built-in but identifier-valid leaf is added to the list');
+    assert(!names.includes('brand.500'), 'a non-identifier leaf (a nested/dotted group) is not added');
+    assert.strictEqual(parsed.vars.light.brandy, '#a1b2c3');
+    assert.strictEqual(parsed.vars.dark.brandy, undefined, 'a leaf present in light only stays out of dark - "union" only widens the token LIST, it does not invent a dark value');
+    assert.strictEqual(parsed.warnings.length, 1, 'one warning, for the dropped non-identifier leaf');
+    assert.match(parsed.warnings[0], /brand\.500/);
 });
 
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

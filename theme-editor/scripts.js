@@ -105,9 +105,11 @@ const ELEMENT_GROUPS = [
 
 const ALL_COLOR_GROUPS = [...COLOR_GROUPS, ...ELEMENT_GROUPS];
 
-// Every palette-linkable semantic color key (33: the 32 shadcn roles plus
-// shadow-color).
-const LINKABLE_COLOR_KEYS = ALL_COLOR_GROUPS.flatMap(g => g.fields.map(([key]) => key));
+// ALL_COLOR_GROUPS/COLOR_LABELS still define the 33 built-ins' Summary-tab
+// grouping and labels (see semantic.js's header comment - group placement
+// for a user-added token is the Reorder-and-group card); which color names
+// are actually linkable/exported now comes from state.semanticTokens - see
+// linkableColorKeys() below.
 const COLOR_LABELS = Object.fromEntries(ALL_COLOR_GROUPS.flatMap(g => g.fields.map(([key, label]) => [key, g.label === label ? label : `${g.label} ${label}`])));
 
 const SWATCH_KEYS = ['primary', 'secondary', 'accent', 'background'];
@@ -165,6 +167,10 @@ let state = {
     // (see foundation.js's CUSTOM_SCALE) - points at that source's slot.
     customScale: emptyCustomScale(),
     loadedCustomScale: emptyCustomScale(),
+    // The Summary tab's "Semantic roles" list: the 33 built-in color roles
+    // plus any the user has added (see semantic.js, addSemanticColorToken).
+    semanticTokens: defaultSemanticTokens(),
+    loadedSemanticTokens: defaultSemanticTokens(),
     // Which sidebar tab is showing (summary | colors | space | radius |
     // border | shadow | type) - the tab decides which prop KIND a click assigns.
     activeTab: 'colors',
@@ -303,7 +309,7 @@ function isLinkInPalette(link) {
 
 // --- Load / undo ---
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, semanticTokens: state.semanticTokens });
 }
 
 function restoreSnapshot(json) {
@@ -319,6 +325,9 @@ function restoreSnapshot(json) {
     state.components = snap.components || state.components;
     state.palette = snap.palette || state.palette;
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
+    // Missing (a snapshot taken before this field existed) -> the 33
+    // defaults, same rule as a saved system with no semanticTokens key.
+    state.semanticTokens = normalizeSemanticTokens(snap.semanticTokens);
 }
 
 function pushUndo() {
@@ -340,7 +349,7 @@ function seedComponentsFor(vars) {
     return typeof seedComponentTokens === 'function' ? seedComponentTokens(activePaletteSource, { radiusRem }) : {};
 }
 
-function applyLoaded({ name, vars, links, families, components, customScale }) {
+function applyLoaded({ name, vars, links, families, components, customScale, semanticTokens }) {
     state.themeName = name;
     state.vars = { light: { ...vars.light }, dark: { ...vars.dark } };
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
@@ -354,6 +363,10 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
     // saved system) before calling applyLoaded.
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
     state.loadedCustomScale = cloneCustomScale(state.customScale);
+    // Missing (a preset/legacy theme, or a saved system predating this field)
+    // -> the 33 built-in roles.
+    state.semanticTokens = normalizeSemanticTokens(semanticTokens);
+    state.loadedSemanticTokens = state.semanticTokens.map(t => ({ ...t }));
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -370,7 +383,8 @@ function loadTheme(name) {
             name, vars, links,
             families: saved.palette && saved.palette.families,
             components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
-            customScale: saved.customScale
+            customScale: saved.customScale,
+            semanticTokens: saved.semanticTokens
         });
         return;
     }
@@ -379,11 +393,12 @@ function loadTheme(name) {
     const flat = legacy
         ? { light: withFallbacks({ ...legacy.light }), dark: withFallbacks({ ...legacy.dark }) }
         : flattenVars(theme || DEFAULT_THEME);
-    // Every linkable color gets linked and snapped to its nearest swatch of
-    // the whole source; the palette subset is then derived from what got used.
+    // A preset/legacy theme carries no semantic-token list of its own - snap
+    // against the 33 built-in roles (never the CURRENTLY loaded system's
+    // list, which may hold user-added tokens this theme knows nothing about).
     const links = {
-        light: snapVarsToPalette(flat.light, activePaletteSource, LINKABLE_COLOR_KEYS),
-        dark: snapVarsToPalette(flat.dark, activePaletteSource, LINKABLE_COLOR_KEYS)
+        light: snapVarsToPalette(flat.light, activePaletteSource, SEMANTIC_COLOR_ROLES),
+        dark: snapVarsToPalette(flat.dark, activePaletteSource, SEMANTIC_COLOR_ROLES)
     };
     snapTypeToScale(flat.light);
     snapTypeToScale(flat.dark);
@@ -392,6 +407,23 @@ function loadTheme(name) {
 
 function currentVars() {
     return state.vars[state.mode];
+}
+
+// Every palette-linkable/exportable semantic color name: the 33 built-in
+// roles plus any the user has added, in state.semanticTokens order. Replaces
+// the old fixed LINKABLE_COLOR_KEYS array everywhere except loadTheme's
+// preset/legacy branch, which has no system of its own to read a list from
+// and must snap to the 33 defaults regardless of whatever was loaded before.
+function linkableColorKeys() {
+    return semanticNames(state.semanticTokens, 'color');
+}
+
+// Reserved var-name prefixes a new semantic token may not start with (see
+// semantic.js SEMANTIC_RESERVED_PREFIXES) - plus every ELEMENTS key, since
+// component-part vars use `<element>-` too.
+function semanticReservedNames() {
+    const elementPrefixes = (typeof ELEMENTS !== 'undefined' ? ELEMENTS : []).map(e => `${e.key}-`);
+    return SEMANTIC_RESERVED_PREFIXES.concat(elementPrefixes);
 }
 
 // True while the user is typing/dragging inside the sidebar panel - rebuilding
@@ -433,6 +465,26 @@ function clearComponentToken(id) {
     pushUndo();
     delete state.components[id];
     renderAll();
+}
+
+// Adds a new semantic color token (Summary tab "+ Add" row): `hex`/`swatchName`
+// come from the palette popover the add row opens once the name validates.
+// One undo step sets both modes to the chosen swatch - the other mode keeps
+// it until changed, same as a freshly-loaded role. Returns an error string
+// on failure (nothing is changed), or null on success.
+function addSemanticColorToken(name, hex, swatchName) {
+    const trimmed = String(name || '').trim();
+    const err = semanticNameError(trimmed, state.semanticTokens, semanticReservedNames());
+    if (err) return err;
+    pushUndo();
+    state.semanticTokens = addSemanticToken(state.semanticTokens, 'color', trimmed);
+    const link = { source: activePaletteSource, name: swatchName, hex: hex.toLowerCase() };
+    ['light', 'dark'].forEach(mode => {
+        state.vars[mode][trimmed] = hex;
+        tokenLinks[mode][trimmed] = { ...link };
+    });
+    renderAll();
+    return null;
 }
 
 // Adds a user-defined entry to one of the Space/Border-width/Border-style/
@@ -528,17 +580,60 @@ function renderFoldableGroups(groups, container) {
 // Every semantic color whose active-mode link doesn't name a swatch of the
 // active source (no link, or a link from the other source).
 function unlinkedColorKeys() {
-    return LINKABLE_COLOR_KEYS.filter(key => !isLinkInPalette(tokenLinks[state.mode][key]));
+    return linkableColorKeys().filter(key => !isLinkInPalette(tokenLinks[state.mode][key]));
 }
 
-// Renders the roles section (link summary line + snap-all + groups) into the
-// Summary panel's mount. No-op when the Summary panel isn't showing.
+// The "+ Add" row at the end of the roles section (see addSemanticColorToken):
+// a name field, confirm button and inline error - refusal never opens the
+// palette popover, so nothing is added until a swatch is actually picked.
+function buildAddSemanticTokenRow() {
+    const row = document.createElement('div');
+    row.className = 'color-field-add-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'color-field-add-input';
+    input.placeholder = 'name';
+    input.setAttribute('aria-label', 'New semantic token name');
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'color-field-add-btn';
+    addBtn.textContent = '+ Add';
+
+    const error = document.createElement('span');
+    error.className = 'color-field-add-error';
+    error.hidden = true;
+    const showError = (msg) => { error.textContent = msg || ''; error.hidden = !msg; };
+    input.addEventListener('input', () => showError(null));
+
+    const confirm = () => {
+        const name = input.value.trim();
+        const err = semanticNameError(name, state.semanticTokens, semanticReservedNames());
+        if (err) { showError(err); return; }
+        showError(null);
+        openColorPalettePopover(addBtn, null, (hex, swatchName) => {
+            const addErr = addSemanticColorToken(name, hex, swatchName);
+            if (addErr) showError(addErr);
+            else input.value = '';
+        });
+    };
+    addBtn.addEventListener('click', confirm);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirm(); } });
+
+    row.append(input, addBtn, error);
+    return row;
+}
+
+// Renders the roles section (link summary line + snap-all + groups + any
+// user-added tokens + the add row) into the Summary panel's mount. No-op
+// when the Summary panel isn't showing.
 function renderSemanticRoles() {
     const mount = document.getElementById('semanticRolesMount');
     if (!mount) return;
     mount.innerHTML = '';
     const unlinked = unlinkedColorKeys();
-    const total = LINKABLE_COLOR_KEYS.length;
+    const total = linkableColorKeys().length;
 
     const summaryRow = document.createElement('div');
     summaryRow.className = 'color-link-summary';
@@ -563,7 +658,21 @@ function renderSemanticRoles() {
     const groups = document.createElement('div');
     groups.className = 'color-groups';
     renderFoldableGroups(ALL_COLOR_GROUPS, groups);
+
+    // User-added tokens (not part of any built-in group) render as ungrouped
+    // rows directly above the add row - see the Reorder-and-group card for
+    // where they eventually land inside ALL_COLOR_GROUPS.
+    const userNames = linkableColorKeys().filter(key => !SEMANTIC_COLOR_ROLES.includes(key));
+    if (userNames.length) {
+        const body = document.createElement('div');
+        body.className = 'color-group-body';
+        const vars = currentVars();
+        userNames.forEach(name => body.appendChild(createColorFieldRow(name, name, vars)));
+        groups.appendChild(body);
+    }
     mount.appendChild(groups);
+
+    mount.appendChild(buildAddSemanticTokenRow());
 }
 
 function renderSemanticRolesIfMounted() {
@@ -634,10 +743,13 @@ function createColorFieldRow(key, label, vars) {
 }
 
 // Jump to a role's row in the Summary tab (used when a tooltip names a role).
+// A built-in role opens its group; a user-added token has no group, so it
+// only needs the row itself to already be in the DOM (renderSemanticRoles
+// renders it ungrouped, above the add row).
 function revealSemanticRow(key) {
     const group = ALL_COLOR_GROUPS.find(g => g.fields.some(([k]) => k === key));
-    if (!group) return;
-    openGroups.add(group.key);
+    if (group) openGroups.add(group.key);
+    else if (!linkableColorKeys().includes(key)) return;
     showSidebarTab('summary');
     const row = document.querySelector(`.color-field-row[data-key="${CSS.escape(key)}"]`);
     if (!row) return;
@@ -1086,7 +1198,7 @@ function renderColorPopoverSemantic(show) {
     strip.hidden = !show;
     if (!show) return;
     const vars = currentVars();
-    LINKABLE_COLOR_KEYS.forEach(key => {
+    linkableColorKeys().forEach(key => {
         const hex = cssColorToHex(vars[key]) || '#000000';
         const btn = makePopoverSwatch(popover, hex, key, 'popover-swatch-semantic', `color.${key}`);
         btn.querySelector('.popover-swatch-name').textContent = key;
@@ -1116,7 +1228,7 @@ function buildColorPalettePopover() {
     });
 
     document.addEventListener('click', (e) => {
-        if (!popover.hidden && !popover.contains(e.target) && !e.target.closest('.color-field-palette-btn, .inspector-color-btn')) {
+        if (!popover.hidden && !popover.contains(e.target) && !e.target.closest('.color-field-palette-btn, .inspector-color-btn, .color-field-add-btn')) {
             closeColorPalettePopover();
         }
     });
@@ -1162,7 +1274,8 @@ function buildSystemSnapshot() {
         vars: { light: { ...state.vars.light }, dark: { ...state.vars.dark } },
         tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
         components: { ...state.components },
-        customScale: cloneCustomScale(state.customScale)
+        customScale: cloneCustomScale(state.customScale),
+        semanticTokens: state.semanticTokens.map(t => ({ ...t }))
     };
 }
 
@@ -1200,7 +1313,7 @@ function cssVarBlockFor(vars, links) {
     });
 
     const emitted = new Set();
-    LINKABLE_COLOR_KEYS.forEach(key => {
+    linkableColorKeys().forEach(key => {
         if (vars[key] === undefined) return;
         const link = links[key];
         const linked = isLinkInPalette(link) && (isSpecialName(link.name) || !!paletteEntryByName(source, link.name));
@@ -1470,7 +1583,7 @@ function describeRef(ref) {
 // describeRef()'s chain ("color.primary → neutral-900 (#171717)") ready to
 // use as the swatch's tooltip.
 function semanticColorEntries() {
-    return LINKABLE_COLOR_KEYS.map(role => {
+    return linkableColorKeys().map(role => {
         const ref = `color.${role}`;
         return { role, ref, hex: cssColorToHex(currentVars()[role] || '') || '#000000', tip: describeRef(ref) };
     });
@@ -1517,7 +1630,7 @@ function computeMarks() {
         });
     }
 
-    LINKABLE_COLOR_KEYS.forEach(role => {
+    linkableColorKeys().forEach(role => {
         const link = tokenLinks[state.mode][role];
         if (link && link.source === activePaletteSource) entry(`palette.${link.name}`).roles.push(role);
     });
@@ -1688,7 +1801,7 @@ function switchPaletteSource(next) {
     // switching back restores them.
     state.customScale = customScaleFor(next);
     ['light', 'dark'].forEach(mode => {
-        tokenLinks[mode] = { ...tokenLinks[mode], ...snapVarsToPalette(state.vars[mode], next, LINKABLE_COLOR_KEYS) };
+        tokenLinks[mode] = { ...tokenLinks[mode], ...snapVarsToPalette(state.vars[mode], next, linkableColorKeys()) };
         snapTypeToScale(state.vars[mode]);
     });
     if (typeof remapComponentTokens === 'function') state.components = remapComponentTokens(state.components, prev, next);
@@ -1708,7 +1821,8 @@ function exportCtx() {
         vars: state.vars,
         links: tokenLinks,
         components: state.components,
-        typeSets: TYPE_SETS
+        typeSets: TYPE_SETS,
+        semanticTokens: state.semanticTokens
     };
 }
 
@@ -1731,14 +1845,14 @@ function buildAnnotatedCss() {
         const link = tokenLinks[mode][k];
         let note = '';
         if (link) note = ` /* ${link.source} ${link.name} */`;
-        else if (LINKABLE_COLOR_KEYS.includes(k)) note = ' /* unlinked */';
+        else if (linkableColorKeys().includes(k)) note = ' /* unlinked */';
         else note = typeTokenComment(k, v);
         return `  --${k}: ${v};${note}`;
     }).join('\n');
     const tokenMap = {};
     ['light', 'dark'].forEach(mode => {
         tokenMap[mode] = {};
-        LINKABLE_COLOR_KEYS.forEach(key => {
+        linkableColorKeys().forEach(key => {
             const link = tokenLinks[mode][key];
             if (link) tokenMap[mode][key] = { source: link.source, name: link.name, hex: link.hex };
         });
@@ -1891,10 +2005,15 @@ function applyTokensImport(parsed) {
     if (parsed.source && FOUNDATION[parsed.source] && parsed.source !== activePaletteSource) setPaletteSourceUi(parsed.source);
     const vars = { light: withFallbacks({ ...(parsed.vars.light || {}) }), dark: withFallbacks({ ...(parsed.vars.dark || parsed.vars.light || {}) }) };
     const links = { light: { ...(parsed.links.light || {}) }, dark: { ...(parsed.links.dark || {}) } };
+    // The file's own semantic-token list (dtcg.js already falls back to the
+    // 33 built-ins + any non-built-in color leaf it found) - never the
+    // CURRENTLY loaded system's list, which applyLoaded is about to replace.
+    const semanticTokens = normalizeSemanticTokens(parsed.semanticTokens);
+    const colorKeys = semanticNames(semanticTokens, 'color');
     // Anything the file left unlinked still gets its nearest swatch so the
     // subset can be derived and the summary line is honest.
     ['light', 'dark'].forEach(mode => {
-        const missing = LINKABLE_COLOR_KEYS.filter(key => !links[mode][key]);
+        const missing = colorKeys.filter(key => !links[mode][key]);
         Object.assign(links[mode], snapVarsToPalette(vars[mode], activePaletteSource, missing));
         snapTypeToScale(vars[mode]);
     });
@@ -1902,7 +2021,8 @@ function applyTokensImport(parsed) {
         name: parsed.name || 'Imported system',
         vars, links,
         families: parsed.families,
-        components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) }
+        components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) },
+        semanticTokens
     });
 }
 
@@ -1927,7 +2047,7 @@ function applyCssImport(text) {
             state.vars[mode][key] = value;
         });
         snapTypeToScale(state.vars[mode]);
-        const importedKeys = LINKABLE_COLOR_KEYS.filter(key => decls.some(([k]) => k === key));
+        const importedKeys = linkableColorKeys().filter(key => decls.some(([k]) => k === key));
         Object.assign(tokenLinks[mode], snapVarsToPalette(state.vars[mode], activePaletteSource, importedKeys));
         const carried = carriedLinks && typeof carriedLinks === 'object' ? carriedLinks[mode] : null;
         if (!carried || typeof carried !== 'object') return;
@@ -2146,6 +2266,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
+        state.semanticTokens = normalizeSemanticTokens(state.loadedSemanticTokens);
         renderAll();
     });
 

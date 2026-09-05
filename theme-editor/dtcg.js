@@ -47,6 +47,19 @@ const DTCG_FONT_KEYS = ['sans', 'serif', 'mono'];
 const DTCG_PALETTE_SPECIALS = [['white', '#ffffff'], ['black', '#000000'], ['transparent', 'transparent']];
 const DTCG_SET_ORDER = ['global', 'light', 'dark', 'component'];
 
+// $extensions['theme-editor'].version - bumped only when the extension's own
+// shape changes in a way older code can't read; an additive key (semantic,
+// groups, customElements, typeSets, …) never bumps it. See the cross-card
+// "$extensions convention" note: every such key is emitted only when
+// non-empty/non-default so plain deep-equal checks and Penpot round-trips
+// of an unmodified export stay byte-identical to before that key existed.
+const DTCG_FILE_VERSION = 2;
+
+// A user-typed semantic token name (mirrors semantic.js's SEMANTIC_NAME_RE -
+// duplicated, not imported: dtcg.js must never call into semantic.js, see
+// tests/dtcg.test.js's loader).
+const DTCG_IDENT_RE = /^[a-z][a-z0-9-]*$/;
+
 // parseRef kind -> DTCG/Tokens Studio $type.
 const DTCG_TYPE_OF_KIND = {
     color: 'color', palette: 'color', space: 'spacing', radius: 'borderRadius',
@@ -137,6 +150,22 @@ function buildTokensJson(ctx) {
     const components = ctx.components || {};
     const typeSets = Array.isArray(ctx.typeSets) && ctx.typeSets.length ? ctx.typeSets : dtcgTypeSetsFromVars(vars.light);
 
+    // The semantic color-role list is the 33 built-ins by default; ctx from
+    // a system carrying user-added tokens (or a renamed/removed built-in,
+    // once a later card supports that) passes its own list instead.
+    const ctxSemanticTokens = Array.isArray(ctx.semanticTokens)
+        ? ctx.semanticTokens.filter(t => t && t.kind === 'color' && typeof t.name === 'string' && t.name)
+        : null;
+    const roles = ctxSemanticTokens ? ctxSemanticTokens.map(t => t.name) : DTCG_COLOR_ROLES;
+    // Set comparison, not positional: the live app's own default order
+    // (scripts.js/semantic.js SEMANTIC_COLOR_ROLES, grouped for the Summary
+    // tab) is not this file's DTCG_COLOR_ROLES order, even though both list
+    // the same 33 names - an order-sensitive check would call every export
+    // of an untouched system "non-default" and pollute it with a redundant
+    // extension key.
+    const roleSet = new Set(roles);
+    const rolesAreDefault = roleSet.size === DTCG_COLOR_ROLES.length && DTCG_COLOR_ROLES.every(r => roleSet.has(r));
+
     const scaleGroup = (kind, type) => {
         const group = {};
         scaleEntries(source, kind).forEach(entry => { group[entry.name] = dtcgToken(type, dtcgEntryPx(entry)); });
@@ -153,7 +182,7 @@ function buildTokensJson(ctx) {
     ['light', 'dark'].forEach(mode => {
         Object.keys(links[mode]).forEach(key => {
             const link = links[mode][key];
-            if (!link || link.source !== source || !DTCG_COLOR_ROLES.includes(key)) return;
+            if (!link || link.source !== source || !roles.includes(key)) return;
             if (palette[link.name]) return;
             const entry = paletteEntryByName(source, link.name);
             const hex = entry ? entry.hex : link.hex;
@@ -224,13 +253,18 @@ function buildTokensJson(ctx) {
         },
         type,
         $extensions: {
-            'theme-editor': { version: 2, name: ctx.name || 'Untitled', source, families: families.slice() }
+            'theme-editor': Object.assign(
+                { version: DTCG_FILE_VERSION, name: ctx.name || 'Untitled', source, families: families.slice() },
+                (ctxSemanticTokens && !rolesAreDefault)
+                    ? { semantic: { tokens: ctxSemanticTokens.map(({ kind, name }) => ({ kind, name })) } }
+                    : null
+            )
         }
     };
 
     const colorSet = mode => {
         const color = {};
-        DTCG_COLOR_ROLES.forEach(role => {
+        roles.forEach(role => {
             const raw = vars[mode][role];
             if (raw === undefined || raw === null) return;
             const link = links[mode][role];
@@ -382,6 +416,42 @@ function parseTokensJson(obj) {
     else {
         result.vars.dark = Object.assign({}, result.vars.light);
         result.links.dark = Object.assign({}, result.links.light);
+    }
+
+    // Semantic color-role list: the extension's own list when the file
+    // carries one (a token with no color value in either mode is dropped -
+    // it named a role that no longer resolves to anything); otherwise every
+    // built-in role plus any other identifier-valid leaf the color sets
+    // above just populated result.vars with (a plain export with no
+    // "theme-editor" extension, or a foreign Tokens Studio file, that still
+    // carries a non-built-in color role - see readColorSet's generic leaf
+    // copy). Computed here, before font/type parsing adds their own keys to
+    // result.vars, so this only ever scans color-role leaves.
+    const extSemanticTokens = ext.semantic && Array.isArray(ext.semantic.tokens) ? ext.semantic.tokens : null;
+    const colorLeafNames = new Set([...Object.keys(result.vars.light), ...Object.keys(result.vars.dark)]);
+    if (extSemanticTokens) {
+        const seen = new Set();
+        result.semanticTokens = [];
+        extSemanticTokens.forEach(t => {
+            if (!t || typeof t.kind !== 'string' || typeof t.name !== 'string' || !t.name) return;
+            if (t.kind === 'color' && !colorLeafNames.has(t.name)) {
+                result.warnings.push(`semantic token "${t.name}": no color value in light or dark - dropped`);
+                return;
+            }
+            const key = `${t.kind}:${t.name}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            result.semanticTokens.push({ kind: t.kind, name: t.name });
+        });
+    } else {
+        const extra = [];
+        colorLeafNames.forEach(name => {
+            if (DTCG_COLOR_ROLES.includes(name)) return;
+            if (DTCG_IDENT_RE.test(name)) extra.push(name);
+            else result.warnings.push(`color.${name}: not a valid token name - dropped from the semantic token list`);
+        });
+        extra.sort();
+        result.semanticTokens = DTCG_COLOR_ROLES.map(name => ({ kind: 'color', name })).concat(extra.map(name => ({ kind: 'color', name })));
     }
 
     // font.family.* -> font-sans|serif|mono in both modes
