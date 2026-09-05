@@ -20,7 +20,8 @@ const g = vm.runInContext(`({ ELEMENTS, allElements, setCustomElements, customEl
     validateCustomElementName, buildCustomElementSpec, customElementLiveOverrides, renderCustomInstance,
     buildCustomGalleryHtml, buildCustomElementHeaderHtml, buildGalleryHtml, componentTokenIds, tokenIdParts,
     tokenId, propKind, seedComponentTokens, resolveComponentRef, componentVarLines, buildWiringCss, parseRef,
-    refToVar, findScaleEntry, paletteEntryByName, elementSpec })`, ctx);
+    refToVar, findScaleEntry, paletteEntryByName, elementSpec, customElementMissingKinds, customPartIds,
+    removeCustomPart, addCustomPart, CUSTOM_PART_FACTORY })`, ctx);
 
 const SOURCES = ['tailwind', 'atlassian'];
 const SEMANTIC_ROLES = new Set([
@@ -319,13 +320,140 @@ ok(g.buildCustomGalleryHtml().includes('New custom element'), 'the control names
     ok(g.elementSpec('chip').label !== 'MUTATED' || snap[0].key !== 'chip', 'mutating the snapshot never touches the live registry');
 }
 
-// --- buildCustomElementHeaderHtml: read-only, name/base/parts, custom-only --
+// --- customElementMissingKinds / customPartIds ------------------------------
 {
-    const html = g.buildCustomElementHeaderHtml({ selection: { element: 'chip', variant: 'primary', part: 'bg', state: 'default' } });
+    ok(g.customElementMissingKinds(g.elementSpec('chip')).length === 0, 'chip (all six + kept extras) has no missing kind');
+    const partial = g.buildCustomElementSpec({ key: 'partialtest', label: 'PartialTest', base: 'button', parts: ['bg', 'text', 'border'] });
+    ok(JSON.stringify(g.customElementMissingKinds(partial).slice().sort()) === JSON.stringify(['icon', 'padding', 'shadow']), 'missing kinds are exactly the six minus the ones already present');
+
+    const chipIconIds = new Set(g.customPartIds(g.elementSpec('chip'), 'icon'));
+    ok([...chipIconIds].every(id => /^chip\.[^.]+\.icon(\.|$)/.test(id)), 'customPartIds(chip, icon) only names chip icon ids');
+    ok(chipIconIds.size === 6 * 5, 'customPartIds(chip, icon) covers every variant (6) x state (5)');
+    ok(g.customPartIds(g.elementSpec('chip'), 'not-a-part').length === 0, 'customPartIds for an absent part key is empty');
+}
+
+// --- removeCustomPart: exact id removal, pure, refusals ---------------------
+{
+    const chipSpec = g.elementSpec('chip');
+    const compsBefore = g.seedComponentTokens('tailwind', { radiusRem: 0.5 });
+    const removed = g.removeCustomPart(chipSpec, compsBefore, 'icon');
+    ok(!removed.error, 'removeCustomPart(icon) succeeds while five other parts remain');
+    ok(!removed.spec.parts.some(p => p.key === 'icon'), "icon is gone from the returned spec's part list");
+    ok(chipSpec.parts.some(p => p.key === 'icon'), 'the ORIGINAL spec object is left untouched (pure)');
+    ok(compsBefore['chip.primary.icon'] !== undefined, 'sanity: compsBefore actually had icon ids to drop');
+
+    // customPartIds() names every POSSIBLE (variant x state) id (30 here);
+    // compsBefore (a fresh seed map) is sparse - a hover/focus/active id only
+    // has an EXPLICIT entry where button's own SEED_SPEC carries a state
+    // delta for that slot (14 of the 30 for icon). The invariant is "removing
+    // a part deletes EXACTLY that part's ids and nothing else", checked both
+    // ways: every key actually dropped belongs to the removed part, AND none
+    // of that part's ids (present or not) survive in the result.
+    const expectedDropped = new Set(g.customPartIds(chipSpec, 'icon'));
+    const actuallyDropped = Object.keys(compsBefore).filter(id => !Object.prototype.hasOwnProperty.call(removed.components, id));
+    ok(actuallyDropped.length > 0, 'sanity: at least the seeded default-state icon ids were actually dropped');
+    ok(actuallyDropped.every(id => expectedDropped.has(id)), 'every dropped key belongs to the removed part (icon) - nothing else was touched');
+    ok(![...expectedDropped].some(id => Object.prototype.hasOwnProperty.call(removed.components, id)), 'no icon id survives in the returned components map');
+    Object.keys(removed.components).forEach(id => ok(removed.components[id] === compsBefore[id], `${id}: every kept id's value is untouched by the removal`));
+
+    // Sweep the other iterators with the edited spec actually registered.
+    g.setCustomElements([removed.spec, note, tag, check]);
+    ok(!g.componentTokenIds().some(id => /^chip\.[^.]+\.icon(\.|$)/.test(id)), 'componentTokenIds() lists no chip.*.icon id once icon is removed');
+    const wiringAfterRemove = g.buildWiringCss();
+    ok(!wiringAfterRemove.includes('--_icon: var(--chip-'), 'the wiring sheet assigns no --_icon private for chip any more');
+    ['tailwind', 'atlassian'].forEach(source => {
+        const css = g.componentVarLines(removed.components, source);
+        ok(!/undefined|null/.test(css), `${source}: componentVarLines has no null/undefined after removing icon`);
+    });
+    g.setCustomElements([chip, note, tag, check]); // restore the shared registry
+
+    // Refusals: the last remaining part, and an absent key.
+    const single = {
+        key: 'onepart', label: 'OnePart', category: 'custom', custom: true, base: 'separator',
+        variants: ['default'], states: ['default', 'hover', 'focus', 'active', 'disabled'],
+        parts: [g.elementSpec('separator').parts[0]], seedSpec: { base: {}, variants: {}, states: {} }
+    };
+    const lastPartRefusal = g.removeCustomPart(single, {}, single.parts[0].key);
+    ok(!!lastPartRefusal.error, 'removing the last remaining part is refused');
+    ok(lastPartRefusal.spec === undefined && lastPartRefusal.components === undefined, 'a refusal carries no spec/components');
+    const absentKeyRefusal = g.removeCustomPart(chipSpec, {}, 'not-a-real-part');
+    ok(!!absentKeyRefusal.error, 'removing an absent part key is refused');
+}
+
+// --- addCustomPart: seeded from the base (or the per-part default), pure,
+// refusals; writes EXPLICIT ids (dtcg.js's export walks `components`, not
+// the spec, so an id only reachable through resolveComponentRef's seed
+// fallback would never reach tokens.json) ----------------------------------
+{
+    const chipNoShadow = g.buildCustomElementSpec({ key: 'chiptest', label: 'ChipTest', base: 'button', parts: ALL_SIX.filter(k => k !== 'shadow') });
+    ok(!chipNoShadow.parts.some(p => p.key === 'shadow'), 'sanity: chiptest has no shadow part yet');
+    const ctx = { radiusRem: 0.5 };
+    const added = g.addCustomPart(chipNoShadow, {}, 'shadow', 'tailwind', ctx);
+    ok(!added.error, 'addCustomPart(shadow) succeeds for a missing kind');
+    ok(added.spec.parts[added.spec.parts.length - 1].key === 'shadow', 'the new part lands LAST in spec.parts');
+    ok(!chipNoShadow.parts.some(p => p.key === 'shadow'), 'the ORIGINAL spec object is left untouched (pure)');
+
+    // Register BEFORE resolving: a state id with no explicit entry and no
+    // seeded delta falls back through tokenIdParts (resolveComponentRef) to
+    // its own default id, which needs the registry - exactly what the real
+    // app's applyCustomElementsChange() guarantees before any repaint reads
+    // resolveComponentRef (see the "persistence round trip" group below for
+    // the same registration-order hazard spelled out in full).
+    g.setCustomElements([added.spec]);
+    chipNoShadow.variants.forEach(variant => {
+        chipNoShadow.states.forEach(state => {
+            const id = g.tokenId(added.spec, variant, 'shadow', 'shadow', state);
+            const got = g.resolveComponentRef(id, added.components, 'tailwind');
+            const want = g.resolveComponentRef(g.tokenId('button', variant, 'shadow', 'shadow', state), {}, 'tailwind');
+            ok(got !== null && got === want, `${id}: seeded shadow (${got}) equals button's own seeded shadow (${want})`);
+            assertRefValid(got, 'shadow', 'tailwind', id);
+        });
+    });
+    ok(g.componentTokenIds().includes('chiptest.primary.shadow'), 'componentTokenIds() includes the newly added default-state id');
+    const wiringAfterAdd = g.buildWiringCss();
+    ok(wiringAfterAdd.includes('--_shadow: var(--chiptest-primary-shadow);'), 'wiring assigns the new shadow private for chiptest');
+    g.setCustomElements([chip, note, tag, check]); // restore
+
+    // A base lacking the kind entirely (separator has no shadow) falls to
+    // CUSTOM_PART_DEFAULTS, remapped like any other seed on a non-Tailwind source.
+    const tagNoShadow = g.buildCustomElementSpec({ key: 'tagtest', label: 'TagTest', base: 'separator', parts: ALL_SIX.filter(k => k !== 'shadow') });
+    const addedTag = g.addCustomPart(tagNoShadow, {}, 'shadow', 'tailwind', ctx);
+    ok(g.resolveComponentRef(g.tokenId(addedTag.spec, 'default', 'shadow', 'shadow', 'default'), addedTag.components, 'tailwind') === 'shadow.xs',
+        "a base lacking the part falls to CUSTOM_PART_DEFAULTS.shadow ('shadow.xs')");
+    const addedTagAtlassian = g.addCustomPart(tagNoShadow, {}, 'shadow', 'atlassian', ctx);
+    const atlassianShadow = g.resolveComponentRef(g.tokenId(addedTagAtlassian.spec, 'default', 'shadow', 'shadow', 'default'), addedTagAtlassian.components, 'atlassian');
+    assertRefValid(atlassianShadow, 'shadow', 'atlassian', 'tagtest.default.shadow (atlassian)');
+
+    // Refusals: an already-present kind, and an unknown kind - pure (inputs untouched).
+    const chipSpecForAdd = g.elementSpec('chip');
+    const partsBefore = chipSpecForAdd.parts.length;
+    const alreadyPresent = g.addCustomPart(chipSpecForAdd, {}, 'shadow', 'tailwind', ctx);
+    ok(!!alreadyPresent.error, 'adding a kind already on the spec is refused');
+    const unknownKind = g.addCustomPart(chipSpecForAdd, {}, 'not-a-kind', 'tailwind', ctx);
+    ok(!!unknownKind.error, 'adding a kind outside the six is refused');
+    ok(chipSpecForAdd.parts.length === partsBefore, 'a refused add leaves the spec untouched (pure)');
+}
+
+// --- buildCustomElementHeaderHtml: name/base read-only, a remove control per
+// part, an add row for exactly the missing kinds, custom-only -------------
+{
+    const full = g.elementSpec('chip'); // registered: all six + kept radius/gap/ring
+    const html = g.buildCustomElementHeaderHtml({ selection: { element: full, variant: 'primary', part: 'bg', state: 'default' } });
     ok(html.includes('Chip'), 'header names the element');
     ok(html.includes('Button'), 'header names the base');
-    ok(html.includes('Background'), 'header lists a part label');
-    ok(!/<button|<input|<select|data-ref=|data-variant=|data-state=/.test(html), 'header is read-only - no controls, no assignable refs, no strip picks');
+    full.parts.forEach(part => {
+        ok(html.includes(`data-part-remove="${part.key}"`), `remove control for ${part.key}`);
+        ok(html.includes(part.label), `header lists the ${part.key} label ("${part.label}")`);
+    });
+    ok(!/data-part-add=/.test(html), 'no add control offered when all six kinds are already present');
+    ok(!/data-ref=|data-variant=|data-state=/.test(html), 'no assignable refs, no strip picks');
+
+    const partial = g.buildCustomElementSpec({ key: 'partialtest2', label: 'PartialTest2', base: 'button', parts: ['bg', 'text', 'border'] });
+    const partialHtml = g.buildCustomElementHeaderHtml({ selection: { element: partial, variant: partial.variants[0], part: 'bg', state: 'default' } });
+    ['bg', 'border', 'text', 'radius', 'gap', 'ring'].forEach(k => ok(partialHtml.includes(`data-part-remove="${k}"`), `remove control for kept/offered part ${k}`));
+    ['icon', 'padding', 'shadow'].forEach(k => ok(partialHtml.includes(`data-part-add="${k}"`), `add control offers missing kind ${k}`));
+    ['bg', 'border', 'text'].forEach(k => ok(!partialHtml.includes(`data-part-add="${k}"`), `add control never offers already-present kind ${k}`));
+
     ok(g.buildCustomElementHeaderHtml({ selection: { element: 'button', variant: 'primary', part: 'bg', state: 'default' } }) === '', 'a stock selection prints nothing');
     ok(g.buildCustomElementHeaderHtml({ selection: null }) === '', 'no selection prints nothing');
     ok(g.buildCustomElementHeaderHtml(undefined) === '', 'no ctx prints nothing');

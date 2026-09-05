@@ -1093,3 +1093,126 @@ function buildCustomGalleryHtml() {
         `<button type="button" class="gallery-new-custom" data-action="new-custom-element">New custom element</button>\n` +
         specimens + '\n</div>\n</section>';
 }
+
+// --- Custom elements: add/remove parts ---------------------------------------
+//
+// The only way an already-registered custom element's PART LIST changes after
+// creation (rename/delete of the element itself is a later card's). Both are
+// pure - spec/components in, { spec, components } | { error } out; nothing
+// here touches CUSTOM_ELEMENTS or reads global editor state. scripts.js's one
+// entry point (onPanelClick's [data-part-remove]/[data-part-add] branches)
+// pushes one undo step, swaps the returned spec into state.customElements and
+// the returned map into state.components, then applyCustomElementsChange() +
+// renderAll() so the wiring sheet, #theme-vars and the Custom section all
+// reflect the new shape together - the same two calls createCustomElement()
+// already ends with.
+
+// The six offered kinds NOT already on `spec` - what the sidebar header's add
+// control offers (panels.js buildCustomElementHeaderHtml). A kept extra part
+// (radius, gap, ring, title, …) never appears here - it isn't one of the six
+// and, once removed, has no way back in (per the board's own resolution: kept
+// parts are removable but the add control only ever offers the six kinds).
+function customElementMissingKinds(spec) {
+    return CUSTOM_PART_KINDS.filter(k => !spec.parts.some(p => p.key === k));
+}
+
+// Every token id ONE part of `spec` contributes, across every variant x prop
+// x state the spec currently carries - exactly the set removeCustomPart
+// deletes from `components`. [] for a part the spec doesn't have.
+function customPartIds(spec, partKey) {
+    const part = spec.parts.find(p => p.key === partKey);
+    if (!part) return [];
+    const ids = [];
+    elementVariants(spec).forEach(variant => {
+        part.props.forEach(prop => {
+            spec.states.forEach(state => ids.push(tokenId(spec, variant, part.key, prop.key, state)));
+        });
+    });
+    return ids;
+}
+
+// Drops every seedSpec entry keyed to `partKey` (a bare key for a single-prop
+// part, "partKey.<prop>" for a multi-prop one) from one seedSpec section
+// (base, or one variant/state's own object) - used by both add and remove so
+// a stale default never lingers for a later re-add of an unrelated kind that
+// happens to share a slot-key prefix.
+function _dropSeedSlot(section, partKey) {
+    const out = {};
+    Object.keys(section || {}).forEach(key => {
+        if (key !== partKey && !key.startsWith(`${partKey}.`)) out[key] = section[key];
+    });
+    return out;
+}
+
+// null | { error } | { spec, components }. Refuses an absent part key and the
+// element's last remaining part ("an element needs at least one part").
+function removeCustomPart(spec, components, partKey) {
+    const part = spec.parts.find(p => p.key === partKey);
+    if (!part) return { error: `"${partKey}" is not a part of ${spec.label}.` };
+    if (spec.parts.length <= 1) return { error: 'An element needs at least one part.' };
+    const dropIds = new Set(customPartIds(spec, partKey));
+    const nextComponents = {};
+    Object.keys(components || {}).forEach(id => { if (!dropIds.has(id)) nextComponents[id] = components[id]; });
+    const seed = spec.seedSpec || { base: {}, variants: {}, states: {} };
+    const nextSeed = { base: _dropSeedSlot(seed.base, partKey), variants: {}, states: {} };
+    Object.keys(seed.variants || {}).forEach(v => { nextSeed.variants[v] = _dropSeedSlot(seed.variants[v], partKey); });
+    Object.keys(seed.states || {}).forEach(s => { nextSeed.states[s] = _dropSeedSlot(seed.states[s], partKey); });
+    return {
+        spec: { ...spec, parts: spec.parts.filter(p => p.key !== partKey), seedSpec: nextSeed },
+        components: nextComponents
+    };
+}
+
+// Seeds ONE new part's ids exactly the way seedComponentTokens seeds a whole
+// element (base defaults + per-variant override + per-state deltas), but
+// scoped to this one part and built from a throwaway seedSpec FRAGMENT
+// (_buildCustomSeedSpec run over just [part]) rather than the registry, so it
+// works whether or not `spec` is registered yet. Returns the fragment too, so
+// the caller can fold it into the spec's own seedSpec for next time.
+function _seedAddedPart(baseSpec, spec, part, sourceKey, ctx) {
+    const fragment = _buildCustomSeedSpec(baseSpec, [part]);
+    const source = sourceKey || 'tailwind';
+    const ids = {};
+    elementVariants(spec).forEach(variant => {
+        const defaults = Object.assign({}, fragment.base || {}, (fragment.variants && variant && fragment.variants[variant]) || {});
+        part.props.forEach(prop => {
+            const key = _customSlotKey(part, prop);
+            if (defaults[key] === undefined) return;
+            ids[tokenId(spec, variant, part.key, prop.key)] = seedRef(defaults[key], source, ctx);
+        });
+        spec.states.forEach(state => {
+            if (state === 'default' || !fragment.states) return;
+            const overrides = Object.assign({}, fragment.states[`*.${state}`] || {}, (variant && fragment.states[`${variant}.${state}`]) || {});
+            part.props.forEach(prop => {
+                const key = _customSlotKey(part, prop);
+                if (overrides[key] === undefined) return;
+                ids[tokenId(spec, variant, part.key, prop.key, state)] = seedRef(overrides[key], source, ctx);
+            });
+        });
+    });
+    return { ids, fragment };
+}
+
+// null | { error } | { spec, components }. Refuses a kind outside the six and
+// one already on the spec (the header's own add control only ever offers a
+// missing kind, but this stays defensive too - see validateCustomElementName
+// for the same "belt and suspenders" style). The new part always lands LAST
+// in spec.parts. Writes EXPLICIT default-state ids (and seeded state deltas)
+// into the returned `components`, never only a seedSpec update a caller must
+// remember to reseed from - the export (dtcg.js) walks `components` itself,
+// not the spec, so an id reachable only through resolveComponentRef's seed
+// fallback would never appear there.
+function addCustomPart(spec, components, kind, sourceKey, ctx) {
+    if (!CUSTOM_PART_KINDS.includes(kind)) return { error: `"${kind}" is not a part kind.` };
+    if (spec.parts.some(p => p.key === kind)) return { error: `${spec.label} already has a ${CUSTOM_PART_FACTORY[kind]().label} part.` };
+    const baseSpec = elementSpec(spec.base) || spec;
+    const part = CUSTOM_PART_FACTORY[kind]();
+    const nextSpec = { ...spec, parts: [...spec.parts, part] };
+    const { ids, fragment } = _seedAddedPart(baseSpec, nextSpec, part, sourceKey, ctx);
+    const seed = spec.seedSpec || { base: {}, variants: {}, states: {} };
+    const nextSeed = { base: { ...seed.base, ...fragment.base }, variants: { ...seed.variants }, states: { ...seed.states } };
+    Object.keys(fragment.variants || {}).forEach(v => { nextSeed.variants[v] = { ...nextSeed.variants[v], ...fragment.variants[v] }; });
+    Object.keys(fragment.states || {}).forEach(s => { nextSeed.states[s] = { ...nextSeed.states[s], ...fragment.states[s] }; });
+    nextSpec.seedSpec = nextSeed;
+    return { spec: nextSpec, components: { ...components, ...ids } };
+}

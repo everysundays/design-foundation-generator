@@ -111,20 +111,44 @@ function buildSelectionStripHtml(ctx) {
 
 // The other builder that isn't a tab: renderPanel prepends this right after
 // buildSelectionStripHtml, ahead of the tab's own HTML, whenever the
-// selection is a custom element. Read-only in this card - name, base and
-// part list only, no controls; the spec itself changes only through
-// scripts.js's applyCustomElementsChange (the one entry point future cards
-// use to re-seed tokens and rebuild the preview after add/remove/rename).
+// selection is a custom element. Name and base are read-only; the part list
+// (card [20]) is not - every part gets its own remove control, and a row
+// below offers one add button per kind customElementMissingKinds() (see
+// components.js) still lacks - never a kind already present, and a kept part
+// (radius, gap, ring, …) removed here has no way back since it was never one
+// of the six add-list kinds to begin with. scripts.js's onPanelClick reads
+// data-part-remove/data-part-add and writes any refusal into [data-part-error]
+// inline (a spec change itself only ever happens through its own entry point,
+// which ends in applyCustomElementsChange() + renderAll()).
+function buildCustomPartRowHtml(part) {
+    return `<div class="fp-custom-part" data-part="${panelEsc(part.key)}">
+  <span class="fp-custom-part-label">${panelEsc(part.label)}</span>
+  <button type="button" class="fp-custom-part-remove" data-part-remove="${panelEsc(part.key)}" aria-label="Remove ${panelEsc(part.label)}"><i class="fas fa-xmark"></i></button>
+</div>`;
+}
+
+function buildCustomPartAddRowHtml(spec) {
+    const missing = typeof customElementMissingKinds === 'function' ? customElementMissingKinds(spec) : [];
+    if (!missing.length) return '';
+    const buttons = missing.map(kind => {
+        const factory = typeof CUSTOM_PART_FACTORY !== 'undefined' ? CUSTOM_PART_FACTORY[kind] : null;
+        const label = factory ? factory().label : capitalize(kind);
+        return `<button type="button" class="fp-add-btn" data-part-add="${panelEsc(kind)}">+ ${panelEsc(label)}</button>`;
+    }).join('');
+    return `<div class="fp-custom-part-add">${buttons}</div>`;
+}
+
 function buildCustomElementHeaderHtml(ctx) {
     const sel = ctx && ctx.selection;
     if (!sel || typeof elementSpec !== 'function') return '';
     const spec = elementSpec(sel.element);
     if (!spec || !spec.custom) return '';
     const baseSpec = elementSpec(spec.base);
-    const partNames = spec.parts.map(p => p.label).join(', ');
     return `<div class="fp-custom-header">
   <div class="fp-custom-header-row"><span class="fp-custom-header-name">${panelEsc(spec.label)}</span><span class="fp-custom-header-base">from ${panelEsc(baseSpec ? baseSpec.label : spec.base)}</span></div>
-  <div class="fp-custom-header-parts">${panelEsc(partNames)}</div>
+  <div class="fp-custom-parts">${spec.parts.map(buildCustomPartRowHtml).join('')}</div>
+  ${buildCustomPartAddRowHtml(spec)}
+  <span class="fp-custom-part-error" data-part-error hidden></span>
 </div>`;
 }
 

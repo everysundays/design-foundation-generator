@@ -487,7 +487,8 @@
 }
 
 /* --- Custom-element header, prepended (below the strip) when the selection
-   is a custom element - read-only, so no interactive styling at all. --- */
+   is a custom element. Name/base are read-only; the part list (card [20])
+   carries a remove control per row and an add row for the missing kinds. --- */
 
 .fp-custom-header {
   display: flex;
@@ -509,10 +510,64 @@
   color: var(--ui-text);
 }
 
-.fp-custom-header-base,
-.fp-custom-header-parts {
+.fp-custom-header-base {
   font-size: 11px;
   color: var(--ui-text-muted);
+}
+
+.fp-custom-parts {
+  display: flex;
+  flex-direction: column;
+}
+
+.fp-custom-part {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 2px;
+  border-radius: var(--ui-radius-sm);
+}
+
+.fp-custom-part:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.fp-custom-part-label {
+  font-size: 11px;
+  color: var(--ui-text);
+}
+
+.fp-custom-part-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.fp-custom-part-remove:hover {
+  color: #ffffff;
+  background: var(--ui-danger);
+}
+
+.fp-custom-part-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.fp-custom-part-error {
+  font-size: 10px;
+  color: var(--ui-warning, #b45309);
 }
 
 /* --- Type sets --- */

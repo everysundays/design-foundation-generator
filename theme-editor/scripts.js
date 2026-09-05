@@ -1663,6 +1663,25 @@ function onPanelClick(e) {
         }
         return;
     }
+    const partRemoveBtn = e.target.closest('[data-part-remove]');
+    if (partRemoveBtn && partRemoveBtn.closest('#panelBody')) {
+        const err = removeSelectedCustomPart(partRemoveBtn.dataset.partRemove);
+        // A success rebuilds #panelBody (renderAll -> renderPanel), so this
+        // always queries whatever error element is live AFTER the attempt -
+        // the fresh (already-hidden) one on success, the untouched original
+        // on a refusal (nothing was rebuilt, matching the scale add-row's
+        // own inline-error pattern above).
+        const errorEl = document.querySelector('#panelBody [data-part-error]');
+        if (errorEl) { errorEl.textContent = err || ''; errorEl.hidden = !err; }
+        return;
+    }
+    const partAddBtn = e.target.closest('[data-part-add]');
+    if (partAddBtn && partAddBtn.closest('#panelBody')) {
+        const err = addSelectedCustomPart(partAddBtn.dataset.partAdd);
+        const errorEl = document.querySelector('#panelBody [data-part-error]');
+        if (errorEl) { errorEl.textContent = err || ''; errorEl.hidden = !err; }
+        return;
+    }
     const target = e.target.closest('[data-ref]');
     if (!target || !target.closest('#panelBody')) return;
     const ref = target.dataset.ref;
@@ -1763,6 +1782,43 @@ function createCustomElement({ base, parts, name }) {
     // unstyled until some unrelated later action happened to call it.
     renderAll();
     return null;
+}
+
+// --- Custom elements: add/remove parts ---
+// The only entry points that change an already-registered custom element's
+// PART LIST after creation (rename/delete of the element itself is a later
+// card's) - onPanelClick's [data-part-remove]/[data-part-add] branches below
+// call these. Returns an inline-refusal string on failure (nothing changed,
+// so nothing is pushed to undo), else null - same contract createCustomElement
+// uses. A success swaps the one spec inside state.customElements and the
+// returned map into state.components, then finishes with the same
+// applyCustomElementsChange() + renderAll() pair createCustomElement ends
+// with (the wiring sheet and #theme-vars both need refreshing), and
+// re-selects the current element so a removed selected part falls back to
+// parts[0] (selectElement's own fallback - see its comment).
+function applyCustomPartResult(spec, result) {
+    if (result.error) return result.error;
+    pushUndo();
+    state.customElements = state.customElements.map(s => (s.key === spec.key ? result.spec : s));
+    state.components = result.components;
+    applyCustomElementsChange();
+    const sel = state.selection;
+    if (sel) selectElement(sel.element, sel.variant, sel.part, sel.state);
+    renderAll();
+    return null;
+}
+
+function removeSelectedCustomPart(partKey) {
+    const spec = selectedSpec();
+    if (!spec || !spec.custom) return null;
+    return applyCustomPartResult(spec, removeCustomPart(spec, state.components, partKey));
+}
+
+function addSelectedCustomPart(kind) {
+    const spec = selectedSpec();
+    if (!spec || !spec.custom) return null;
+    const ctx = { radiusRem: measurementToRem(currentVars().radius, 0.5) };
+    return applyCustomPartResult(spec, addCustomPart(spec, state.components, kind, activePaletteSource, ctx));
 }
 
 // --- Palette source switch ---
