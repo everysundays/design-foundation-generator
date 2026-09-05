@@ -212,7 +212,6 @@ const TYPE_WEIGHTS = [['300', '300 Light'], ['400', '400 Regular'], ['500', '500
 
 function typeSizeEntries() { return scaleEntries(activePaletteSource, 'typeSize'); }
 function typeLeadingEntries() { return scaleEntries(activePaletteSource, 'typeLeading'); }
-function typeSizeLeading() { return foundationOf(activePaletteSource).typeSizeLeading; }
 
 function nearestEntryIndex(entries, rem) {
     let bestIndex = 0;
@@ -436,9 +435,13 @@ function clearComponentToken(id) {
 }
 
 // Adds a user-defined entry to one of the Space/Radius/Border-width/
-// Border-style/Shadow scales (see panels.js's `allowAdd` add-row). Returns an
-// error string on failure (nothing is changed), or null on success.
-function addCustomScaleEntry(kind, rawName, rawValue) {
+// Border-style/Shadow/Type size/Type leading scales (see panels.js's
+// `allowAdd` add-row and buildTypeScaleListHtml). `rawLeading` is only read
+// for kind === 'typeSize' (the add-row's third, optional box): blank derives
+// a leading from the nearest existing size (pairedLeadingRem), a typed value
+// is snapped onto the nearest real Type leading step. Returns an error
+// string on failure (nothing is changed), or null on success.
+function addCustomScaleEntry(kind, rawName, rawValue, rawLeading) {
     const name = String(rawName || '').trim();
     const value = String(rawValue || '').trim();
     const label = (typeof PANEL_KIND_LABELS !== 'undefined' && PANEL_KIND_LABELS[kind]) || kind;
@@ -461,6 +464,17 @@ function addCustomScaleEntry(kind, rawName, rawValue) {
         const rem = measurementToRem(value, NaN);
         if (!Number.isFinite(rem)) return 'Enter a number (rem) or a px value, e.g. 4.5 or 72px.';
         entry = remEntry(name, rem);
+        if (kind === 'typeSize') {
+            const leadingRaw = String(rawLeading || '').trim();
+            if (leadingRaw) {
+                const leadingRem = measurementToRem(leadingRaw, NaN);
+                if (!Number.isFinite(leadingRem)) return 'Enter a number (rem) or a px value for the leading, e.g. 2 or 32px.';
+                const snapped = nearestScaleEntry(activePaletteSource, 'typeLeading', leadingRem);
+                entry.leading = snapped ? snapped.rem : leadingRem;
+            } else {
+                entry.leading = pairedLeadingRem(activePaletteSource, entry);
+            }
+        }
     }
     pushUndo();
     state.customScale[kind].push(entry);
@@ -803,7 +817,7 @@ function buildTypeSetGroups() {
             const entry = typeSizeEntries()[i];
             // One undo step for the pair: the paired leading follows with record:false.
             setVar(typeVarKey(set.key, 'size'), `${entry.rem}rem`);
-            setVar(typeVarKey(set.key, 'leading'), `${typeSizeLeading()[i]}rem`, { record: false });
+            setVar(typeVarKey(set.key, 'leading'), `${pairedLeadingRem(activePaletteSource, entry)}rem`, { record: false });
         });
         leadingRange.addEventListener('input', () => {
             setVar(typeVarKey(set.key, 'leading'), `${typeLeadingEntries()[Number(leadingRange.value)].rem}rem`);
@@ -1604,8 +1618,9 @@ function onPanelClick(e) {
         const kind = row.dataset.addKind;
         const nameInput = row.querySelector('[data-add-field="name"]');
         const valueInput = row.querySelector('[data-add-field="value"]');
+        const leadingInput = row.querySelector('[data-add-field="leading"]');
         const errorEl = row.querySelector('[data-add-error]');
-        const err = addCustomScaleEntry(kind, nameInput.value, valueInput.value);
+        const err = addCustomScaleEntry(kind, nameInput.value, valueInput.value, leadingInput ? leadingInput.value : undefined);
         if (errorEl) {
             errorEl.textContent = err || '';
             errorEl.hidden = !err;

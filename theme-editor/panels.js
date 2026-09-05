@@ -13,7 +13,8 @@
 
 const PANEL_KIND_LABELS = {
     color: 'Colors', space: 'Space', radius: 'Radius', borderWidth: 'Border width',
-    borderStyle: 'Border style', shadow: 'Shadow', type: 'Type'
+    borderStyle: 'Border style', shadow: 'Shadow', type: 'Type',
+    typeSize: 'Type size', typeLeading: 'Type leading'
 };
 
 const PANEL_SPECIALS = [['white', '#ffffff'], ['black', '#000000'], ['transparent', 'transparent']];
@@ -185,17 +186,24 @@ function panelEntryHtml(ctx, kind, entry) {
 // input's placeholder so the add-row needs no label of its own.
 const SCALE_ADD_PLACEHOLDER = {
     space: '4.5rem or 72px', radius: '4.5rem or 72px', borderWidth: '4.5rem or 72px',
-    borderStyle: 'double', shadow: '0 4 12 0 0.15'
+    borderStyle: 'double', shadow: '0 4 12 0 0.15',
+    typeSize: '1.6rem or 26px', typeLeading: '2rem or 32px'
 };
 
 // Inline "add a custom entry" row (see scripts.js addCustomScaleEntry / the
 // onPanelClick [data-add-confirm] branch) - one row per kind, self-contained
 // so the click handler only needs to look inside its own [data-add-kind].
+// Type size gets a third, optional box: the leading it pairs with (blank ->
+// pairedLeadingRem derives one from the nearest existing size).
 function buildScaleAddRowHtml(kind) {
     const placeholder = SCALE_ADD_PLACEHOLDER[kind] || 'value';
+    const leadingField = kind === 'typeSize'
+        ? `<input type="text" class="fp-add-input fp-add-input-value" placeholder="leading, optional" data-add-field="leading">`
+        : '';
     return `<div class="fp-add-row" data-add-kind="${panelEsc(kind)}">
   <input type="text" class="fp-add-input fp-add-input-name" placeholder="name" data-add-field="name">
   <input type="text" class="fp-add-input fp-add-input-value" placeholder="${panelEsc(placeholder)}" data-add-field="value">
+  ${leadingField}
   <button type="button" class="fp-add-btn" data-add-confirm>+ Add</button>
   <span class="fp-add-error" data-add-error hidden></span>
 </div>`;
@@ -242,6 +250,29 @@ function panelTypeSetStyle(vars, set) {
     return `font-family: ${family}; font-weight: ${weight}; font-size: ${size}; line-height: ${leading}; letter-spacing: ${tracking};`;
 }
 
+// Read-only rows for the Type size / Type leading scales (add-row: see
+// scripts.js addCustomScaleEntry). Styled like a Space-tab entry (name · px)
+// but never assignable - a set's size/leading comes from the sliders below,
+// not from clicking a ref - so these carry no data-ref at all rather than
+// leaning on the click handler to no-op.
+function buildTypeScaleListHtml(kind, ctx) {
+    const entries = scaleEntries(ctx.source, kind);
+    const rows = entries.map(entry => {
+        const value = panelEntryValue(kind, entry);
+        const tip = panelTip(entry.name, value === entry.name ? '' : value, { ids: [], roles: [] });
+        return `<div class="fp-entry fp-entry-static" data-tip="${panelEsc(tip)}">
+  <span class="fp-entry-name">${panelEsc(entry.name)}</span>
+  <span class="fp-entry-value">${panelEsc(value)}</span>
+</div>`;
+    }).join('\n');
+    return `<div class="fp-section" data-kind="${panelEsc(kind)}">
+<div class="fp-entries">
+${rows}
+</div>
+${buildScaleAddRowHtml(kind)}
+</div>`;
+}
+
 function buildTypePanelHtml(ctx) {
     const vars = (ctx.vars && ctx.vars[ctx.mode]) || {};
     const sets = ctx.typeSets || [];
@@ -267,6 +298,8 @@ ${buildPropChipsHtml(ctx, 'type')}
 ${cards}
 </div>
 <div id="typeControlsMount" class="fp-type-controls"></div>
+${buildTypeScaleListHtml('typeSize', ctx)}
+${buildTypeScaleListHtml('typeLeading', ctx)}
 </div>`;
 }
 

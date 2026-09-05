@@ -542,6 +542,20 @@
   display: none;
 }
 
+/* Type size / Type leading step lists (panels.js buildTypeScaleListHtml) -
+   read-only rows, same name/value typography as a Space-tab .fp-entry but
+   with no sample column (there is nothing to swatch) and none of the
+   clickable-entry affordances, since these never assign anything. */
+.fp-entry-static {
+  grid-template-columns: 1fr auto;
+  cursor: default;
+}
+
+.fp-entry-static:hover {
+  background: none;
+  outline: none;
+}
+
 /* --- Summary --- */
 
 .fp-panel-summary .fp-section {

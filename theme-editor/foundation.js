@@ -38,6 +38,14 @@ function pxEntry(name, px) {
 const TAILWIND_SPACE_STEPS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24];
 const ATLASSIAN_SPACE = [['space.0', 0], ['space.025', 2], ['space.050', 4], ['space.075', 6], ['space.100', 8], ['space.150', 12], ['space.200', 16], ['space.250', 20], ['space.300', 24], ['space.400', 32], ['space.500', 40], ['space.600', 48], ['space.800', 64], ['space.1000', 80]];
 
+// Pairs a source's typeSize entries with the leading (rem) each one defaults
+// to, index-aligned with the list `entries` was built from. Stored ON each
+// entry (never as a parallel array) so the pairing survives scaleEntries
+// merging/sorting a user's added steps in - see pairedLeadingRem, below.
+function withLeadings(entries, leadingRems) {
+    return entries.map((entry, i) => ({ ...entry, leading: leadingRems[i] }));
+}
+
 const FOUNDATION = {
     tailwind: {
         key: 'tailwind',
@@ -70,10 +78,13 @@ const FOUNDATION = {
             { name: 'xl', layers: [[0, 20, 25, -5, 0.1], [0, 8, 10, -6, 0.1]] },
             { name: '2xl', layers: [[0, 25, 50, -12, 0.25]] }
         ].map(s => ({ ...s, value: shadowLayersToCss(s.layers), px: null })),
-        typeSize: [['xs', 0.75], ['sm', 0.875], ['base', 1], ['lg', 1.125], ['xl', 1.25], ['2xl', 1.5], ['3xl', 1.875], ['4xl', 2.25], ['5xl', 3], ['6xl', 3.75], ['7xl', 4.5]].map(([n, r]) => remEntry(n, r)),
-        // Tailwind pairs every size with a default line-height; the size
-        // slider drops leading onto this pairing (index-aligned with typeSize).
-        typeSizeLeading: [1, 1.25, 1.5, 1.75, 1.75, 2, 2.25, 2.5, 3, 3.75, 4.5],
+        // Tailwind pairs every size with a default line-height (see
+        // withLeadings/pairedLeadingRem) - the size slider drops leading onto
+        // this pairing.
+        typeSize: withLeadings(
+            [['xs', 0.75], ['sm', 0.875], ['base', 1], ['lg', 1.125], ['xl', 1.25], ['2xl', 1.5], ['3xl', 1.875], ['4xl', 2.25], ['5xl', 3], ['6xl', 3.75], ['7xl', 4.5]].map(([n, r]) => remEntry(n, r)),
+            [1, 1.25, 1.5, 1.75, 1.75, 2, 2.25, 2.5, 3, 3.75, 4.5]
+        ),
         typeLeading: Array.from({ length: 18 }, (_, i) => remEntry(String(i + 3), (i + 3) * 0.25))
     },
     atlassian: {
@@ -103,8 +114,10 @@ const FOUNDATION = {
             { name: 'elevation.shadow.overflow', layers: [[0, 0, 12, 0, 0.16], [0, 0, 1, 0, 0.12]] },
             { name: 'elevation.shadow.overlay', layers: [[0, 8, 12, 0, 0.15], [0, 0, 1, 0, 0.31]] }
         ].map(s => ({ ...s, value: shadowLayersToCss(s.layers), px: null })),
-        typeSize: [['font.size.050', 11], ['font.size.075', 12], ['font.size.100', 14], ['font.size.200', 16], ['font.size.300', 20], ['font.size.400', 24], ['font.size.500', 28], ['font.size.600', 32], ['font.size.800', 36]].map(([n, px]) => pxEntry(n, px)),
-        typeSizeLeading: [16, 16, 20, 24, 24, 28, 32, 40, 40].map(px => px / 16),
+        typeSize: withLeadings(
+            [['font.size.050', 11], ['font.size.075', 12], ['font.size.100', 14], ['font.size.200', 16], ['font.size.300', 20], ['font.size.400', 24], ['font.size.500', 28], ['font.size.600', 32], ['font.size.800', 36]].map(([n, px]) => pxEntry(n, px)),
+            [16, 16, 20, 24, 24, 28, 32, 40, 40].map(px => px / 16)
+        ),
         typeLeading: [['font.lineHeight.100', 16], ['font.lineHeight.200', 20], ['font.lineHeight.300', 24], ['font.lineHeight.400', 28], ['font.lineHeight.500', 32], ['font.lineHeight.600', 40]].map(([n, px]) => pxEntry(n, px))
     }
 };
@@ -127,13 +140,15 @@ function foundationOf(sourceKey) {
 
 // --- Custom scale entries ---
 // User-added values beyond what a source's fixed scale ships (Space/Radius/
-// Border width/Border style/Shadow - see panels.js buildScalePanelHtml's
-// `allowAdd`).
+// Border width/Border style/Shadow/Type size/Type leading - see panels.js
+// buildScalePanelHtml's `allowAdd` and buildTypeScaleListHtml).
 // Kept per-source, like FOUNDATION itself, so a system's additions don't leak
 // across a Tailwind<->Atlassian switch; scripts.js repoints state.customScale
 // at the active source's slot on load/switch/undo (see setCustomScaleFor).
+// A typeSize entry carries a `leading` (rem) alongside name/value/rem/px -
+// see withLeadings/pairedLeadingRem.
 function emptyCustomScale() {
-    return { space: [], radius: [], borderWidth: [], borderStyle: [], shadow: [] };
+    return { space: [], radius: [], borderWidth: [], borderStyle: [], shadow: [], typeSize: [], typeLeading: [] };
 }
 
 function cloneCustomScale(customScale) {
@@ -141,7 +156,11 @@ function cloneCustomScale(customScale) {
     return {
         space: [...(src.space || [])], radius: [...(src.radius || [])],
         borderWidth: [...(src.borderWidth || [])], borderStyle: [...(src.borderStyle || [])],
-        shadow: [...(src.shadow || [])]
+        shadow: [...(src.shadow || [])],
+        // Missing on a system saved before this card shipped - default to [],
+        // never dropping the rest of an older customScale (see systems.js
+        // normalizeSystem, which will own this default once it lands).
+        typeSize: [...(src.typeSize || [])], typeLeading: [...(src.typeLeading || [])]
     };
 }
 
@@ -162,10 +181,19 @@ function customScaleFor(sourceKey) {
     return CUSTOM_SCALE[sourceKey];
 }
 
+// Type size/leading are the one pair of scales a user reasons about by rem
+// order (a slider walks them low-to-high), so an added step has to land
+// between its neighbours rather than trailing the built-ins like every other
+// scale's add-row does.
+const SORTED_KINDS = new Set(['typeSize', 'typeLeading']);
+
 function scaleEntries(sourceKey, kind) {
     const base = foundationOf(sourceKey)[kind] || [];
     const custom = (CUSTOM_SCALE[sourceKey] && CUSTOM_SCALE[sourceKey][kind]) || [];
-    return custom.length ? [...base, ...custom] : base;
+    if (!custom.length) return base;
+    if (!SORTED_KINDS.has(kind)) return [...base, ...custom];
+    const remOf = (e) => (e.rem === null || e.rem === undefined ? Infinity : e.rem);
+    return [...base, ...custom].sort((a, b) => remOf(a) - remOf(b));
 }
 
 function scaleRef(kind, name) {
@@ -282,6 +310,28 @@ function scaleEntryLabel(entry) {
 function scaleEntryForRem(sourceKey, kind, rem) {
     const entry = nearestScaleEntry(sourceKey, kind, rem);
     return entry && Math.abs(entry.rem - rem) < 0.001 ? entry : null;
+}
+
+// The leading (rem) a Type size entry pairs with - what the size slider drops
+// onto the leading slider, and what a blank leading box on the add-row
+// defaults to. `sizeEntry.leading` when it's already set (every built-in
+// carries one via withLeadings, and addCustomScaleEntry sets one on every
+// step it adds); otherwise the leading of the nearest OTHER size step that
+// has one. Either way the result is snapped onto a real Type leading step
+// (nearestScaleEntry), so this never returns a blank, off-scale or NaN value
+// - even for a bare entry (e.g. straight from remEntry) that isn't actually
+// in the scale.
+function pairedLeadingRem(sourceKey, sizeEntry) {
+    let rem = sizeEntry && Number.isFinite(sizeEntry.leading) ? sizeEntry.leading : null;
+    if (rem === null) {
+        const ownRem = sizeEntry && Number.isFinite(sizeEntry.rem) ? sizeEntry.rem : 0;
+        const nearest = scaleEntries(sourceKey, 'typeSize')
+            .filter(e => Number.isFinite(e.leading))
+            .reduce((best, e) => (best === null || Math.abs(e.rem - ownRem) < Math.abs(best.rem - ownRem)) ? e : best, null);
+        rem = nearest ? nearest.leading : ownRem;
+    }
+    const snapped = nearestScaleEntry(sourceKey, 'typeLeading', rem);
+    return snapped ? snapped.rem : rem;
 }
 
 // --- Palette (color ramps) helpers ---

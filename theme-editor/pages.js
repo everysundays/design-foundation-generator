@@ -277,13 +277,12 @@ function setBadges(sets) {
 
 function buildSizeRamp(ctx) {
     const vars = ctx.vars[ctx.mode] || {};
-    const pairing = ctx.foundation.typeSizeLeading || [];
-    const rows = ctx.foundation.typeSize.map((entry, i) => {
+    const rows = scaleEntries(ctx.source, 'typeSize').map(entry => {
         const uses = ctx.typeSets.filter(set => {
             const on = scaleEntryForRem(ctx.source, 'typeSize', typeRem(vars, set, 'size'));
             return on && on.name === entry.name;
         });
-        const lead = pairing[i] != null ? scaleEntryForRem(ctx.source, 'typeLeading', pairing[i]) : null;
+        const lead = scaleEntryForRem(ctx.source, 'typeLeading', pairedLeadingRem(ctx.source, entry));
         const leadStyle = lead ? `; --sample-leading: ${scaleVar('typeLeading', lead.name)}` : '';
         return `<div class="tp-specimen">
       <span class="tp-specimen-name">${esc(entry.name)}</span>
@@ -301,7 +300,7 @@ function buildSizeRamp(ctx) {
 
 function buildLeadingRamp(ctx) {
     const vars = ctx.vars[ctx.mode] || {};
-    const rows = ctx.foundation.typeLeading.map(entry => {
+    const rows = scaleEntries(ctx.source, 'typeLeading').map(entry => {
         const uses = ctx.typeSets.filter(set => {
             const on = scaleEntryForRem(ctx.source, 'typeLeading', typeRem(vars, set, 'leading'));
             return on && on.name === entry.name;
