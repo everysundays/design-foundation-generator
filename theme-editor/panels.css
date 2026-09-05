@@ -357,8 +357,8 @@
   justify-self: start;
 }
 
-/* --- Add row (Space / Border width / Border style / Shadow only - see
-   panels.js buildScaleAddRowHtml / scripts.js addCustomScaleEntry) --- */
+/* --- Add row (Space / Radius / Border width / Border style / Shadow only -
+   see panels.js buildScaleAddRowHtml / scripts.js addCustomScaleEntry) --- */
 
 .fp-add-row {
   display: flex;

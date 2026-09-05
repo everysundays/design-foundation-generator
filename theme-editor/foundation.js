@@ -126,8 +126,9 @@ function foundationOf(sourceKey) {
 }
 
 // --- Custom scale entries ---
-// User-added values beyond what a source's fixed scale ships (Space/Border
-// width/Border style/Shadow - see panels.js buildScalePanelHtml's `allowAdd`).
+// User-added values beyond what a source's fixed scale ships (Space/Radius/
+// Border width/Border style/Shadow - see panels.js buildScalePanelHtml's
+// `allowAdd`).
 // Kept per-source, like FOUNDATION itself, so a system's additions don't leak
 // across a Tailwind<->Atlassian switch; scripts.js repoints state.customScale
 // at the active source's slot on load/switch/undo (see setCustomScaleFor).

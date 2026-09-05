@@ -161,8 +161,8 @@ let state = {
     loadedPalette: { families: [] },
     components: {},
     loadedComponents: {},
-    // User-added Space/Border/Shadow values beyond the source's fixed scale
-    // (see foundation.js's CUSTOM_SCALE) - points at that source's slot.
+    // User-added Space/Radius/Border/Shadow values beyond the source's fixed
+    // scale (see foundation.js's CUSTOM_SCALE) - points at that source's slot.
     customScale: emptyCustomScale(),
     loadedCustomScale: emptyCustomScale(),
     // Which sidebar tab is showing (summary | colors | space | radius |
@@ -435,9 +435,9 @@ function clearComponentToken(id) {
     renderAll();
 }
 
-// Adds a user-defined entry to one of the Space/Border-width/Border-style/
-// Shadow scales (see panels.js's `allowAdd` add-row). Returns an error string
-// on failure (nothing is changed), or null on success.
+// Adds a user-defined entry to one of the Space/Radius/Border-width/
+// Border-style/Shadow scales (see panels.js's `allowAdd` add-row). Returns an
+// error string on failure (nothing is changed), or null on success.
 function addCustomScaleEntry(kind, rawName, rawValue) {
     const name = String(rawName || '').trim();
     const value = String(rawValue || '').trim();
@@ -1574,7 +1574,7 @@ function renderPanel() {
     let html = '';
     if (tab === 'colors') html = safeBuild('buildColorsPanelHtml', ctx);
     else if (tab === 'space') html = safeBuild('buildScalePanelHtml', 'space', ctx, { allowAdd: true });
-    else if (tab === 'radius') html = safeBuild('buildScalePanelHtml', 'radius', ctx);
+    else if (tab === 'radius') html = safeBuild('buildScalePanelHtml', 'radius', ctx, { allowAdd: true });
     else if (tab === 'border') html = safeBuild('buildBorderPanelHtml', ctx);
     else if (tab === 'shadow') html = safeBuild('buildScalePanelHtml', 'shadow', ctx, { allowAdd: true });
     else if (tab === 'type') html = safeBuild('buildTypePanelHtml', ctx);
