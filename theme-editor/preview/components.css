@@ -95,7 +95,8 @@
 .ds-alert-title,
 .ds-dialog-title,
 .ds-toast-title,
-.ds-side-menu-title {
+.ds-side-menu-title,
+.ds-mobile-top-menu-title {
     margin: 0;
     color: var(--_title-color);
     font-family: var(--_title-family);
@@ -936,4 +937,48 @@
     flex: 1;
     min-inline-size: 0;
     color: var(--_text-color);
+}
+
+/* --- Mobile top menu -------------------------------------------------------
+ * A phone-width header bar. The bottom line is a child span, not painted on
+ * the root - unlike every other bordered element here, this one needs its
+ * border to be independently clickable, so it gets its own data-part. Both
+ * icons carry the same "icon" part/token, so they recolour together.
+ */
+
+.ds-mobile-top-menu {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--_gap);
+    inline-size: 100%;
+    block-size: var(--_height);
+    padding-inline: var(--_padding-x);
+    background: var(--_bg);
+    box-shadow: var(--_shadow);
+}
+
+.ds-mobile-top-menu-border {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    border-block-end: var(--_border-width) var(--_border-style) var(--_border-color);
+}
+
+.ds-mobile-top-menu-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    font-size: var(--_title-size);
+    line-height: var(--_title-leading);
+    color: var(--_icon);
+}
+
+.ds-mobile-top-menu-title {
+    flex: 1;
+    min-inline-size: 0;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

@@ -74,7 +74,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog', 'accordion', 'accordion-item'] },
-    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item', 'side-menu', 'side-menu-item'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item', 'side-menu', 'side-menu-item', 'mobile-top-menu'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
 const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
@@ -157,7 +157,14 @@ const ELEMENTS = [
     _el('side-menu', 'Side menu', null, ['default'],
         [_bg(), _border(), _padding(), _gap(), _textPart('title', 'Title')]),
     _el('side-menu-item', 'Side menu item', ['inactive', 'active'], FORM_STATES,
-        [_bg(), _text(), _icon(), _radius(), _paddingXY(), _gap(), _ring()])
+        [_bg(), _text(), _icon(), _radius(), _paddingXY(), _gap(), _ring()]),
+    // Height precedes padding-x/gap so it is the first part with a `space`
+    // prop - the one the Space tab's touch-and-go reaches (see
+    // effectivePartSpec in scripts.js). Border is its own part (painted by a
+    // child span, components.css) rather than folded onto "bg" like Card's,
+    // so it is independently clickable per the DoD.
+    _el('mobile-top-menu', 'Mobile top menu', null, ['default'],
+        [_bg(), _border(), _shadow(), _spacePart('height', 'Height'), _spacePart('padding-x', 'Padding x'), _gap(), _textPart('title', 'Title'), _icon()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -475,6 +482,13 @@ const SEED_SPEC = {
             '*.focus': { 'ring.color': 'color.sidebar-ring' },
             '*.disabled': DISABLED_BOX
         }
+    },
+    'mobile-top-menu': {
+        base: {
+            bg: 'color.background', 'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            shadow: 'shadow.none', height: 'space.14', 'padding-x': 'space.4', gap: 'space.3',
+            'title.color': 'color.foreground', 'title.type': 'type.label', icon: 'color.foreground'
+        }
     }
 };
 
@@ -750,7 +764,9 @@ const GALLERY_ICONS = {
     x: '<path d="M4 4l8 8M12 4l-8 8"/>',
     chevrons: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>',
     'chevron-right': '<path d="M6 4l4 4-4 4"/>',
-    home: '<path d="M2.5 8L8 3l5.5 5"/><path d="M4 6.5V13h8V6.5"/>'
+    home: '<path d="M2.5 8L8 3l5.5 5"/><path d="M4 6.5V13h8V6.5"/>',
+    menu: '<path d="M3 4.5h10M3 8h10M3 11.5h10"/>',
+    search: '<circle cx="7" cy="7" r="4"/><path d="M10 10l3.5 3.5"/>'
 };
 
 function galleryIcon(name, cls, part) {
@@ -879,6 +895,27 @@ function renderSideMenu(state, title, itemsHtml) {
         `<p class="ds-side-menu-title" data-part="title">${title}</p>` +
         itemsHtml +
         '</nav>';
+}
+
+// A phone-width frame (chrome, preview/pages.css .gallery-phone - not itself
+// token-painted) around a mobile specimen; the frame carries no data-part/
+// data-element, so a click on its own padding clears the selection like a
+// click anywhere else outside a specimen.
+function renderPhoneFrame(innerHtml) {
+    return `<div class="gallery-phone">${innerHtml}</div>`;
+}
+
+// Both icons share the single "icon" part/token (one glyph colour for the
+// whole bar); the border is a child span of its own (data-part="border"),
+// not painted on the root, so it is independently clickable - see the
+// ELEMENTS comment above mobile-top-menu.
+function renderMobileTopMenu(state) {
+    return `<header ${rootAttrs('mobile-top-menu', null, state, 'bg')}>` +
+        galleryIcon('menu', 'ds-mobile-top-menu-icon', 'icon') +
+        `<span class="ds-mobile-top-menu-title" data-part="title">Inbox</span>` +
+        galleryIcon('search', 'ds-mobile-top-menu-icon', 'icon') +
+        `<span class="ds-mobile-top-menu-border" data-part="border" aria-hidden="true"></span>` +
+        '</header>';
 }
 
 const GALLERY_RENDERERS = {
@@ -1013,7 +1050,8 @@ const GALLERY_RENDERERS = {
             renderSideMenuItem('inactive', 'default', 'Billing', 'plus') +
             renderSideMenuItem('inactive', 'default', 'Tasks', 'check') +
             renderSideMenuItem('inactive', 'default', 'Notifications', 'info')),
-    'side-menu-item': (variant, state) => renderSideMenu('default', 'Workspace', renderSideMenuItem(variant, state, capitalize(variant), 'user'))
+    'side-menu-item': (variant, state) => renderSideMenu('default', 'Workspace', renderSideMenuItem(variant, state, capitalize(variant), 'user')),
+    'mobile-top-menu': (variant, state) => renderPhoneFrame(renderMobileTopMenu(state))
 };
 
 function renderGalleryInstance(elementKey, variant, state) {

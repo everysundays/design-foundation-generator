@@ -154,3 +154,14 @@ body {
   display: grid;
   gap: var(--pg-space-2);
 }
+
+/* A phone-width frame around a mobile specimen (Mobile top menu and any
+   sibling mobile specimens). Chrome, not a themed element - the frame itself
+   carries no data-part/data-element. */
+.gallery-phone {
+  inline-size: min(100%, 22.5rem);
+  border: var(--pg-border-width) solid var(--border);
+  border-radius: var(--pg-radius-2xl);
+  overflow: hidden;
+  background: var(--background);
+}
