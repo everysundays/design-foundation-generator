@@ -72,7 +72,7 @@ const FORM_STATES = ['default', 'hover', 'focus', 'disabled'];
 const ELEMENT_CATEGORIES = [
     { key: 'actions',    label: 'Actions',    elements: ['button'] },
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
-    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast'] },
+    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
     { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
@@ -139,7 +139,9 @@ const ELEMENTS = [
     _el('combobox', 'Combobox', null, FORM_STATES,
         [_bg(), _text(), _colorPart('placeholder', 'Placeholder'), _icon(), _border(), _radius(), _paddingXY(), _shadow(), _ring()]),
     _el('toast', 'Toast', ['default', 'destructive'], ['default'],
-        [_bg(), _border(), _radius(), _padding(), _gap(), _shadow(), _icon(), _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')])
+        [_bg(), _border(), _radius(), _padding(), _gap(), _shadow(), _icon(), _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')]),
+    _el('progress', 'Progress', null, ['default'],
+        [_colorPart('track', 'Track'), _colorPart('indicator', 'Indicator'), _radius(), _spacePart('height', 'Height')])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -378,6 +380,9 @@ const SEED_SPEC = {
             default: {},
             destructive: { 'border.color': 'color.destructive', icon: 'color.destructive', 'title.color': 'color.destructive', close: 'color.destructive' }
         }
+    },
+    progress: {
+        base: { track: 'color.secondary', indicator: 'color.primary', radius: 'radius.full', height: 'space.2' }
     }
 };
 
@@ -720,6 +725,15 @@ function renderDropdownMenu(state, itemsHtml) {
         '</div>';
 }
 
+// The root IS the track (its own background/radius/height paint the
+// unfilled bar); the indicator is a child whose fill amount is a
+// CSS-internal state token (--_value), not a design token - it varies per
+// instance/at runtime, never per variant or theme.
+function renderProgress(state, value) {
+    return `<div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}" ${rootAttrs('progress', null, state, 'track', { attrs: `style="--_value: ${value}%"` })}>` +
+        `<span class="ds-progress-indicator" data-part="indicator"></span></div>`;
+}
+
 const GALLERY_RENDERERS = {
     button: (variant, state) => renderButton(variant, state),
     input: (variant, state) =>
@@ -812,7 +826,9 @@ const GALLERY_RENDERERS = {
         `<p class="ds-toast-title" data-part="title">${variant === 'destructive' ? 'Something went wrong' : 'Saved'}</p>` +
         `<p class="ds-toast-description" data-part="description">${variant === 'destructive' ? 'There was a problem with your request.' : 'Your changes have been saved.'}</p>` +
         galleryIcon('x', 'ds-toast-close', 'close') +
-        '</div>'
+        '</div>',
+    progress: (variant, state) =>
+        `<div class="gallery-stack">` + [25, 50, 75].map(v => renderProgress(state, v)).join('') + '</div>'
 };
 
 function renderGalleryInstance(elementKey, variant, state) {

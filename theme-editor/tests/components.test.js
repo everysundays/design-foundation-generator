@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -179,6 +179,25 @@ SOURCES.forEach(source => {
 ok(g.componentVarLines({}, 'tailwind').includes('  --toast-destructive-border-color: var(--destructive);'), 'toast destructive border line');
 ok(g.componentVarLines({}, 'tailwind').includes('  --toast-default-title-type-family: var(--type-label-family);'), 'toast title type expands');
 
+// --- Progress spot checks -----------------------------------------------
+ok(g.propKind('progress', 'track') === 'color', 'progress.track kind');
+ok(g.propKind('progress', 'indicator') === 'color', 'progress.indicator kind');
+ok(g.propKind('progress', 'radius') === 'radius', 'progress.radius kind');
+ok(g.propKind('progress', 'height') === 'space', 'progress.height kind');
+ok(g.ELEMENTS.find(el => el.key === 'progress').variants === null, 'progress has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'progress').states) === JSON.stringify(['default']), 'progress has only the default state');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['progress.track'] === 'color.secondary', `${source}: progress track seed`);
+    ok(seeds['progress.indicator'] === 'color.primary', `${source}: progress indicator seed`);
+    ok(seeds['progress.radius'] === (source === 'atlassian' ? 'radius.radius.full' : 'radius.full'), `${source}: progress radius seed`);
+    ok(seeds['progress.height'] === (source === 'atlassian' ? 'space.space.100' : 'space.2'), `${source}: progress height seed`);
+});
+ok(g.componentVarLines({}, 'tailwind').includes('  --progress-track: var(--secondary);'), 'progress track line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --progress-indicator: var(--primary);'), 'progress indicator line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --progress-radius: var(--radius-full);'), 'progress radius line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --progress-height: var(--space-2);'), 'progress height line');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -249,12 +268,17 @@ ok(wiring.includes('[data-element="toast"][data-variant="default"] {\n  --_bg: v
 ok(wiring.includes('[data-element="toast"][data-variant="destructive"] {\n  --_bg: var(--toast-destructive-bg);'), 'toast destructive block');
 ok(wiring.includes('--_close: var(--toast-default-close);'), 'toast close private');
 ok(!wiring.includes('[data-element="toast"][data-variant="default"]:is(') && !wiring.includes('[data-element="toast"][data-variant="destructive"]:is('), 'toast has no state rules');
+ok(wiring.includes('[data-element="progress"] {\n  --_track: var(--progress-track);'), 'progress default block');
+ok(wiring.includes('--_indicator: var(--progress-indicator);'), 'progress indicator private');
+ok(wiring.includes('--_radius: var(--progress-radius);'), 'progress radius private');
+ok(wiring.includes('--_height: var(--progress-height);'), 'progress height private');
+ok(!wiring.includes('[data-element="progress"]:is('), 'progress has no state rules');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
     const css = fs.readFileSync(path.join(root, 'preview', 'components.css'), 'utf8');
     const defined = new Set(wiring.match(/--_[a-z0-9-]+(?=:)/g));
-    const cssState = new Set(['--_ring-on', '--_mark-on', '--_thumb-shift']); // CSS-internal state tokens
+    const cssState = new Set(['--_ring-on', '--_mark-on', '--_thumb-shift', '--_value']); // CSS-internal state tokens
     const used = new Set(css.match(/--_[a-z0-9-]+/g));
     used.forEach(v => ok(defined.has(v) || cssState.has(v), `components.css reads undefined private ${v}`));
     ok(!css.includes('!important'), 'components.css has no !important');
@@ -313,11 +337,13 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('dialog') === 'surfaces', 'dialog categorized as surfaces');
     ok(g.categoryOf('dropdown-menu') === 'navigation', 'dropdown-menu categorized as navigation');
     ok(g.categoryOf('combobox') === 'forms', 'combobox categorized as forms');
+    ok(g.categoryOf('progress') === 'feedback', 'progress categorized as feedback');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
 ok(html.indexOf('id="gallery-combobox"') > html.indexOf('id="gallery-switch"'), 'combobox appears after switch in the gallery');
 ok(html.indexOf('id="gallery-toast"') > html.indexOf('id="gallery-tooltip"'), 'toast appears after tooltip in the gallery');
+ok(html.indexOf('id="gallery-progress"') > html.indexOf('id="gallery-toast"'), 'progress appears after toast in the gallery');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -372,6 +398,20 @@ ok(html.indexOf('id="gallery-toast"') > html.indexOf('id="gallery-tooltip"'), 't
     ok(toastHtml.includes('data-part="description"'), 'toast description part');
     ok(toastHtml.includes('data-part="close"'), 'toast close part');
     ok(!/<h[1-6][ >]/.test(toastHtml), 'toast copy is not a heading element');
+}
+// --- Progress gallery markup -------------------------------------------------
+{
+    const progressHtml = g.renderGalleryInstance('progress', null, 'default');
+    ok(progressHtml.startsWith('<div class="gallery-stack">'), 'progress instances wrapped in a gallery-stack');
+    ok((progressHtml.match(/role="progressbar"/g) || []).length === 3, 'three progressbar roots');
+    ok((progressHtml.match(/data-element="progress"/g) || []).length === 3, 'three progress instances');
+    ok((progressHtml.match(/data-part="track"/g) || []).length === 3, 'three track parts (the roots)');
+    ok((progressHtml.match(/data-part="indicator"/g) || []).length === 3, 'three indicator parts');
+    ok(!progressHtml.includes('data-variant='), 'progress carries no data-variant (no variants)');
+    ok(progressHtml.includes('--_value: 25%') && progressHtml.includes('--_value: 50%') && progressHtml.includes('--_value: 75%'), 'fills at 25/50/75%');
+    ok(progressHtml.includes('aria-valuenow="25"') && progressHtml.includes('aria-valuenow="50"') && progressHtml.includes('aria-valuenow="75"'), 'aria-valuenow matches each fill');
+    ok(!progressHtml.includes('gallery-stage'), 'progress instance carries no nested stage markup');
+    ok(!/<h[1-6][ >]/.test(progressHtml), 'progress has no heading copy');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

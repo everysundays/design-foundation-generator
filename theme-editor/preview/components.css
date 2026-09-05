@@ -681,3 +681,26 @@
     color: var(--_close);
     cursor: pointer;
 }
+
+/* --- Progress --------------------------------------------------------------
+ * The root is the track: its own background/radius/block-size paint the
+ * unfilled bar and clip the indicator's square corners to match. The
+ * indicator's fill amount (--_value) is a CSS-internal state token set
+ * inline per instance, like --_thumb-shift - it is not a design token.
+ */
+
+.ds-progress {
+    display: block;
+    inline-size: 100%;
+    block-size: var(--_height);
+    overflow: hidden;
+    background: var(--_track);
+    border-radius: var(--_radius);
+}
+
+.ds-progress-indicator {
+    display: block;
+    block-size: 100%;
+    inline-size: var(--_value, 0%);
+    background: var(--_indicator);
+}
