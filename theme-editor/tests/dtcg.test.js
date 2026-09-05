@@ -515,4 +515,81 @@ test('parseTokensJson: no $extensions.semantic falls back to the 33 roles + any 
     assert.match(parsed.warnings[0], /brand\.500/);
 });
 
+// --- Non-color semantic tokens (card 9: "Semantic space tokens") -----------
+
+test('buildTokensJson: a space token exports as a real alias under global.semantic, and a component ref to it translates to {semantic.<ref>}', () => {
+    const base = tailwindCtx();
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'space', name: 'card-padding', ref: 'space.6' }];
+    const ctxWithToken = {
+        ...base,
+        components: { ...base.components, 'card.padding': 'space.card-padding' },
+        semanticTokens
+    };
+    const f = buildTokensJson(ctxWithToken);
+
+    assert.deepStrictEqual(f.global.semantic.space['card-padding'], { $type: 'spacing', $value: '{space.6}' });
+    assert.deepStrictEqual(f.component.component.card.padding, { $type: 'spacing', $value: '{semantic.space.card-padding}' });
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })) });
+
+    const n = assertAllRefsResolve(f, 'tailwind + space token');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with a space token is deep-equal');
+    assert.deepStrictEqual(
+        parsed.semanticTokens.find(t => t.kind === 'space'),
+        { kind: 'space', name: 'card-padding', ref: 'space.6' },
+        'round-trip keeps the token, with its resolved target ref restored from global.semantic'
+    );
+    // Explicit, not just "assertAllRefsResolve passed": a missed translation
+    // would silently DROP this leaf (parseRef rejects "semantic.…") rather
+    // than fail the resolve check, since the leaf would simply not exist.
+    assert.strictEqual(parsed.components['card.padding'], 'space.card-padding', 'the component leaf survives the {semantic….} round-trip, not dropped');
+});
+
+test('buildTokensJson: the semantic extension key is written for a non-color token alone, even with the color roles exactly the 33 defaults', () => {
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'space', name: 'card-padding', ref: 'space.6' }];
+    const f = buildTokensJson({ ...ctx, semanticTokens });
+    assert.notStrictEqual(f.global.$extensions['theme-editor'].semantic, undefined, 'a non-color token alone still triggers the extension key');
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })) });
+});
+
+test('buildTokensJson: no global.semantic key at all when there is no non-color token (an unmodified export stays byte-identical to before this card)', () => {
+    assert.strictEqual(file.global.semantic, undefined);
+    assert.strictEqual(buildTokensJson(atlassianCtx()).global.semantic, undefined);
+});
+
+test('atlassian source: a space token\'s own component ref is source-independent - only global.semantic\'s target changes', () => {
+    const abase = atlassianCtx();
+    // Realistic shape: state.semanticTokens always carries the (33+) color
+    // roles alongside any non-color addition - never a non-color token alone.
+    const spaceToken = { kind: 'space', name: 'card-padding', ref: 'space.space.300' };
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), spaceToken];
+    const actxWithToken = {
+        ...abase,
+        components: { ...abase.components, 'card.padding': 'space.card-padding' },
+        semanticTokens
+    };
+    const af = buildTokensJson(actxWithToken);
+    assert.deepStrictEqual(af.global.semantic.space['card-padding'], { $type: 'spacing', $value: '{space.space.300}' });
+    assert.deepStrictEqual(af.component.component.card.padding, { $type: 'spacing', $value: '{semantic.space.card-padding}' });
+    assertAllRefsResolve(af, 'atlassian + space token');
+
+    const { parsed, rebuilt } = roundTrip(af, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, af, 'round-trip with a space token (atlassian) is deep-equal');
+    assert.deepStrictEqual(parsed.semanticTokens.find(t => t.kind === 'space'), spaceToken);
+    assert.strictEqual(parsed.components['card.padding'], 'space.card-padding');
+});
+
+test('parseTokensJson: a non-color extension entry with no value under global.semantic is dropped, with one warning', () => {
+    const base = tailwindCtx();
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'space', name: 'card-padding', ref: 'space.6' }];
+    const f = JSON.parse(JSON.stringify(buildTokensJson({ ...base, semanticTokens })));
+    delete f.global.semantic;   // the alias token is gone, but the extension still lists it
+    const parsed = parseTokensJson(f);
+    assert(!parsed.semanticTokens.some(t => t.kind === 'space'), 'the space token is dropped when it has no value under global.semantic');
+    assert.strictEqual(parsed.warnings.length, 1);
+    assert.match(parsed.warnings[0], /card-padding/);
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

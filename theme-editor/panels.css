@@ -576,3 +576,38 @@
 .fp-summary-entry .fp-type-badge {
   justify-self: start;
 }
+
+/* --- Semantic scale tokens (card 9: space now, radius/border/shadow follow
+   the same shape) --- */
+
+/* The token rows sit above a kind's foundation steps on its own tab (Space
+   tab etc.) - a dashed rule separates the two groups, matching the specials
+   row above the palette ramps on Colors. */
+.fp-entries-tokens {
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px dashed var(--ui-border);
+}
+
+/* One row per existing token on the Summary tab: its name, and a step
+   picker to re-target it (scripts.js setSemanticTokenTarget). */
+.fp-semantic-token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+}
+
+.fp-semantic-target-select {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}

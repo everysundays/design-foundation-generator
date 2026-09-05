@@ -21,8 +21,10 @@ const ctx = vm.createContext({ console });
 // Script-scoped `const`s/`function`s are not properties of the context; lift
 // what the tests need out of the shared global lexical scope.
 const g = vm.runInContext(`({
-    SEMANTIC_COLOR_ROLES, DTCG_COLOR_ROLES, defaultSemanticTokens, semanticNames,
-    isCssIdentifier, semanticNameError, addSemanticToken, normalizeSemanticTokens
+    SEMANTIC_COLOR_ROLES, DTCG_COLOR_ROLES, SEMANTIC_SCALE_KINDS, defaultSemanticTokens, semanticNames,
+    isCssIdentifier, semanticNameError, addSemanticToken, normalizeSemanticTokens,
+    resolveSemanticTarget, varCollision, semanticVarCollisionMessage, remapSemanticTokens, semanticVarLines,
+    parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale
 })`, ctx);
 
 // vm-context arrays/objects carry that realm's own Array/Object prototypes,
@@ -135,5 +137,107 @@ eq(new Set(g.SEMANTIC_COLOR_ROLES), new Set(g.DTCG_COLOR_ROLES), 'SEMANTIC_COLOR
     // Trimmed on the way in, same as addSemanticToken.
     eq(g.normalizeSemanticTokens([{ kind: 'color', name: '  warning  ' }]), [{ kind: 'color', name: 'warning' }], 'a name is trimmed during normalization');
 }
+
+// --- Non-color semantic scale tokens (card 9: "Semantic space tokens") -----
+// Parameterised over every kind in SEMANTIC_SCALE_KINDS; only `space` is
+// filled in here - cards 10-13 add their own case object (radius/
+// borderWidth/borderStyle/shadow) without touching the loop below.
+ok(JSON.stringify(g.SEMANTIC_SCALE_KINDS) === JSON.stringify(['space', 'radius', 'borderWidth', 'borderStyle', 'shadow']),
+    'SEMANTIC_SCALE_KINDS lists the five non-color scale kinds, space first');
+
+const SCALE_TOKEN_CASES = {
+    space: {
+        name: 'card-padding',
+        stepName: '6',                       // Tailwind space.6 = 1.5rem = 24px
+        atlassianStepName: 'space.300',       // the Atlassian entry at the same 24px
+        stepCollisionName: '4',               // an existing Tailwind step, verbatim
+        crossSourceCollisionName: '100',      // not a Tailwind step; matches Atlassian's "space.100" by var
+        crossSourceCollisionStepName: 'space.100'
+    }
+    // radius: { … }, borderWidth: { … }, borderStyle: { … }, shadow: { … }  (cards 10-13)
+};
+
+Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
+    const stepRef = g.scaleRef(kind, c.stepName);
+    const tokenRef = g.scaleRef(kind, c.name);
+    const token = { kind, name: c.name, ref: stepRef };
+
+    // --- resolution: a token's own ref vs the step it targets --------------
+    ok(g.resolveSemanticTarget([token], tokenRef) === stepRef, `${kind}: resolveSemanticTarget(token ref) -> its target`);
+    ok(g.resolveSemanticTarget([token], stepRef) === null, `${kind}: resolveSemanticTarget(a literal step ref) -> null (token before step, but a step ref is not a token)`);
+    ok(g.resolveSemanticTarget([token], g.scaleRef(kind, 'no-such-token')) === null, `${kind}: resolveSemanticTarget(unknown name) -> null`);
+    ok(g.resolveSemanticTarget([{ kind: 'color', name: c.name }], `color.${c.name}`) === null, `${kind}: resolveSemanticTarget never matches a color entry`);
+
+    // --- refToVar: the token's var is stable and differs from its target's -
+    ok(typeof g.refToVar(tokenRef) === 'string' && g.refToVar(tokenRef), `${kind}: refToVar(token ref) is a non-empty string`);
+    ok(g.refToVar(tokenRef) !== g.refToVar(stepRef), `${kind}: token var differs from its target step's var`);
+    ok(g.refToVar(tokenRef) === g.refToVar(g.scaleRef(kind, c.name)), `${kind}: refToVar(token ref) is stable across calls`);
+
+    // --- varCollision: every FOUNDATION source's steps + every token --------
+    {
+        const stepHit = g.varCollision(kind, c.stepCollisionName, []);
+        ok(stepHit && stepHit.what === 'step' && stepHit.source === 'tailwind' && stepHit.name === c.stepCollisionName,
+            `${kind}: varCollision refuses a name equal to an existing Tailwind step ("${c.stepCollisionName}")`);
+
+        const crossHit = g.varCollision(kind, c.crossSourceCollisionName, []);
+        ok(crossHit && crossHit.what === 'step' && crossHit.source === 'atlassian' && crossHit.name === c.crossSourceCollisionStepName,
+            `${kind}: varCollision refuses a name equal to an Atlassian-only step ("${c.crossSourceCollisionName}" -> "${c.crossSourceCollisionStepName}"), checked regardless of which source is active`);
+
+        const tokenHit = g.varCollision(kind, c.name, [token]);
+        ok(tokenHit && tokenHit.what === 'token' && tokenHit.name === c.name, `${kind}: varCollision refuses a name equal to an existing token`);
+        ok(g.varCollision(kind, c.name, [token], 0) === null, `${kind}: excludeIndex skips the token being checked against itself`);
+
+        ok(g.varCollision(kind, 'totally-unused-name-xyz', [token]) === null, `${kind}: varCollision is null for a genuinely free name`);
+
+        ok(typeof g.semanticVarCollisionMessage(c.name, tokenHit) === 'string' && g.semanticVarCollisionMessage(c.name, tokenHit).includes(c.name),
+            `${kind}: semanticVarCollisionMessage(token collision) names the token`);
+        ok(typeof g.semanticVarCollisionMessage(c.stepCollisionName, stepHit) === 'string' && g.semanticVarCollisionMessage(c.stepCollisionName, stepHit).includes(c.stepCollisionName),
+            `${kind}: semanticVarCollisionMessage(step collision) names the candidate`);
+        ok(g.semanticVarCollisionMessage(c.name, null) === null, 'semanticVarCollisionMessage(name, null) -> null');
+
+        // Adding a foundation step named like a token (or a custom step
+        // that happens to collide) is refused the same way - a custom entry
+        // pushed onto Tailwind's scale is caught exactly like a built-in one.
+        g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+        const custom = g.emptyCustomScale();
+        custom[kind].push({ name: 'custom-step-xyz', value: '1rem', rem: 1, px: 16 });
+        g.setCustomScaleFor('tailwind', custom);
+        const customHit = g.varCollision(kind, 'custom-step-xyz', []);
+        ok(customHit && customHit.what === 'step' && customHit.source === 'tailwind' && customHit.name === 'custom-step-xyz',
+            `${kind}: varCollision also catches a just-added custom step`);
+        g.setCustomScaleFor('tailwind', g.emptyCustomScale());
+    }
+
+    // --- addSemanticToken / normalizeSemanticTokens (non-color shape) ------
+    {
+        eq(g.addSemanticToken([], kind, c.name, stepRef), [token], `${kind}: addSemanticToken appends {kind, name, ref}`);
+        eq(g.addSemanticToken([], 'color', 'warning'), [{ kind: 'color', name: 'warning' }], 'addSemanticToken(color) still carries no ref field');
+
+        eq(g.normalizeSemanticTokens([token]), [token], `${kind}: a valid non-color token survives normalize as-is`);
+        eq(g.normalizeSemanticTokens([{ kind, name: c.name }]), g.defaultSemanticTokens(), `${kind}: a non-color entry with no ref is dropped (falls back to the defaults when nothing else survives)`);
+        eq(g.normalizeSemanticTokens([{ kind, name: c.name, ref: 'not a ref!!' }]), g.defaultSemanticTokens(), `${kind}: a non-color entry with an unparseable ref is dropped`);
+        const withBoth = [{ kind: 'color', name: 'primary' }, token];
+        eq(g.normalizeSemanticTokens(withBoth), withBoth, `${kind}: a color token and a non-color token coexist through normalize`);
+    }
+
+    // --- remapSemanticTokens: a Foundation switch keeps the name, moves ref
+    {
+        const toAtlassian = g.remapSemanticTokens([token], 'tailwind', 'atlassian');
+        const expectedAtlassianRef = g.scaleRef(kind, c.atlassianStepName);
+        eq(toAtlassian, [{ kind, name: c.name, ref: expectedAtlassianRef }], `${kind}: remapSemanticTokens tailwind -> atlassian re-targets the nearest step, keeps the name`);
+        const backToTailwind = g.remapSemanticTokens(toAtlassian, 'atlassian', 'tailwind');
+        eq(backToTailwind, [token], `${kind}: remapSemanticTokens atlassian -> tailwind returns to the original target`);
+        const withColor = [{ kind: 'color', name: 'primary' }];
+        eq(g.remapSemanticTokens(withColor, 'tailwind', 'atlassian'), withColor, `${kind}: remapSemanticTokens leaves color tokens untouched`);
+    }
+
+    // --- semanticVarLines: the design-system CSS's own definition ----------
+    {
+        ok(g.semanticVarLines([], kind) === '', `${kind}: semanticVarLines([]) is ''`);
+        ok(g.semanticVarLines([{ kind: 'color', name: 'x' }], kind) === '', `${kind}: semanticVarLines ignores a different kind`);
+        const expectedLine = `  ${g.refToVar(tokenRef)}: var(${g.refToVar(stepRef)});`;
+        ok(g.semanticVarLines([token], kind) === expectedLine, `${kind}: semanticVarLines emits "${expectedLine}"`);
+    }
+});
 
 console.log(`semantic.test.js: ${checks} checks passed`);

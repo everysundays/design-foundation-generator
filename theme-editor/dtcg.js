@@ -150,13 +150,24 @@ function buildTokensJson(ctx) {
     const components = ctx.components || {};
     const typeSets = Array.isArray(ctx.typeSets) && ctx.typeSets.length ? ctx.typeSets : dtcgTypeSetsFromVars(vars.light);
 
-    // The semantic color-role list is the 33 built-ins by default; ctx from
-    // a system carrying user-added tokens (or a renamed/removed built-in,
-    // once a later card supports that) passes its own list instead.
-    const ctxSemanticTokens = Array.isArray(ctx.semanticTokens)
-        ? ctx.semanticTokens.filter(t => t && t.kind === 'color' && typeof t.name === 'string' && t.name)
+    // The full semantic-token list ctx carries (color AND non-color kinds -
+    // card 9 generalises this beyond card 8's color-only reading). The
+    // color-role list is the 33 built-ins by default; ctx from a system
+    // carrying user-added tokens (or a renamed/removed built-in, once a
+    // later card supports that) passes its own list instead.
+    const ctxAllTokens = Array.isArray(ctx.semanticTokens)
+        ? ctx.semanticTokens.filter(t => t && typeof t.kind === 'string' && typeof t.name === 'string' && t.name)
         : null;
-    const roles = ctxSemanticTokens ? ctxSemanticTokens.map(t => t.name) : DTCG_COLOR_ROLES;
+    const ctxColorTokens = ctxAllTokens ? ctxAllTokens.filter(t => t.kind === 'color') : null;
+    const ctxNonColorTokens = ctxAllTokens ? ctxAllTokens.filter(t => t.kind !== 'color' && typeof t.ref === 'string' && t.ref) : [];
+    // Checked against ctxAllTokens (was the list provided at all?), never
+    // ctxColorTokens itself - a provided list that happens to carry zero
+    // color entries (a fixture isolating a single non-color token, say) is
+    // still "provided" and must not fall back to the 33 defaults; an EMPTY
+    // array is truthy, so testing ctxColorTokens directly here would do
+    // exactly that and silently drop every role (including shadow-color,
+    // which every shadow step's {color.shadow-color} reference depends on).
+    const roles = ctxAllTokens ? ctxColorTokens.map(t => t.name) : DTCG_COLOR_ROLES;
     // Set comparison, not positional: the live app's own default order
     // (scripts.js/semantic.js SEMANTIC_COLOR_ROLES, grouped for the Summary
     // tab) is not this file's DTCG_COLOR_ROLES order, even though both list
@@ -165,6 +176,29 @@ function buildTokensJson(ctx) {
     // extension key.
     const roleSet = new Set(roles);
     const rolesAreDefault = roleSet.size === DTCG_COLOR_ROLES.length && DTCG_COLOR_ROLES.every(r => roleSet.has(r));
+    const tokensAreDefault = rolesAreDefault && ctxNonColorTokens.length === 0;
+    // Non-color tokens as real alias tokens under global.semantic.<kind-path>
+    // (KIND_PREFIX - the exact same group nesting a plain ref already uses,
+    // e.g. borderWidth -> "border.width") - so `{semantic.space.card-padding}`
+    // resolves inside the file for any DTCG consumer, not only this app.
+    const semanticGroup = {};
+    ctxNonColorTokens.forEach(t => {
+        const $type = DTCG_TYPE_OF_KIND[t.kind];
+        if (!$type) return;
+        const segments = (KIND_PREFIX[t.kind] || t.kind).split('.');
+        let node = semanticGroup;
+        segments.forEach(seg => {
+            if (!dtcgIsGroup(node[seg])) node[seg] = {};
+            node = node[seg];
+        });
+        node[t.name] = dtcgToken($type, `{${t.ref}}`);
+    });
+    // Every non-color token's own ref (e.g. 'space.card-padding') - a
+    // component pointed at one of these is exported as
+    // "{semantic.<ref>}" instead of "{<ref>}" (see the component loop
+    // below), since global.<kind-prefix> has no entry for a token's name,
+    // only global.semantic.<kind-path> does.
+    const nonColorTokenRefs = new Set(ctxNonColorTokens.map(t => scaleRef(t.kind, t.name)));
 
     const scaleGroup = (kind, type) => {
         const group = {};
@@ -255,12 +289,16 @@ function buildTokensJson(ctx) {
         $extensions: {
             'theme-editor': Object.assign(
                 { version: DTCG_FILE_VERSION, name: ctx.name || 'Untitled', source, families: families.slice() },
-                (ctxSemanticTokens && !rolesAreDefault)
-                    ? { semantic: { tokens: ctxSemanticTokens.map(({ kind, name }) => ({ kind, name })) } }
+                (ctxAllTokens && !tokensAreDefault)
+                    ? { semantic: { tokens: ctxAllTokens.map(({ kind, name }) => ({ kind, name })) } }
                     : null
             )
         }
     };
+    // Only when a non-color token actually exists - an unmodified export
+    // (no semantic tokens beyond the 33 defaults) carries no `semantic` key
+    // at all, keeping it byte-identical to before this card.
+    if (Object.keys(semanticGroup).length) global.semantic = semanticGroup;
 
     const colorSet = mode => {
         const color = {};
@@ -293,7 +331,12 @@ function buildTokensJson(ctx) {
             if (!dtcgIsGroup(node[seg])) node[seg] = {};
             node = node[seg];
         }
-        node[segments[segments.length - 1]] = dtcgToken($type, `{${ref}}`);
+        // A ref naming a non-color semantic token (e.g. 'space.card-padding')
+        // has no entry under global.<kind> - only global.semantic.<kind-path>
+        // does (built above) - so it is written as "{semantic.<ref>}" instead
+        // of the plain "{<ref>}" a literal foundation step gets.
+        const exported = nonColorTokenRefs.has(ref) ? `semantic.${ref}` : ref;
+        node[segments[segments.length - 1]] = dtcgToken($type, `{${exported}}`);
     });
 
     return {
@@ -418,15 +461,32 @@ function parseTokensJson(obj) {
         result.links.dark = Object.assign({}, result.links.light);
     }
 
-    // Semantic color-role list: the extension's own list when the file
-    // carries one (a token with no color value in either mode is dropped -
-    // it named a role that no longer resolves to anything); otherwise every
-    // built-in role plus any other identifier-valid leaf the color sets
-    // above just populated result.vars with (a plain export with no
-    // "theme-editor" extension, or a foreign Tokens Studio file, that still
-    // carries a non-built-in color role - see readColorSet's generic leaf
-    // copy). Computed here, before font/type parsing adds their own keys to
-    // result.vars, so this only ever scans color-role leaves.
+    // Semantic token list: the extension's own list when the file carries
+    // one (a color entry with no value in either mode, or a non-color entry
+    // with no value under global.semantic, is dropped - it named something
+    // that no longer resolves to anything); otherwise every built-in color
+    // role plus any other identifier-valid color leaf the color sets above
+    // just populated result.vars with (a plain export with no "theme-editor"
+    // extension, or a foreign Tokens Studio file, that still carries a
+    // non-built-in color role - see readColorSet's generic leaf copy; a
+    // foreign file has no non-color tokens to recover this way, since their
+    // value lives only under our own extension's bookkeeping). Computed
+    // here, before font/type parsing adds their own keys to result.vars, so
+    // the color fallback only ever scans color-role leaves.
+    //
+    // A non-color token's value has no per-mode set to live in the way
+    // color does - it is the alias token under global.semantic.<kind-path>
+    // (built by buildTokensJson, KIND_PREFIX is the exact same group nesting
+    // a plain ref already uses), read back here into `ref`.
+    const semanticGroupRef = (kind, name) => {
+        const segments = (KIND_PREFIX[kind] || kind).split('.');
+        let node = global.semantic;
+        for (let i = 0; i < segments.length; i++) {
+            if (!node || typeof node !== 'object') return null;
+            node = node[segments[i]];
+        }
+        return node && typeof node === 'object' && node[name] ? dtcgRefOf(node[name].$value) : null;
+    };
     const extSemanticTokens = ext.semantic && Array.isArray(ext.semantic.tokens) ? ext.semantic.tokens : null;
     const colorLeafNames = new Set([...Object.keys(result.vars.light), ...Object.keys(result.vars.dark)]);
     if (extSemanticTokens) {
@@ -434,14 +494,24 @@ function parseTokensJson(obj) {
         result.semanticTokens = [];
         extSemanticTokens.forEach(t => {
             if (!t || typeof t.kind !== 'string' || typeof t.name !== 'string' || !t.name) return;
-            if (t.kind === 'color' && !colorLeafNames.has(t.name)) {
-                result.warnings.push(`semantic token "${t.name}": no color value in light or dark - dropped`);
-                return;
-            }
             const key = `${t.kind}:${t.name}`;
             if (seen.has(key)) return;
+            if (t.kind === 'color') {
+                if (!colorLeafNames.has(t.name)) {
+                    result.warnings.push(`semantic token "${t.name}": no color value in light or dark - dropped`);
+                    return;
+                }
+                seen.add(key);
+                result.semanticTokens.push({ kind: t.kind, name: t.name });
+                return;
+            }
+            const ref = semanticGroupRef(t.kind, t.name);
+            if (!ref) {
+                result.warnings.push(`semantic token "${t.kind}.${t.name}": no value in global.semantic - dropped`);
+                return;
+            }
             seen.add(key);
-            result.semanticTokens.push({ kind: t.kind, name: t.name });
+            result.semanticTokens.push({ kind: t.kind, name: t.name, ref });
         });
     } else {
         const extra = [];
@@ -494,11 +564,17 @@ function parseTokensJson(obj) {
         });
     });
 
-    // component.* -> components[id] = ref, undoing the "-<state>" leaf rule
+    // component.* -> components[id] = ref, undoing the "-<state>" leaf rule.
+    // A ref naming a non-color semantic token round-trips through the exact
+    // string after "semantic." (buildTokensJson's `{semantic.<ref>}`) - that
+    // remainder already IS the in-app ref (e.g. "space.card-padding"), same
+    // grammar parseRef expects, so no separate kind/name lookup is needed.
     if (componentName) {
         dtcgLeaves(obj[componentName].component, '').forEach(([path, tok]) => {
-            const ref = dtcgRefOf(tok.$value);
-            if (!ref || !parseRef(ref)) return;
+            let ref = dtcgRefOf(tok.$value);
+            if (!ref) return;
+            if (ref.startsWith('semantic.')) ref = ref.slice('semantic.'.length);
+            if (!parseRef(ref)) return;
             const segments = path.split('.');
             const m = segments[segments.length - 1].match(/^(.+)-(hover|focus|active|disabled)$/);
             if (m) { segments[segments.length - 1] = m[1]; segments.push(m[2]); }

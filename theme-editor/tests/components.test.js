@@ -146,6 +146,21 @@ ok(!g.componentVarLines({}, 'atlassian').includes('--space-space-'), 'atlassian 
 SOURCES.forEach(source => {
     ok(g.componentVarLines({ 'card.bg': 'color.primary' }, source).includes('  --card-bg: var(--primary);'), `${source}: explicit color.* ref emits var(--role)`);
 });
+// A component entry pointed at a semantic (non-color) SCALE token (e.g.
+// space.card-padding, card 9) needs no special-casing here: refToVar just
+// derives the var name syntactically, so it emits var(--space-card-padding)
+// exactly like any other ref - cssVarBlockFor/semantic.js semanticVarLines
+// is the one place that has to actually DEFINE that var (against whichever
+// step the token currently targets).
+SOURCES.forEach(source => {
+    ok(g.componentVarLines({ 'card.padding': 'space.card-padding' }, source).includes('  --card-padding: var(--space-card-padding);'), `${source}: explicit space.<token> ref emits var(--space-<token>)`);
+});
+// remapComponentTokens leaves a component pointed AT a token untouched
+// across a Foundation switch - 'card-padding' never matches a real step
+// name of either source, so remapRef returns it unchanged; only the
+// token's OWN target (semantic.js remapSemanticTokens, card 9) moves.
+ok(g.remapComponentTokens({ 'card.padding': 'space.card-padding' }, 'tailwind', 'atlassian')['card.padding'] === 'space.card-padding',
+    'remapComponentTokens leaves a token ref untouched (tailwind -> atlassian)');
 {
     // one line per element x variant x part x prop x state (type = 5)
     let expected = 0;

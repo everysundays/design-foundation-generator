@@ -20,7 +20,7 @@ const ctx = vm.createContext({ console });
 });
 // Script-scoped `const`s/`function`s are not properties of the context; lift
 // what the test needs out of the shared global lexical scope.
-const g = vm.runInContext('({ buildColorsPanelHtml, panelTip })', ctx);
+const g = vm.runInContext('({ buildColorsPanelHtml, panelTip, buildScalePanelHtml, buildSummaryPanelHtml })', ctx);
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -114,6 +114,38 @@ function baseCtx(overrides) {
 {
     const mark = { count: 0, ids: [], roles: [], used: false, active: false };
     ok(g.panelTip('color.primary → neutral-900 (#171717)', '', mark) === 'color.primary → neutral-900 (#171717)', 'panelTip(name, "", mark) emits name alone as the first line');
+}
+
+// --- semantic scale tokens (card 9: buildScalePanelHtml token row) ---------
+{
+    const token = { kind: 'space', name: 'card-padding', ref: 'space.6' };
+    const withToken = { source: 'tailwind', marks: {}, semanticTokens: [token] };
+    const html = g.buildScalePanelHtml('space', withToken, { allowAdd: true });
+    ok(html.includes('data-ref="space.card-padding"'), 'the token gets its own assignable data-ref');
+    const tokenIdx = html.indexOf('data-ref="space.card-padding"');
+    const firstStepIdx = html.indexOf('data-ref="space.0"');
+    ok(firstStepIdx !== -1 && tokenIdx !== -1 && tokenIdx < firstStepIdx, 'the token row renders above the first foundation-step row');
+    ok(html.includes('fp-entries-tokens'), 'token rows sit in their own wrapper');
+
+    const noToken = { source: 'tailwind', marks: {}, semanticTokens: [] };
+    const plainHtml = g.buildScalePanelHtml('space', noToken, { allowAdd: true });
+    ok(!plainHtml.includes('fp-entries-tokens') && !plainHtml.includes('data-ref="space.card-padding"'), 'no token row when semanticTokens has none of this kind');
+
+    // A token's own count badge is independent of the step it targets.
+    const marks = { 'space.card-padding': { count: 2, ids: ['card.padding', 'button.gap'], roles: [], used: true, active: false } };
+    const markedHtml = g.buildScalePanelHtml('space', { source: 'tailwind', marks, semanticTokens: [token] }, { allowAdd: true });
+    const tokenBtn = markedHtml.slice(markedHtml.indexOf('data-ref="space.card-padding"') - 200, markedHtml.indexOf('data-ref="space.card-padding"') + 400);
+    ok(tokenBtn.includes('data-count="2"'), 'the token row carries its own count badge, from marks[token ref]');
+}
+
+// --- semantic scale tokens (card 9: buildSummaryPanelHtml Space section) ---
+{
+    const html = g.buildSummaryPanelHtml({ source: 'tailwind', marks: {}, semanticTokens: [] });
+    ok(html.includes('data-add-semantic-kind="space"'), 'the Space section\'s add-row is reachable even with zero tokens');
+    ok(html.includes('data-add-semantic-confirm'), 'the add-row has a confirm control');
+
+    const withToken = g.buildSummaryPanelHtml({ source: 'tailwind', marks: {}, semanticTokens: [{ kind: 'space', name: 'card-padding', ref: 'space.6' }] });
+    ok(withToken.includes('data-semantic-target="space.card-padding"'), 'an existing token gets a step-picker keyed by its own ref');
 }
 
 console.log(`panels.test.js: ${checks} checks passed`);

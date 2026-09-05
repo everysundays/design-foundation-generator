@@ -493,12 +493,12 @@ function addSemanticColorToken(name, hex, swatchName) {
 function addCustomScaleEntry(kind, rawName, rawValue) {
     const name = String(rawName || '').trim();
     const value = String(rawValue || '').trim();
-    const label = (typeof PANEL_KIND_LABELS !== 'undefined' && PANEL_KIND_LABELS[kind]) || kind;
     if (!name || !value) return 'Enter a name and a value.';
-    const id = cssIdent(name);
-    if (scaleEntries(activePaletteSource, kind).some(e => cssIdent(e.name) === id)) {
-        return `"${name}" collides with an existing ${label} entry.`;
-    }
+    // Same check (and message) as adding a semantic token of this kind - a
+    // step named like an existing token (or vice versa) is refused either
+    // way, across both Foundation sources. See semantic.js varCollision.
+    const collision = varCollision(kind, name, state.semanticTokens);
+    if (collision) return semanticVarCollisionMessage(name, collision);
     let entry;
     if (kind === 'borderStyle') {
         entry = { name, value, px: null };
@@ -518,6 +518,37 @@ function addCustomScaleEntry(kind, rawName, rawValue) {
     state.customScale[kind].push(entry);
     renderAll();
     return null;
+}
+
+// Adds a semantic scale token (Summary tab's per-kind "Add token" row - see
+// panels.js buildSemanticScaleSectionHtml): `targetStepName` is the picked
+// foundation step's OWN name (e.g. '6'), turned into a ref against the
+// active source. Returns an error string on failure (nothing is changed),
+// or null on success. One undo step.
+function addSemanticScaleToken(kind, rawName, targetStepName) {
+    const name = String(rawName || '').trim();
+    const target = findScaleEntry(activePaletteSource, kind, targetStepName);
+    if (!target) return 'Pick a step.';
+    const nameErr = semanticNameError(name, state.semanticTokens, semanticReservedNames());
+    if (nameErr) return nameErr;
+    const collision = varCollision(kind, name, state.semanticTokens);
+    if (collision) return semanticVarCollisionMessage(name, collision);
+    pushUndo();
+    state.semanticTokens = addSemanticToken(state.semanticTokens, kind, name, scaleRef(kind, target.name));
+    renderAll();
+    return null;
+}
+
+// Re-points an existing semantic token at a different step (the Summary
+// tab's per-row step picker) - every part assigned to the token moves with
+// it in the preview; the parts' own assignments (the token's name) are
+// untouched. One undo step.
+function setSemanticTokenTarget(kind, name, ref) {
+    const i = state.semanticTokens.findIndex(t => t.kind === kind && t.name === name);
+    if (i === -1) return;
+    pushUndo();
+    state.semanticTokens = state.semanticTokens.map((t, idx) => (idx === i ? { ...t, ref } : t));
+    renderAll();
 }
 
 function updateUndoRedoButtons() {
@@ -1312,6 +1343,15 @@ function cssVarBlockFor(vars, links) {
         scaleEntries(source, kind).forEach(entry => lines.push(`  ${refToVar(scaleRef(kind, entry.name))}: ${entry.value};`));
     });
 
+    // Semantic non-color tokens (space.card-padding, …) as var(--space-N)
+    // into whichever step they currently target - see semantic.js
+    // semanticVarLines. Re-targeting a token only ever rewrites this one
+    // line; every part assigned to the token keeps pointing at its var.
+    SEMANTIC_SCALE_KINDS.forEach(kind => {
+        const block = semanticVarLines(state.semanticTokens, kind);
+        if (block) lines.push(block);
+    });
+
     const emitted = new Set();
     linkableColorKeys().forEach(key => {
         if (vars[key] === undefined) return;
@@ -1545,7 +1585,9 @@ function activeTokenId(kind) {
 }
 
 // Follows a ref to the foundation entry it lands on: color.<role> -> the
-// role's palette link (or null when unlinked); everything else is itself.
+// role's palette link (or null when unlinked); a semantic scale token (e.g.
+// space.card-padding) -> the step it currently targets; everything else
+// (a literal step ref) is itself.
 function resolveToFoundation(ref, mode) {
     const parsed = parseRef(ref);
     if (!parsed) return null;
@@ -1553,7 +1595,7 @@ function resolveToFoundation(ref, mode) {
         const link = tokenLinks[mode || state.mode][parsed.name];
         return link && link.source === activePaletteSource ? `palette.${link.name}` : null;
     }
-    return ref;
+    return resolveSemanticTarget(state.semanticTokens, ref) || ref;
 }
 
 // Full chain for a ref: "color.border → neutral-200 (#e5e5e5)".
@@ -1573,6 +1615,13 @@ function describeRef(ref) {
     if (kind === 'type') {
         const set = TYPE_SETS.find(s => s.key === name);
         return set ? `${ref} → ${typeSetSummary(currentVars(), set)}` : ref;
+    }
+    const tokenTarget = resolveSemanticTarget(state.semanticTokens, ref);
+    if (tokenTarget) {
+        const targetParsed = parseRef(tokenTarget);
+        const targetEntry = targetParsed && findScaleEntry(activePaletteSource, targetParsed.kind, targetParsed.name);
+        return targetEntry && targetEntry.px !== null && targetEntry.px !== undefined
+            ? `${ref} → ${tokenTarget} (${targetEntry.px}px)` : `${ref} → ${tokenTarget}`;
     }
     const entry = findScaleEntry(activePaletteSource, kind, name);
     return entry && entry.px !== null && entry.px !== undefined ? `${ref} (${entry.px}px)` : ref;
@@ -1635,6 +1684,15 @@ function computeMarks() {
         if (link && link.source === activePaletteSource) entry(`palette.${link.name}`).roles.push(role);
     });
 
+    // Non-color semantic tokens push their name into the roles of the step
+    // they currently target - "roles: card-padding" on that step's tooltip,
+    // and (via panelBadgeCount = count + roles.length) a step used only
+    // through a token still counts as used.
+    state.semanticTokens.forEach(t => {
+        if (t.kind === 'color' || typeof t.ref !== 'string') return;
+        entry(t.ref).roles.push(t.name);
+    });
+
     // used/active mark both the ref itself and the foundation step it
     // resolves through (identical for non-color kinds, so nothing changes
     // there) - a part seeded on color.primary rings the primary swatch AND
@@ -1675,6 +1733,7 @@ function panelCtx() {
         activeProps: state.activeProp,
         marks: computeMarks(),
         semantic: semanticColorEntries(),
+        semanticTokens: state.semanticTokens,
         typeSets: TYPE_SETS,
         typeSetSummary,
         elementLabel
@@ -1747,6 +1806,20 @@ function onPanelClick(e) {
         }
         return;
     }
+    const addSemanticBtn = e.target.closest('[data-add-semantic-confirm]');
+    if (addSemanticBtn && addSemanticBtn.closest('#panelBody')) {
+        const row = addSemanticBtn.closest('[data-add-semantic-kind]');
+        const kind = row.dataset.addSemanticKind;
+        const nameInput = row.querySelector('[data-add-field="name"]');
+        const targetSelect = row.querySelector('[data-add-field="target"]');
+        const errorEl = row.querySelector('[data-add-error]');
+        const err = addSemanticScaleToken(kind, nameInput.value, targetSelect.value);
+        if (errorEl) {
+            errorEl.textContent = err || '';
+            errorEl.hidden = !err;
+        }
+        return;
+    }
     const target = e.target.closest('[data-ref]');
     if (!target || !target.closest('#panelBody')) return;
     const ref = target.dataset.ref;
@@ -1756,6 +1829,20 @@ function onPanelClick(e) {
     const id = kind ? activeTokenId(kind) : null;
     if (!id) return;
     setComponentToken(id, ref);
+}
+
+// One delegated change handler for every panel: a semantic token's step
+// picker (Summary tab - see panels.js buildSemanticTokenSummaryRowHtml/
+// buildSemanticScaleAddRowHtml) re-points that token, or (inside the add
+// row) has no token yet to re-point and is simply read at "+ Add" time.
+function onPanelChange(e) {
+    const select = e.target.closest('[data-semantic-target]');
+    if (!select || !select.closest('#panelBody')) return;
+    const parsed = parseRef(select.dataset.semanticTarget);
+    if (!parsed) return;
+    const entry = findScaleEntry(activePaletteSource, parsed.kind, select.value);
+    if (!entry) return;
+    setSemanticTokenTarget(parsed.kind, parsed.name, scaleRef(parsed.kind, entry.name));
 }
 
 function selectElement(element, variant, part, stateKey) {
@@ -1804,6 +1891,10 @@ function switchPaletteSource(next) {
         tokenLinks[mode] = { ...tokenLinks[mode], ...snapVarsToPalette(state.vars[mode], next, linkableColorKeys()) };
         snapTypeToScale(state.vars[mode]);
     });
+    // Non-color tokens re-point at the nearest step of `next`, keeping their
+    // name; a component pointing AT a token is untouched by the remap below
+    // (its name never matches a real step of either source).
+    state.semanticTokens = remapSemanticTokens(state.semanticTokens, prev, next);
     if (typeof remapComponentTokens === 'function') state.components = remapComponentTokens(state.components, prev, next);
     state.palette.families = allFamilies();
     pushUndoSnapshot(snapshot);
@@ -1858,7 +1949,9 @@ function buildAnnotatedCss() {
         });
     });
     const components = typeof componentVarLines === 'function' ? componentVarLines(state.components, activePaletteSource) : '';
-    return `:root {\n${block('light')}\n}\n\n.dark {\n${block('dark')}\n}\n\n/* component part tokens (${activePaletteSource} scales) */\n:root {\n${components}\n}\n\n/* ${TOKEN_LINKS_MARKER}\n${JSON.stringify(tokenMap, null, 2)}\n*/`;
+    const semantic = SEMANTIC_SCALE_KINDS.map(kind => semanticVarLines(state.semanticTokens, kind)).filter(Boolean).join('\n');
+    const parts = [components, semantic].filter(Boolean).join('\n');
+    return `:root {\n${block('light')}\n}\n\n.dark {\n${block('dark')}\n}\n\n/* component part tokens (${activePaletteSource} scales) */\n:root {\n${parts}\n}\n\n/* ${TOKEN_LINKS_MARKER}\n${JSON.stringify(tokenMap, null, 2)}\n*/`;
 }
 
 let componentsCssText = null;
@@ -2174,6 +2267,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Panels: one delegated click handler, plus tooltips for [data-tip].
     const panelBody = document.getElementById('panelBody');
     panelBody.addEventListener('click', onPanelClick);
+    panelBody.addEventListener('change', onPanelChange);
     panelBody.addEventListener('mouseover', (e) => {
         const tipped = e.target.closest('[data-tip]');
         if (tipped && panelBody.contains(tipped)) showSwatchTooltip(tipped, tipped.dataset.tip);

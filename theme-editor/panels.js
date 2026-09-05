@@ -173,6 +173,16 @@ function panelEntryValue(kind, entry) {
     return `${entry.px}px`;
 }
 
+// The right-hand readout string for a scale entry ("24px", a shadow's raw
+// css, or '' for borderStyle) - shared by a plain step row (panelEntryHtml)
+// and a semantic token row (panelSemanticTokenEntryHtml), whose readout is
+// its TARGET entry's, not its own.
+function panelEntryReadout(kind, entry) {
+    if (!entry) return '?';
+    if (entry.rem !== null && entry.rem !== undefined && kind !== 'borderStyle') return `${entry.px}px`;
+    return kind === 'borderStyle' ? '' : entry.value;
+}
+
 function panelSampleHtml(kind, entry) {
     switch (kind) {
         case 'space': {
@@ -197,11 +207,32 @@ function panelEntryHtml(ctx, kind, entry) {
     const mark = panelMark(ctx, ref);
     const value = panelEntryValue(kind, entry);
     const tip = panelTip(entry.name, value === entry.name ? '' : value, mark);
-    const readout = (entry.rem !== null && entry.rem !== undefined && kind !== 'borderStyle')
-        ? `${entry.px}px` : (kind === 'borderStyle' ? '' : entry.value);
+    const readout = panelEntryReadout(kind, entry);
     return `<button type="button" class="fp-entry" ${panelMarkAttrs(ref, tip, mark)}>
   ${panelSampleHtml(kind, entry)}
   <span class="fp-entry-name">${panelEsc(entry.name)}</span>
+  <span class="fp-entry-value">${panelEsc(readout)}</span>
+  ${panelBadgeHtml(mark)}
+</button>`;
+}
+
+// A semantic (non-color) scale token's row on its kind's panel (Space tab,
+// card 9): same shape as a plain step entry, but its sample/readout come
+// from the entry it currently TARGETS (token.ref) - its own data-ref (e.g.
+// "space.card-padding") is what a click assigns; the step it targets is
+// assigned by clicking that step's OWN row instead. An unresolvable target
+// (a corrupt/stale ref) renders a bare '?' rather than throwing.
+function panelSemanticTokenEntryHtml(ctx, kind, token) {
+    const ref = scaleRef(kind, token.name);
+    const targetParsed = parseRef(token.ref);
+    const targetEntry = targetParsed ? findScaleEntry(ctx.source, kind, targetParsed.name) : null;
+    const mark = panelMark(ctx, ref);
+    const value = targetEntry ? panelEntryValue(kind, targetEntry) : '?';
+    const tip = panelTip(token.name, value === token.name ? '' : value, mark);
+    const readout = panelEntryReadout(kind, targetEntry);
+    return `<button type="button" class="fp-entry fp-entry-token" ${panelMarkAttrs(ref, tip, mark)}>
+  ${targetEntry ? panelSampleHtml(kind, targetEntry) : '<span class="fp-sample"></span>'}
+  <span class="fp-entry-name">${panelEsc(token.name)}</span>
   <span class="fp-entry-value">${panelEsc(readout)}</span>
   ${panelBadgeHtml(mark)}
 </button>`;
@@ -231,9 +262,14 @@ function buildScalePanelHtml(kind, ctx, opts = {}) {
     const entries = scaleEntries(ctx.source, kind);
     const foundation = ctx.foundation || foundationOf(ctx.source);
     const note = kind === 'space' ? foundation.unitNote : `${entries.length} steps`;
+    const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === kind);
+    const tokenRows = tokens.length ? `<div class="fp-entries fp-entries-tokens">
+${tokens.map(t => panelSemanticTokenEntryHtml(ctx, kind, t)).join('\n')}
+</div>` : '';
     return `<div class="fp-panel fp-panel-scale" data-kind="${panelEsc(kind)}">
 <div class="fp-panel-head"><span class="fp-panel-title">${panelEsc(PANEL_KIND_LABELS[kind] || kind)}</span><span class="fp-panel-note">${panelEsc(note)}</span></div>
 ${buildPropChipsHtml(ctx, kind)}
+${tokenRows}
 <div class="fp-entries">
 ${entries.map(e => panelEntryHtml(ctx, kind, e)).join('\n')}
 </div>
@@ -335,6 +371,59 @@ function panelSummaryItemHtml(ctx, kind, item) {
 </button>`;
 }
 
+// --- Semantic scale tokens (Summary tab "Add token" section, card 9) -------
+// Color's own add flow (addSemanticColorToken) opens the palette popover
+// instead of picking from a plain <select> - see buildAddSemanticTokenRow in
+// scripts.js - so it isn't part of this generic, non-color-only shape.
+
+// Every scaleEntries() step as an <option>, `selectedName` marked selected
+// (null selects nothing - the browser defaults to the first option, used by
+// the add-row before a step is deliberately picked).
+function semanticTargetOptionsHtml(ctx, kind, selectedName) {
+    return scaleEntries(ctx.source, kind).map(entry => {
+        const selected = entry.name === selectedName ? ' selected' : '';
+        return `<option value="${panelEsc(entry.name)}"${selected}>${panelEsc(scaleEntryLabel(entry))}</option>`;
+    }).join('');
+}
+
+// One existing token: its name, and a step-picker for what it targets
+// (scripts.js setSemanticTokenTarget) - re-pointing it here moves every part
+// assigned to the token, without touching those parts' own assignments.
+function buildSemanticTokenSummaryRowHtml(ctx, kind, token) {
+    const ref = scaleRef(kind, token.name);
+    const targetParsed = parseRef(token.ref);
+    const targetName = targetParsed ? targetParsed.name : null;
+    return `<div class="fp-semantic-token-row">
+  <span class="fp-entry-name">${panelEsc(token.name)}</span>
+  <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTargetOptionsHtml(ctx, kind, targetName)}</select>
+</div>`;
+}
+
+// The "+ Add" row: a name, a step picker, confirm and inline error - see
+// scripts.js addSemanticScaleToken and the onPanelClick
+// [data-add-semantic-confirm] branch.
+function buildSemanticScaleAddRowHtml(ctx, kind) {
+    return `<div class="fp-add-row" data-add-semantic-kind="${panelEsc(kind)}">
+  <input type="text" class="fp-add-input fp-add-input-name" placeholder="name" data-add-field="name">
+  <select class="fp-semantic-target-select" data-add-field="target">${semanticTargetOptionsHtml(ctx, kind, null)}</select>
+  <button type="button" class="fp-add-btn" data-add-semantic-confirm>+ Add</button>
+  <span class="fp-add-error" data-add-error hidden></span>
+</div>`;
+}
+
+// A kind's Summary-tab section: its existing tokens (if any) + the add row -
+// always rendered, even with zero tokens, so "Add token" stays reachable on
+// an empty system. Space (this card) calls it now; radius/border-width/
+// border-style/shadow (later cards) add one call each, unchanged.
+function buildSemanticScaleSectionHtml(ctx, kind) {
+    const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === kind);
+    return `<div class="fp-section" data-kind="${panelEsc(kind)}">
+<h3 class="fp-section-title">${panelEsc(PANEL_KIND_LABELS[kind] || kind)}</h3>
+${tokens.map(t => buildSemanticTokenSummaryRowHtml(ctx, kind, t)).join('\n')}
+${buildSemanticScaleAddRowHtml(ctx, kind)}
+</div>`;
+}
+
 function buildSummaryPanelHtml(ctx) {
     const kinds = ['color', 'space', 'radius', 'borderWidth', 'borderStyle', 'shadow', 'type'];
     const sections = kinds.map(kind => {
@@ -355,5 +444,6 @@ ${sections}${empty}
 <h3 class="fp-section-title">Semantic roles</h3>
 <div id="semanticRolesMount"></div>
 </div>
+${buildSemanticScaleSectionHtml(ctx, 'space')}
 </div>`;
 }
