@@ -14,7 +14,7 @@ const ctx = vm.createContext({ console });
 });
 // Script-scoped `const`s are not properties of the context; lift what the
 // test needs out of the shared global lexical scope.
-const g = vm.runInContext('({ ELEMENTS, elementSpec, buildSelectionStripHtml })', ctx);
+const g = vm.runInContext('({ ELEMENTS, elementSpec, buildSelectionStripHtml, buildCustomElementSpec })', ctx);
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -78,6 +78,20 @@ ok(g.buildSelectionStripHtml({ selection: { element: 'not-a-real-element', varia
 {
     const html = g.buildSelectionStripHtml({ selection: { element: 'button', variant: 'primary', part: 'bg', state: 'not-a-state' } });
     ok(JSON.stringify(pressedIds(html, 'state')) === JSON.stringify(['default']), 'invalid state falls back to default pressed');
+}
+
+// --- custom element: an add row + one remove control on the pressed pick;
+// a stock element carries neither (card [21]) -------------------------------
+{
+    const chip = g.buildCustomElementSpec({ key: 'chip', label: 'Chip', base: 'button', parts: ['bg', 'border', 'text', 'icon', 'padding', 'shadow'] });
+    const html = g.buildSelectionStripHtml({ selection: { element: chip, variant: 'secondary', part: 'bg', state: 'default' } });
+    ok(html.includes('data-variant-add'), 'custom element: an add row is present');
+    ok((html.match(/data-variant-remove="/g) || []).length === 1, 'custom element: exactly one remove control');
+    ok(html.includes('data-variant-remove="secondary"'), 'the remove control targets the pressed (shown) variant, not any other pick');
+
+    const stockHtml = g.buildSelectionStripHtml({ selection: { element: 'button', variant: 'primary', part: 'bg', state: 'default' } });
+    ok(!stockHtml.includes('data-variant-add'), 'a stock element carries no add row');
+    ok(!stockHtml.includes('data-variant-remove'), 'a stock element carries no remove control');
 }
 
 console.log(`panels.test.js: ${checks} checks passed`);

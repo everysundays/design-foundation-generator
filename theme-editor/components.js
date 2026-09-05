@@ -1216,3 +1216,108 @@ function addCustomPart(spec, components, kind, sourceKey, ctx) {
     nextSpec.seedSpec = nextSeed;
     return { spec: nextSpec, components: { ...components, ...ids } };
 }
+
+// --- Custom elements: add/remove variants ------------------------------------
+//
+// The only way an already-registered custom element's VARIANT LIST changes
+// after creation (rename/delete of the element itself is a later card's).
+// Both are pure - spec/components in, { spec, components } | { error } out,
+// same contract as removeCustomPart/addCustomPart above - scripts.js's entry
+// points push one undo step, swap the returned spec into state.customElements
+// and the returned map into state.components, then applyCustomElementsChange()
+// + renderAll() so the wiring sheet, #theme-vars and the Custom section all
+// reflect the new shape together.
+
+// null | error string. Reuses the identifier rule validateCustomElementName
+// uses for element names, but never case-folds: a variant has no separate
+// key/label pair the way an element does (it - lowercase, as typed - IS the
+// token-id segment), so "Warning" is refused rather than silently becoming
+// "warning" behind the user's back. Also refuses a bare state name or a
+// -hover/-focus/-active/-disabled suffix (that reads as a state, not a
+// variant) and a name already on the spec.
+function variantNameError(spec, name) {
+    const trimmed = String(name === undefined || name === null ? '' : name).trim();
+    if (!trimmed) return 'Enter a name.';
+    if (!/^[a-z][a-z0-9-]*$/.test(trimmed)) {
+        return `"${trimmed}" must start with a letter and use only lowercase letters, digits and hyphens.`;
+    }
+    const stateSuffix = COMPONENT_STATES.slice(1).find(s => trimmed === s || trimmed.endsWith(`-${s}`));
+    if (stateSuffix) return `"${trimmed}" reads as a state, not a variant.`;
+    if (spec.variants.includes(trimmed)) return `"${trimmed}" is already a variant.`;
+    return null;
+}
+
+// { [id]: ref } - `to`'s tokens copied from `from`'s CURRENT (resolved)
+// values, so an id `from` has never been explicitly edited (still answering
+// through the seed) still copies a real value, never null. Every part x prop
+// gets an EXPLICIT default-state entry (`to` has no seedSpec/SEED_SPEC row of
+// its own - leaving it to seed resolution would resolve to null, i.e.
+// var(null) in the exported CSS); a non-default state gets one only when its
+// resolved value actually differs from the copied default - reproducing
+// `from`'s own leaf shape exactly (component.button.primary's own shape is
+// the default leaves plus border.color-focus and bg/text.color/icon/border.
+// color-disabled ONLY, since button's SEED_SPEC has no hover/active delta for
+// its primary variant - copying that shape onto a new variant, rather than a
+// fixed five-state set, is what makes it identical to the variant it came
+// from).
+function copyVariantTokens(components, spec, from, to, sourceKey) {
+    const source = activeSourceKey(sourceKey);
+    const out = { ...components };
+    spec.parts.forEach(part => {
+        part.props.forEach(prop => {
+            const defaultValue = resolveComponentRef(tokenId(spec, from, part.key, prop.key), components, source);
+            out[tokenId(spec, to, part.key, prop.key)] = defaultValue;
+            spec.states.forEach(state => {
+                if (state === 'default') return;
+                const stateValue = resolveComponentRef(tokenId(spec, from, part.key, prop.key, state), components, source);
+                if (stateValue !== defaultValue) out[tokenId(spec, to, part.key, prop.key, state)] = stateValue;
+            });
+        });
+    });
+    return out;
+}
+
+// Drops every id of `variant` (of the custom element `key`) from
+// `components` - copyVariantTokens's exact inverse. A custom element's ids
+// always carry an explicit variant segment (buildCustomElementSpec keeps
+// `variants` an explicit array even for a variant-less base - ['default'],
+// never omitted), so comparing the first two "."-segments is exact: never a
+// startsWith/prefix match that could also catch an unrelated element whose
+// key happens to start with this one.
+function dropVariantTokens(components, key, variant) {
+    const out = {};
+    Object.keys(components || {}).forEach(id => {
+        const seg = id.split('.');
+        if (seg[0] === key && seg[1] === variant) return;
+        out[id] = components[id];
+    });
+    return out;
+}
+
+// null | { error } | { spec, components }. `from` is the variant to copy -
+// scripts.js passes the one currently shown on the stage. Refuses anything
+// variantNameError flags; on success the new variant lands LAST in
+// spec.variants (mirrors addCustomPart appending the new part last).
+function addVariantToSpec(spec, components, name, from, sourceKey) {
+    const err = variantNameError(spec, name);
+    if (err) return { error: err };
+    const trimmed = String(name).trim();
+    return {
+        spec: { ...spec, variants: [...spec.variants, trimmed] },
+        components: copyVariantTokens(components, spec, from, trimmed, sourceKey)
+    };
+}
+
+// null | { error } | { spec, components }. Refuses an absent variant name and
+// the element's last remaining one ("An element needs at least one
+// variant." - mirrors removeCustomPart's "needs at least one part" wording).
+// Moving the stage off a removed variant onto the first remaining one is
+// reconcileSelection's job (scripts.js), not this pure function's.
+function removeVariantFromSpec(spec, components, variant) {
+    if (!spec.variants.includes(variant)) return { error: `"${variant}" is not a variant of ${spec.label}.` };
+    if (spec.variants.length <= 1) return { error: 'An element needs at least one variant.' };
+    return {
+        spec: { ...spec, variants: spec.variants.filter(v => v !== variant) },
+        components: dropVariantTokens(components, spec.key, variant)
+    };
+}

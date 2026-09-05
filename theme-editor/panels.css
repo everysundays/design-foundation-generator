@@ -486,6 +486,37 @@
   font-weight: 600;
 }
 
+/* --- Variant add/remove (custom elements only, card [21]) - a remove
+   control beside the pressed variant pick, an add row below the picks. Same
+   visual language as the custom-element header's own part remove control
+   below. --- */
+
+.fp-pick-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fp-pick-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.fp-pick-remove:hover {
+  color: #ffffff;
+  background: var(--ui-danger);
+}
+
 /* --- Custom-element header, prepended (below the strip) when the selection
    is a custom element. Name/base are read-only; the part list (card [20])
    carries a remove control per row and an add row for the missing kinds. --- */

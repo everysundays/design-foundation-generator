@@ -1388,6 +1388,7 @@ function scrollGalleryTo(cat) {
 }
 
 function renderAll() {
+    reconcileSelection();
     renderPanel();
     renderThemePickerButton();
     renderColorPopoverGrid();
@@ -1682,6 +1683,25 @@ function onPanelClick(e) {
         if (errorEl) { errorEl.textContent = err || ''; errorEl.hidden = !err; }
         return;
     }
+    const variantAddBtn = e.target.closest('[data-variant-add-confirm]');
+    if (variantAddBtn && variantAddBtn.closest('#panelBody')) {
+        const row = variantAddBtn.closest('[data-variant-add]');
+        const nameInput = row.querySelector('[data-variant-add-field]');
+        const err = addSelectedCustomVariant(nameInput.value);
+        // A success rebuilds #panelBody (renderAll -> renderPanel), so this
+        // always queries whatever error element is live AFTER the attempt -
+        // mirrors the part add/remove branches above.
+        const errorEl = document.querySelector('#panelBody [data-variant-add-error]');
+        if (errorEl) { errorEl.textContent = err || ''; errorEl.hidden = !err; }
+        return;
+    }
+    const variantRemoveBtn = e.target.closest('[data-variant-remove]');
+    if (variantRemoveBtn && variantRemoveBtn.closest('#panelBody')) {
+        const err = removeSelectedCustomVariant(variantRemoveBtn.dataset.variantRemove);
+        const errorEl = document.querySelector('#panelBody [data-variant-add-error]');
+        if (errorEl) { errorEl.textContent = err || ''; errorEl.hidden = !err; }
+        return;
+    }
     const target = e.target.closest('[data-ref]');
     if (!target || !target.closest('#panelBody')) return;
     const ref = target.dataset.ref;
@@ -1713,6 +1733,24 @@ function clearSelection() {
     renderPanel();
     const doc = previewDocument();
     if (doc) applySelectionHighlight(doc);
+}
+
+// Called at the top of renderAll(), so every mutation path (undo/redo,
+// Reset, create/add/remove) lands on a selection that actually matches the
+// current spec. state.selection is never part of an undo snapshot (only the
+// token/spec data is - see undoSnapshot), so an Undo/Reset that changes a
+// custom element's shape would otherwise leave it naming a variant/part that
+// no longer exists (e.g. Undo right after adding a variant) - the strip
+// would show no pressed pick and the stage would render unwired. Mirrors
+// selectElement's own fallbacks (variants[0] / parts[0] / 'default').
+function reconcileSelection() {
+    const sel = state.selection;
+    if (!sel) return;
+    const spec = elementSpec(sel.element);
+    if (!spec) { state.selection = null; return; }
+    if (spec.variants && !spec.variants.includes(sel.variant)) sel.variant = spec.variants[0];
+    if (!spec.parts.some(p => p.key === sel.part)) sel.part = spec.parts[0].key;
+    if (!spec.states.includes(sel.state)) sel.state = 'default';
 }
 
 // --- Custom elements: creation ---
@@ -1819,6 +1857,39 @@ function addSelectedCustomPart(kind) {
     if (!spec || !spec.custom) return null;
     const ctx = { radiusRem: measurementToRem(currentVars().radius, 0.5) };
     return applyCustomPartResult(spec, addCustomPart(spec, state.components, kind, activePaletteSource, ctx));
+}
+
+// --- Custom elements: add/remove variants ---
+// Same shape as the part add/remove pair above - components.js's pure
+// functions do the naming/copy/drop, this only wires them to the selected
+// custom element. Adding explicitly selects the new variant (the last one in
+// the returned spec.variants - addVariantToSpec always appends), so it shows
+// up "pressed" on the stage right away, the same way createCustomElement
+// selects a freshly created element's own first variant; applyCustomPartResult's
+// generic ending (re-selecting whatever was already selected) would instead
+// leave the stage on the copied-FROM variant. Removing has no such special
+// case - reuses applyCustomPartResult as-is, since reconcileSelection
+// (renderAll's first step) already moves the stage to the first remaining
+// variant once the removed one is no longer in the new spec.
+function addSelectedCustomVariant(name) {
+    const spec = selectedSpec();
+    if (!spec || !spec.custom) return null;
+    const sel = state.selection;
+    const result = addVariantToSpec(spec, state.components, name, sel.variant, activePaletteSource);
+    if (result.error) return result.error;
+    pushUndo();
+    state.customElements = state.customElements.map(s => (s.key === spec.key ? result.spec : s));
+    state.components = result.components;
+    applyCustomElementsChange();
+    selectElement(spec.key, result.spec.variants[result.spec.variants.length - 1], sel.part, sel.state);
+    renderAll();
+    return null;
+}
+
+function removeSelectedCustomVariant(variant) {
+    const spec = selectedSpec();
+    if (!spec || !spec.custom) return null;
+    return applyCustomPartResult(spec, removeVariantFromSpec(spec, state.components, variant));
 }
 
 // --- Palette source switch ---

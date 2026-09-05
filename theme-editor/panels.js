@@ -83,12 +83,30 @@ function buildPropChipsHtml(ctx, kind) {
 
 // --- Selection strip (variant/state picker) ---
 
+// Custom-only "add a variant" row, right after the variant picks: one name
+// input + "+ Add", and an inline-error span shared with the remove control
+// beside the pressed pick below - mirrors buildCustomElementHeaderHtml's
+// single [data-part-error] serving both its add and remove controls. Its own
+// data-* names (never data-add-*) so onPanelClick's generic scale-entry
+// [data-add-confirm] branch never also fires for it (a variant add has no
+// "value" field to go with the name, unlike a scale entry).
+function buildVariantAddRowHtml() {
+    return `<div class="fp-add-row" data-variant-add>
+  <input type="text" class="fp-add-input fp-add-input-name" placeholder="name" data-variant-add-field>
+  <button type="button" class="fp-add-btn" data-variant-add-confirm>+ Add</button>
+  <span class="fp-add-error" data-variant-add-error hidden></span>
+</div>`;
+}
+
 // The one builder that isn't a tab: renderPanel prepends this ahead of
 // whichever tab's own HTML follows (Colors/Space/.../Summary), so picking a
 // variant or state works the same regardless of which tab is open. Reads
-// only elementSpec(ctx.selection.element).variants/states - never ELEMENTS
-// directly - so a custom element (components.js) gets the strip for free
-// with no changes here. Bare: no heading, no note, just the picks.
+// only elementSpec(ctx.selection.element).variants/states/.custom - never
+// ELEMENTS directly - so a custom element (components.js) gets the strip for
+// free with no changes here beyond its own add/remove controls (card [21]):
+// a remove control beside the pressed variant pick only ("a remove control
+// on the shown variant" - removing any other one means picking it first),
+// and the add row above. Bare otherwise: no heading, no note, just the picks.
 function buildSelectionStripHtml(ctx) {
     const sel = ctx && ctx.selection;
     if (!sel || typeof elementSpec !== 'function') return '';
@@ -96,9 +114,15 @@ function buildSelectionStripHtml(ctx) {
     if (!spec) return '';
     const pick = (attr, key, label, pressed) =>
         `<button type="button" class="fp-pick" data-${attr}="${panelEsc(key)}" aria-pressed="${pressed ? 'true' : 'false'}">${panelEsc(label)}</button>`;
-    const variantRow = spec.variants
-        ? `<div class="fp-strip-row fp-strip-variants">${spec.variants.map(v => pick('variant', v, capitalize(v), v === sel.variant)).join('')}</div>`
-        : '';
+    let variantRow = '';
+    if (spec.variants) {
+        const picks = spec.variants.map(v => {
+            const html = pick('variant', v, capitalize(v), v === sel.variant);
+            if (!spec.custom || v !== sel.variant) return html;
+            return `<span class="fp-pick-group">${html}<button type="button" class="fp-pick-remove" data-variant-remove="${panelEsc(v)}" aria-label="Remove ${panelEsc(capitalize(v))}"><i class="fas fa-xmark"></i></button></span>`;
+        }).join('');
+        variantRow = `<div class="fp-strip-row fp-strip-variants">${picks}</div>${spec.custom ? buildVariantAddRowHtml() : ''}`;
+    }
     // Defensive fallback mirrors selectElement's own state validation, so the
     // strip always shows exactly one pressed state pick even if ctx carries
     // a stale/invalid one.

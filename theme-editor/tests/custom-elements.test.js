@@ -21,7 +21,8 @@ const g = vm.runInContext(`({ ELEMENTS, allElements, setCustomElements, customEl
     buildCustomGalleryHtml, buildCustomElementHeaderHtml, buildGalleryHtml, componentTokenIds, tokenIdParts,
     tokenId, propKind, seedComponentTokens, resolveComponentRef, componentVarLines, buildWiringCss, parseRef,
     refToVar, findScaleEntry, paletteEntryByName, elementSpec, customElementMissingKinds, customPartIds,
-    removeCustomPart, addCustomPart, CUSTOM_PART_FACTORY })`, ctx);
+    removeCustomPart, addCustomPart, CUSTOM_PART_FACTORY, variantNameError, addVariantToSpec,
+    removeVariantFromSpec, copyVariantTokens, dropVariantTokens })`, ctx);
 
 const SOURCES = ['tailwind', 'atlassian'];
 const SEMANTIC_ROLES = new Set([
@@ -522,6 +523,153 @@ ok(g.buildCustomGalleryHtml().includes('New custom element'), 'the control names
     ok(JSON.stringify(g.allElements().map(e => e.key)) === JSON.stringify(STOCK_KEYS), 'a system with no customElements field loads as ELEMENTS only');
 
     g.setCustomElements([chip, note, tag, check]); // restore the file's shared registry
+}
+
+// --- variantNameError: refusals + acceptance (card [21]) --------------------
+// Reuses card 18's identifier rule but never case-folds - a variant IS the
+// token-id segment (no separate key/label pair like an element has), so
+// "Warning" must be refused, not silently lowered to "warning".
+{
+    const chipSpec = g.elementSpec('chip');
+    ['warning-hover', 'primary', 'Warning', 'hover', ''].forEach(n =>
+        ok(!!g.variantNameError(chipSpec, n), `variantNameError refuses "${n}"`));
+    ok(g.variantNameError(chipSpec, 'warning') === null, 'variantNameError accepts "warning"');
+    ['focus', 'active', 'disabled', 'x-focus', 'x-active', 'x-disabled'].forEach(n =>
+        ok(!!g.variantNameError(chipSpec, n), `variantNameError refuses state-shaped name "${n}"`));
+    ok(!!g.variantNameError(chipSpec, '  '), 'variantNameError refuses a blank name');
+    ok(!!g.variantNameError(chipSpec, 'My Warning'), 'variantNameError refuses a non-identifier (space/case)');
+    ok(!!g.variantNameError(chipSpec, '1warning'), 'variantNameError refuses a non-identifier (leading digit)');
+    ok(!!g.variantNameError(chipSpec, 'secondary'), 'variantNameError refuses an already-present variant');
+}
+
+// --- addVariantToSpec: 7 variants, new last, pure, ids parse against the
+// updated registry, every pre-existing id is unchanged, wiring covers it ---
+{
+    const chipSpec = g.elementSpec('chip');
+    const seeded = g.seedComponentTokens('tailwind', { radiusRem: 0.5 });
+    const before = g.componentTokenIds();
+
+    const added = g.addVariantToSpec(chipSpec, seeded, 'warning', 'primary', 'tailwind');
+    ok(!added.error, 'addVariantToSpec("warning") succeeds');
+    ok(added.spec.variants.length === 7, 'chip now has 7 variants');
+    ok(added.spec.variants[6] === 'warning', 'the new variant lands last');
+    ok(chipSpec.variants.length === 6 && !chipSpec.variants.includes('warning'), 'the ORIGINAL spec object is left untouched (pure)');
+
+    g.setCustomElements([added.spec, note, tag, check]);
+    const parsed = g.tokenIdParts('chip.warning.bg.hover');
+    ok(parsed && parsed.element === 'chip' && parsed.variant === 'warning' && parsed.part === 'bg' && parsed.state === 'hover',
+        'chip.warning.bg.hover parses against the updated registry');
+    const after = g.componentTokenIds();
+    before.forEach(id => ok(after.includes(id), `pre-existing id ${id} still valid after the add`));
+    before.filter(id => id.startsWith('chip.')).forEach(id =>
+        ok(g.resolveComponentRef(id, added.components, 'tailwind') === g.resolveComponentRef(id, seeded, 'tailwind'), `${id}: unchanged by the add`));
+    ok(after.includes('chip.warning.bg'), 'chip.warning.bg exists after the add');
+
+    const wiring = g.buildWiringCss();
+    ok(wiring.includes('[data-element="chip"][data-variant="warning"] {'), 'wiring has a default-state block for the new variant');
+    ok(/\[data-element="chip"\]\[data-variant="warning"\]:is\(:hover/.test(wiring), 'wiring has a hover-state block for the new variant');
+    g.setCustomElements([chip, note, tag, check]); // restore
+}
+
+// --- copyVariantTokens: every new id resolves validly on both foundations,
+// no null/undefined in the emitted CSS, and the leaf SET it writes (which
+// ids get an EXPLICIT entry) exactly matches the variant copied from - so
+// component.chip.warning ends up with the same default/hover/focus/active/
+// disabled shape as component.chip.primary (which equals button.primary's:
+// defaults for every part x prop, plus only border.color-focus and
+// bg/text.color/icon/border.color-disabled, since button's SEED_SPEC has no
+// hover/active delta for its primary variant) -----------------------------
+SOURCES.forEach(source => {
+    const chipSpec = g.elementSpec('chip');
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.5 });
+    const copied = g.addVariantToSpec(chipSpec, seeds, 'warning', 'primary', source);
+    ok(!copied.error, `${source}: addVariantToSpec succeeds`);
+    chipSpec.parts.forEach(part => part.props.forEach(prop => {
+        const id = g.tokenId(chipSpec, 'warning', part.key, prop.key);
+        assertRefValid(copied.components[id], g.propKind(chipSpec.key, part.key, prop.key), source, id);
+    }));
+
+    // componentVarLines()/buildWiringCss() iterate the REGISTERED spec's own
+    // variants (allElements()), not whatever spec object is handed to them -
+    // register the copy (7 variants) so the new one is actually swept.
+    g.setCustomElements([copied.spec, note, tag, check]);
+    const css = g.componentVarLines(copied.components, source);
+    ok(!/null|undefined/.test(css), `${source}: componentVarLines has no null/undefined after copying the new variant`);
+
+    const warningLeaves = Object.keys(copied.components).filter(id => id.startsWith('chip.warning.')).map(id => id.slice('chip.warning.'.length)).sort();
+    const primaryLeaves = Object.keys(seeds).filter(id => id.startsWith('chip.primary.')).map(id => id.slice('chip.primary.'.length)).sort();
+    ok(warningLeaves.length > 0 && JSON.stringify(warningLeaves) === JSON.stringify(primaryLeaves),
+        `${source}: chip.warning.* leaf set equals the chip.primary.* leaf set it was copied from`);
+
+    if (source === 'tailwind') {
+        ok(css.includes('  --chip-warning-bg: var(--primary);'), 'componentVarLines emits --chip-warning-bg: var(--primary)');
+        ok(css.includes('  --chip-warning-border-color-focus: var(--ring);'), 'componentVarLines emits the copied focus delta (border.color-focus)');
+    }
+    g.setCustomElements([chip, note, tag, check]); // restore
+});
+
+// --- independence: editing one variant's token never touches another's ----
+{
+    const chipSpec = g.elementSpec('chip');
+    const seeded = g.seedComponentTokens('tailwind', { radiusRem: 0.5 });
+    const withWarning = g.addVariantToSpec(chipSpec, seeded, 'warning', 'primary', 'tailwind').components;
+    const primaryBgBefore = withWarning['chip.primary.bg'];
+    const edited = { ...withWarning, 'chip.warning.bg': 'palette.amber-500' };
+    ok(edited['chip.primary.bg'] === primaryBgBefore, "editing chip.warning.bg leaves chip.primary.bg untouched (assigning parts on it doesn't change other variants)");
+}
+
+// --- dropVariantTokens: exact removal, pure; removeVariantFromSpec: same
+// drop plus the spec edit, refusals for an absent name and the last one ----
+{
+    const chipSpec = g.elementSpec('chip');
+    const seeded = g.seedComponentTokens('tailwind', { radiusRem: 0.5 });
+    const withWarning = g.addVariantToSpec(chipSpec, seeded, 'warning', 'primary', 'tailwind');
+
+    const dropped = g.dropVariantTokens(withWarning.components, 'chip', 'warning');
+    const droppedKeys = Object.keys(withWarning.components).filter(id => !Object.prototype.hasOwnProperty.call(dropped, id));
+    ok(droppedKeys.length > 0, 'sanity: dropVariantTokens actually removed something');
+    ok(droppedKeys.every(id => { const seg = id.split('.'); return seg[0] === 'chip' && seg[1] === 'warning'; }), 'every dropped key belongs to chip.warning - nothing else touched');
+    ok(!Object.keys(dropped).some(id => { const seg = id.split('.'); return seg[0] === 'chip' && seg[1] === 'warning'; }), 'no chip.warning id survives in the result');
+    Object.keys(dropped).forEach(id => ok(dropped[id] === withWarning.components[id], `${id}: every kept id's value is untouched by the removal`));
+
+    const removed = g.removeVariantFromSpec(withWarning.spec, withWarning.components, 'warning');
+    ok(!removed.error, 'removeVariantFromSpec("warning") succeeds while 6 others remain');
+    ok(removed.spec.variants.length === 6 && !removed.spec.variants.includes('warning'), 'warning is gone from the returned spec');
+    ok(withWarning.spec.variants.includes('warning'), 'the ORIGINAL spec object is left untouched (pure)');
+    ok(JSON.stringify(Object.keys(removed.components).sort()) === JSON.stringify(Object.keys(dropped).sort()), 'removeVariantFromSpec drops exactly what dropVariantTokens drops');
+
+    const absent = g.removeVariantFromSpec(chipSpec, seeded, 'not-a-variant');
+    ok(!!absent.error, 'removing an absent variant name is refused');
+    const single = {
+        key: 'onevariant', label: 'OneVariant', category: 'custom', custom: true, base: 'separator',
+        variants: ['default'], states: ['default', 'hover', 'focus', 'active', 'disabled'],
+        parts: [g.elementSpec('separator').parts[0]], seedSpec: { base: {}, variants: {}, states: {} }
+    };
+    const lastVariantRefusal = g.removeVariantFromSpec(single, {}, 'default');
+    ok(!!lastVariantRefusal.error, 'removing the last remaining variant is refused');
+    ok(lastVariantRefusal.spec === undefined && lastVariantRefusal.components === undefined, 'a refusal carries no spec/components');
+}
+
+// --- a variant-less base (note, from card): variants stay ['default']
+// (regression, card [18]); adding a second variant keeps note.default.* ids
+// exactly as they were, and a custom element always has at least one variant
+// (adding never changes the shape of existing token ids) -------------------
+{
+    const noteSpec = g.elementSpec('note');
+    ok(JSON.stringify(noteSpec.variants) === JSON.stringify(['default']), "note's variants are exactly ['default']");
+    const seeded = g.seedComponentTokens('tailwind', { radiusRem: 0.5 });
+    const beforeNoteIds = {};
+    Object.keys(seeded).filter(id => id.startsWith('note.')).forEach(id => { beforeNoteIds[id] = seeded[id]; });
+
+    ok(g.variantNameError(noteSpec, 'info') === null, 'variantNameError accepts "info" for note');
+    const added = g.addVariantToSpec(noteSpec, seeded, 'info', 'default', 'tailwind');
+    ok(!added.error, 'addVariantToSpec("info") succeeds on a variant-less base');
+    ok(JSON.stringify(added.spec.variants) === JSON.stringify(['default', 'info']), 'note now has variants [default, info]');
+    Object.keys(beforeNoteIds).forEach(id => ok(added.components[id] === beforeNoteIds[id], `${id}: note.default.* id unchanged by adding info`));
+    noteSpec.parts.forEach(part => part.props.forEach(prop => {
+        const id = g.tokenId(noteSpec, 'info', part.key, prop.key);
+        ok(added.components[id] !== undefined && added.components[id] !== null, `${id}: note.info.* id resolves non-null`);
+    }));
 }
 
 console.log(`custom-elements.test.js: ${checks} checks passed`);
