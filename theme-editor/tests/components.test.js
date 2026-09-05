@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item', 'accordion', 'accordion-item'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -115,6 +115,10 @@ SOURCES.forEach(source => {
     ok(seeds['pagination-item.inactive.bg.hover'] === 'color.accent', `${source}: pagination-item inactive hover bg`);
     ok(seeds['pagination-item.inactive.ring.color.focus'] === 'color.ring', `${source}: pagination-item inactive focus ring`);
     ok(seeds['pagination-item.inactive.bg.disabled'] === 'color.muted', `${source}: pagination-item inactive disabled bg`);
+    ok(seeds['accordion-item.closed.bg.hover'] === 'color.muted', `${source}: accordion-item closed hover bg`);
+    assertRefValid(seeds['accordion-item.closed.bg.hover'], 'color', source, `${source} accordion-item closed hover bg seed`);
+    ok(seeds['accordion-item.open.ring.color.focus'] === 'color.ring' && seeds['accordion-item.closed.ring.color.focus'] === 'color.ring', `${source}: accordion-item focus ring (both variants)`);
+    assertRefValid(seeds['accordion-item.open.ring.color.focus'], 'color', source, `${source} accordion-item focus ring seed`);
 });
 // theme radius seeding
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0.5 })['button.primary.radius'] === 'radius.lg', 'radius 0.5rem -> lg');
@@ -272,6 +276,47 @@ ok(JSON.stringify(g.tokenIdParts('pagination-item.inactive.bg.hover')) === JSON.
 ok(g.tokenIdParts('pagination-item.inactive.bg.active') === null, 'pagination-item has no active STATE (active is a variant)');
 ok(g.tokenIdParts('pagination.gap.hover') === null, 'pagination host has no hover state');
 
+// --- Accordion spot checks ---------------------------------------------------
+ok(g.propKind('accordion', 'border', 'color') === 'color', 'accordion border color kind');
+ok(g.propKind('accordion', 'radius') === 'radius', 'accordion radius kind');
+ok(g.propKind('accordion', 'gap') === 'space', 'accordion gap kind');
+ok(g.propKind('accordion-item', 'bg') === 'color', 'accordion-item bg kind');
+ok(g.propKind('accordion-item', 'trigger', 'color') === 'color', 'accordion-item trigger color kind');
+ok(g.propKind('accordion-item', 'trigger', 'type') === 'type', 'accordion-item trigger type kind');
+ok(g.propKind('accordion-item', 'icon') === 'color', 'accordion-item icon kind');
+ok(g.propKind('accordion-item', 'content', 'color') === 'color', 'accordion-item content color kind');
+ok(g.propKind('accordion-item', 'content', 'type') === 'type', 'accordion-item content type kind');
+ok(g.propKind('accordion-item', 'ring', 'color') === 'color', 'accordion-item ring color kind');
+ok(g.ELEMENTS.find(el => el.key === 'accordion').variants === null, 'accordion has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'accordion').states) === JSON.stringify(['default']), 'accordion has only the default state');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'accordion-item').variants) === JSON.stringify(['open', 'closed']), 'accordion-item variants (open first)');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'accordion-item').states) === JSON.stringify(['default', 'hover', 'focus', 'disabled']), 'accordion-item states');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['accordion.border.color'] === 'color.border', `${source}: accordion border color seed`);
+    assertRefValid(seeds['accordion.radius'], 'radius', source, `${source} accordion radius seed`);
+    assertRefValid(seeds['accordion.gap'], 'space', source, `${source} accordion gap seed`);
+    ok(seeds['accordion-item.open.bg'] === 'color.background' && seeds['accordion-item.closed.bg'] === 'color.background', `${source}: accordion-item bg seed (both variants alike)`);
+    ok(seeds['accordion-item.open.trigger.color'] === 'color.foreground', `${source}: accordion-item trigger color seed`);
+    ok(seeds['accordion-item.open.trigger.type'] === 'type.label', `${source}: accordion-item trigger type seed`);
+    ok(seeds['accordion-item.open.icon'] === 'color.muted-foreground', `${source}: accordion-item icon seed`);
+    ok(seeds['accordion-item.open.content.color'] === 'color.muted-foreground', `${source}: accordion-item content color seed`);
+    ok(seeds['accordion-item.open.content.type'] === 'type.body', `${source}: accordion-item content type seed`);
+    ok(seeds['accordion-item.open.bg.hover'] === 'color.muted', `${source}: accordion-item open hover bg (hover applies to every variant)`);
+    ok(seeds['accordion-item.open.trigger.color.disabled'] === 'color.muted-foreground', `${source}: accordion-item disabled trigger color`);
+    ok(seeds['accordion-item.open.icon.disabled'] === 'color.muted-foreground', `${source}: accordion-item disabled icon`);
+    assertRefValid(seeds['accordion-item.open.padding.x'], 'space', source, `${source} accordion-item padding.x seed`);
+    assertRefValid(seeds['accordion-item.open.padding.y'], 'space', source, `${source} accordion-item padding.y seed`);
+    assertRefValid(seeds['accordion-item.open.gap'], 'space', source, `${source} accordion-item gap seed`);
+});
+ok(g.componentVarLines({}, 'tailwind').includes('  --accordion-gap: var(--space-0);'), 'accordion gap line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --accordion-border-color: var(--border);'), 'accordion border color line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --accordion-item-closed-bg-hover: var(--muted);'), 'accordion-item closed hover bg line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --accordion-item-open-trigger-type-family: var(--type-label-family);'), 'accordion-item trigger type expands');
+ok(g.componentVarLines({}, 'tailwind').includes('  --accordion-item-open-content-type-family: var(--type-body-family);'), 'accordion-item content type expands');
+ok(JSON.stringify(g.tokenIdParts('accordion-item.closed.bg.hover')) === JSON.stringify({ element: 'accordion-item', variant: 'closed', part: 'bg', prop: null, state: 'hover' }), 'accordion-item hover id parses');
+ok(g.tokenIdParts('accordion.gap.hover') === null, 'accordion host has no hover state');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -366,6 +411,21 @@ ok(wiring.includes('[data-element="pagination-item"][data-variant="inactive"]:is
 ok(!wiring.includes('[data-element="pagination-item"][data-variant="inactive"]:is(:active'), 'pagination-item has no active STATE rule (active is a variant)');
 ok(wiring.includes('--_size: var(--pagination-item-inactive-size);'), 'pagination-item size private');
 ok(wiring.includes('--_text-family: var(--pagination-item-inactive-text-type-family);'), 'pagination-item text type private');
+ok(wiring.includes('[data-element="accordion"] {\n  --_border-color: var(--accordion-border-color);'), 'accordion default block');
+ok(wiring.includes('--_radius: var(--accordion-radius);'), 'accordion radius private');
+ok(wiring.includes('--_gap: var(--accordion-gap);'), 'accordion gap private');
+ok(!wiring.includes('[data-element="accordion"]:is('), 'accordion has no state rules');
+ok(wiring.includes('[data-element="accordion-item"][data-variant="open"] {\n  --_bg: var(--accordion-item-open-bg);'), 'accordion-item open default block');
+ok(wiring.includes('[data-element="accordion-item"][data-variant="closed"] {\n  --_bg: var(--accordion-item-closed-bg);'), 'accordion-item closed default block');
+ok(wiring.includes('[data-element="accordion-item"][data-variant="open"]:is(:hover:not([data-state]), [data-state="hover"]) {\n  --_bg: var(--accordion-item-open-bg-hover);'), 'accordion-item open hover block');
+ok(wiring.includes('[data-element="accordion-item"][data-variant="closed"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {'), 'accordion-item closed disabled selector verbatim');
+ok(wiring.includes('--_trigger-color: var(--accordion-item-open-trigger-color);'), 'accordion-item trigger color private');
+ok(wiring.includes('--_trigger-family: var(--accordion-item-open-trigger-type-family);'), 'accordion-item trigger type private');
+ok(wiring.includes('--_icon: var(--accordion-item-open-icon);'), 'accordion-item icon private');
+ok(wiring.includes('--_padding-x: var(--accordion-item-open-padding-x);'), 'accordion-item padding private');
+ok(wiring.includes('--_content-color: var(--accordion-item-closed-content-color);'), 'accordion-item content color private');
+ok(wiring.includes('--_ring-color: var(--accordion-item-open-ring-color-focus);'), 'accordion-item focus ring private');
+ok(!wiring.includes('[data-element="accordion-item"][data-variant="open"]:is(:active'), 'accordion-item has no active state (open/closed are variants)');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -434,6 +494,7 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('skeleton') === 'feedback', 'skeleton categorized as feedback');
     ok(g.categoryOf('breadcrumb') === 'navigation', 'breadcrumb categorized as navigation');
     ok(g.categoryOf('pagination') === 'navigation' && g.categoryOf('pagination-item') === 'navigation', 'pagination categorized as navigation');
+    ok(g.categoryOf('accordion') === 'surfaces' && g.categoryOf('accordion-item') === 'surfaces', 'accordion categorized as surfaces');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
@@ -444,6 +505,8 @@ ok(html.indexOf('id="gallery-skeleton"') > html.indexOf('id="gallery-progress"')
 ok(html.indexOf('id="gallery-breadcrumb"') > html.indexOf('id="gallery-dropdown-menu"'), 'breadcrumb appears after dropdown-menu (end of the navigation group)');
 ok(html.indexOf('id="gallery-pagination"') > html.indexOf('id="gallery-breadcrumb"'), 'pagination appears after breadcrumb in the gallery');
 ok(html.indexOf('id="gallery-pagination-item"') > html.indexOf('id="gallery-pagination"'), 'pagination-item appears after pagination (end of the navigation group)');
+ok(html.indexOf('id="gallery-accordion"') > html.indexOf('id="gallery-dialog"'), 'accordion appears after dialog (end of the surfaces group)');
+ok(html.indexOf('id="gallery-accordion-item"') > html.indexOf('id="gallery-accordion"'), 'accordion-item appears after accordion');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -560,6 +623,39 @@ ok(html.indexOf('id="gallery-pagination-item"') > html.indexOf('id="gallery-pagi
     ok(!itemHtml.includes('data-variant="active"'), 'pagination-item stage carries no active instance');
     ok(itemHtml.includes('data-part="text"'), 'pagination-item text part is paintable/clickable');
     ok(!itemHtml.includes('gallery-stage'), 'pagination-item instance carries no nested stage markup');
+}
+// --- Accordion gallery markup -------------------------------------------------
+{
+    const hostHtml = g.renderGalleryInstance('accordion', null, 'default');
+    ok(hostHtml.startsWith('<div class="ds-accordion" data-element="accordion" data-state="default" data-part="border">'), 'accordion root carries data-part="border"');
+    ok((hostHtml.match(/data-element="accordion-item"/g) || []).length === 2, 'accordion hosts exactly two accordion-item instances');
+    ok(hostHtml.includes('data-element="accordion-item" data-variant="open"'), 'first item is open');
+    ok(hostHtml.includes('data-element="accordion-item" data-variant="closed"'), 'second item is closed');
+    ok((hostHtml.match(/data-part="content"/g) || []).length === 1, 'exactly one item shows content (the open one)');
+    ok((hostHtml.match(/data-part="trigger"/g) || []).length === 2, 'both items have a paintable/clickable trigger');
+    ok((hostHtml.match(/data-part="icon"/g) || []).length === 2, 'both items have a paintable/clickable icon');
+    ok((hostHtml.match(/data-state="default"/g) || []).length === 3, 'host + both items are in their default state');
+    ok(!hostHtml.includes('data-state="hover"') && !hostHtml.includes('data-state="disabled"'), 'gallery specimen is not shown in hover/disabled');
+    ok(!hostHtml.includes('gallery-stage'), 'accordion instance carries no nested stage markup');
+    ok(!hostHtml.includes('id="gallery-accordion-item"'), 'nested items are not full gallery sections');
+    ok(!/<button[^>]* disabled/.test(hostHtml), 'accordion triggers carry no native disabled attribute');
+    ok(!/<h[1-6][ >]/.test(hostHtml), 'accordion has no heading copy');
+    ok(!hostHtml.includes('<img') && !hostHtml.includes('http') && !/ src=/.test(hostHtml), 'accordion has no external assets');
+}
+{
+    const openHtml = g.renderGalleryInstance('accordion-item', 'open', 'default');
+    ok(openHtml.includes('data-element="accordion-item" data-variant="open"'), 'accordion-item stage shows the open variant');
+    ok(!openHtml.includes('data-variant="closed"'), 'accordion-item stage carries no closed instance');
+    ok(openHtml.includes('data-part="trigger"'), 'accordion-item trigger part is paintable/clickable');
+    ok(openHtml.includes('data-part="icon"'), 'accordion-item icon part is paintable/clickable');
+    ok(openHtml.includes('data-part="content"'), 'open item shows its content part');
+    ok(openHtml.includes('data-element="accordion"'), 'accordion-item is hosted inside an accordion');
+    ok(!openHtml.includes('gallery-stage'), 'accordion-item instance carries no nested stage markup');
+
+    const closedHtml = g.renderGalleryInstance('accordion-item', 'closed', 'default');
+    ok(closedHtml.includes('data-element="accordion-item" data-variant="closed"'), 'accordion-item can render the closed variant');
+    ok(!closedHtml.includes('data-part="content"'), 'closed item renders no content part');
+    ok(!closedHtml.includes('data-variant="open"'), 'closed instance carries no open instance');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

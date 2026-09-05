@@ -26,7 +26,8 @@
 .ds-textarea:is(:focus-within:not([data-state]), [data-state="focus"]),
 .ds-tab:is(:focus-visible:not([data-state]), [data-state="focus"]),
 .ds-combobox:is(:focus-visible:not([data-state]), [data-state="focus"]),
-.ds-pagination-item:is(:focus-visible:not([data-state]), [data-state="focus"]) {
+.ds-pagination-item:is(:focus-visible:not([data-state]), [data-state="focus"]),
+.ds-accordion-item:is(:focus-within:not([data-state]), [data-state="focus"]) {
     outline: var(--_ring-width) solid var(--_ring-color);
     outline-offset: 2px;
 }
@@ -48,7 +49,8 @@
 .ds-tab:is(:disabled, [aria-disabled="true"]),
 .ds-list-item[aria-disabled="true"],
 .ds-combobox[aria-disabled="true"],
-.ds-pagination-item:is(:disabled, [aria-disabled="true"]) {
+.ds-pagination-item:is(:disabled, [aria-disabled="true"]),
+.ds-accordion-item[aria-disabled="true"] {
     cursor: not-allowed;
 }
 
@@ -144,7 +146,8 @@
     .ds-table-row,
     .ds-list-item,
     .ds-combobox,
-    .ds-pagination-item {
+    .ds-pagination-item,
+    .ds-accordion-item {
         transition: background-color 150ms, color 150ms, border-color 150ms, box-shadow 150ms, outline-color 150ms;
     }
     .ds-switch-thumb {
@@ -814,4 +817,77 @@
 
 .ds-pagination-item-text {
     color: var(--_text-color);
+}
+
+/* --- Accordion ------------------------------------------------------------
+ * The host paints no background - border/radius/gap only, and overflow
+ * hidden clips its first/last item to the radius. Each item's own box
+ * (background + bottom border-line) carries the padding, so a click there
+ * (outside the trigger row) reads as the item's own "bg"; the trigger is a
+ * plain unstyled <button> whose cursor/color/type it inherits, so open/
+ * closed differ only by whether the content sibling is present and the
+ * icon carries the "-open" rotate modifier.
+ */
+
+.ds-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    overflow: hidden;
+}
+
+.ds-accordion-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border-block-end: var(--_border-width) var(--_border-style) var(--_border-color);
+    cursor: pointer;
+}
+
+.ds-accordion-item:last-child {
+    border-block-end-width: 0;
+}
+
+.ds-accordion-item-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--_gap);
+    inline-size: 100%;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 0;
+    text-align: start;
+    cursor: inherit;
+    color: var(--_trigger-color);
+    font-family: var(--_trigger-family);
+    font-weight: var(--_trigger-weight);
+    font-size: var(--_trigger-size);
+    line-height: var(--_trigger-leading);
+    letter-spacing: var(--_trigger-tracking);
+}
+
+.ds-accordion-item-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
+}
+
+.ds-accordion-item-icon-open {
+    rotate: 180deg;
+}
+
+.ds-accordion-item-content {
+    color: var(--_content-color);
+    font-family: var(--_content-family);
+    font-weight: var(--_content-weight);
+    font-size: var(--_content-size);
+    line-height: var(--_content-leading);
+    letter-spacing: var(--_content-tracking);
 }

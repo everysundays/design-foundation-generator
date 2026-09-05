@@ -73,7 +73,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'actions',    label: 'Actions',    elements: ['button'] },
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
-    { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
+    { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog', 'accordion', 'accordion-item'] },
     { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
@@ -149,7 +149,11 @@ const ELEMENTS = [
     _el('pagination', 'Pagination', null, ['default'],
         [_gap()]),
     _el('pagination-item', 'Pagination item', ['inactive', 'active'], FORM_STATES,
-        [_bg(), _text(), _border(), _radius(), _spacePart('size', 'Size'), _ring()])
+        [_bg(), _text(), _border(), _radius(), _spacePart('size', 'Size'), _ring()]),
+    _el('accordion', 'Accordion', null, ['default'],
+        [_border(), _radius(), _gap()]),
+    _el('accordion-item', 'Accordion item', ['open', 'closed'], FORM_STATES,
+        [_bg(), _textPart('trigger', 'Trigger'), _icon(), _border(), _paddingXY(), _textPart('content', 'Content'), _gap(), _ring()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -422,6 +426,27 @@ const SEED_SPEC = {
             '*.hover': ACCENT_HOVER,
             '*.focus': { 'ring.color': 'color.ring' },
             '*.disabled': DISABLED_BOX
+        }
+    },
+    accordion: {
+        base: {
+            'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            radius: THEME_RADIUS_SEED, gap: 'space.0'
+        }
+    },
+    'accordion-item': {
+        base: {
+            bg: 'color.background', 'trigger.color': 'color.foreground', 'trigger.type': 'type.label',
+            icon: 'color.muted-foreground',
+            'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            'padding.x': 'space.4', 'padding.y': 'space.3',
+            'content.color': 'color.muted-foreground', 'content.type': 'type.body',
+            gap: 'space.2', 'ring.color': 'color.ring', 'ring.width': 'border.width.2'
+        },
+        states: {
+            '*.hover': { bg: 'color.muted' },
+            '*.focus': { 'ring.color': 'color.ring' },
+            '*.disabled': { bg: 'color.muted', 'trigger.color': 'color.muted-foreground', icon: 'color.muted-foreground', 'content.color': 'color.muted-foreground' }
         }
     }
 };
@@ -788,6 +813,31 @@ function renderPagination(state, itemsHtml) {
     return `<nav aria-label="Pagination" ${rootAttrs('pagination', null, state, 'gap')}>${itemsHtml}</nav>`;
 }
 
+// The item's own box carries "bg" (its padding, background and bottom
+// border-line all belong to that same box); the trigger row is a plain
+// structural <button> with no data-part of its own, so clicking its label
+// hits the "trigger" text span, clicking its chevron hits "icon", and
+// clicking anywhere else in the row (or in the item's own padding) falls
+// through to the item's "bg". Content is a sibling of the trigger, present
+// only for the open variant.
+function renderAccordionItem(variant, state, title, body) {
+    const open = variant === 'open';
+    return `<div ${rootAttrs('accordion-item', variant, state, 'bg')}>` +
+        `<button type="button" class="ds-accordion-item-trigger" aria-expanded="${open}">` +
+        `<span class="ds-accordion-item-trigger-text" data-part="trigger">${title}</span>` +
+        galleryIcon('chevron', 'ds-accordion-item-icon' + (open ? ' ds-accordion-item-icon-open' : ''), 'icon') +
+        '</button>' +
+        (open ? `<div class="ds-accordion-item-content" data-part="content">${body}</div>` : '') +
+        '</div>';
+}
+
+// The host paints no background of its own (border/radius/gap only), so its
+// root carries "border" - the one part a click on the outer edge or on the
+// gap between items (both land on this box, never a child) can select.
+function renderAccordion(state, itemsHtml) {
+    return `<div ${rootAttrs('accordion', null, state, 'border')}>${itemsHtml}</div>`;
+}
+
 const GALLERY_RENDERERS = {
     button: (variant, state) => renderButton(variant, state),
     input: (variant, state) =>
@@ -906,7 +956,13 @@ const GALLERY_RENDERERS = {
     pagination: (variant, state) =>
         renderPagination(state, [['‹', 'inactive'], ['1', 'inactive'], ['2', 'active'], ['3', 'inactive'], ['…', 'inactive'], ['10', 'inactive'], ['›', 'inactive']]
             .map(([label, v]) => renderPaginationItem(v, 'default', label)).join('')),
-    'pagination-item': (variant, state) => renderPagination('default', renderPaginationItem(variant, state, '2'))
+    'pagination-item': (variant, state) => renderPagination('default', renderPaginationItem(variant, state, '2')),
+    accordion: (variant, state) =>
+        renderAccordion(state,
+            renderAccordionItem('open', 'default', 'Is it accessible?', 'Yes. It adheres to the WAI-ARIA design pattern.') +
+            renderAccordionItem('closed', 'default', 'Is it styled?', '')),
+    'accordion-item': (variant, state) =>
+        renderAccordion('default', renderAccordionItem(variant, state, 'Is it accessible?', 'Yes. It adheres to the WAI-ARIA design pattern.'))
 };
 
 function renderGalleryInstance(elementKey, variant, state) {
