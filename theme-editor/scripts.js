@@ -2260,6 +2260,22 @@ function renameRowEls(anchor) {
     };
 }
 
+// The value a rename box should start from. For a token row, dataset.
+// renameName IS the current display value (a token's name is its own label -
+// see buildTokenRenameHtml/createColorFieldRow). For a group row (card 16),
+// renameName holds the group's STABLE KEY (renameSemanticGroupByKey looks
+// the group up by it) while the editable value is the group's LABEL, so it
+// has to be looked up separately - seeding from renameName there would
+// pre-fill the box with the key and let a bare, no-edit Enter silently
+// relabel the group to it.
+function renameRowCurrentValue(row) {
+    if (row.dataset.renameKind === 'group') {
+        const group = state.semanticGroups.find(g => g.key === row.dataset.renameName);
+        return group ? group.label : row.dataset.renameName;
+    }
+    return row.dataset.renameName;
+}
+
 // Reverts every OTHER open rename row to its button state before a new one
 // opens - at most one row edits at a time.
 function closeAllRenameInputs(exceptRow) {
@@ -2275,7 +2291,7 @@ function openRenameInput(btn) {
     const els = renameRowEls(btn);
     if (!els || !els.input) return;
     closeAllRenameInputs(els.row);
-    els.input.value = els.row.dataset.renameName;
+    els.input.value = renameRowCurrentValue(els.row);
     els.btn.hidden = true;
     els.input.hidden = false;
     if (els.error) { els.error.hidden = true; els.error.textContent = ''; }
@@ -2288,7 +2304,7 @@ function openRenameInput(btn) {
 function cancelRenameInput(input) {
     const els = renameRowEls(input);
     if (!els) return;
-    els.input.value = els.row.dataset.renameName;
+    els.input.value = renameRowCurrentValue(els.row);
     els.input.hidden = true;
     if (els.btn) els.btn.hidden = false;
     if (els.error) { els.error.hidden = true; els.error.textContent = ''; }

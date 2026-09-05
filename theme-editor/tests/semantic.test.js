@@ -29,7 +29,7 @@ const g = vm.runInContext(`({
     isCssIdentifier, semanticNameError, addSemanticToken, normalizeSemanticTokens,
     resolveSemanticTarget, varCollision, semanticVarCollisionMessage, remapSemanticTokens, semanticVarLines,
     semanticTypeFallbackKey, resolveTypeSetForRef, resolveSemanticTypeSet, typeTokenNameError, semanticTypeAliasLines,
-    isTokenRenamable, builtinTokenName, hasBuiltinToken, renameToken, SEMANTIC_FIXED_USERS, semanticTokenUsers, deleteSemanticToken,
+    isTokenRenamable, builtinTokenName, renameToken, SEMANTIC_FIXED_USERS, semanticTokenUsers, deleteSemanticToken,
     parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale, buildTokensJson, parseTokensJson,
     componentUsage,
     semanticSections, moveToken, setTokenGroup, moveGroup, groupLabelError, cssIdentFromLabel, addGroup, renameGroup,
@@ -436,16 +436,6 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
     const renamedBg = defaults.map(t => (t.builtin === 'background' ? { ...t, name: 'canvas' } : t));
     ok(g.builtinTokenName(renamedBg, 'background') === 'canvas', 'builtinTokenName: finds whichever token now carries builtin === the role, wherever a rename moved it');
     ok(g.builtinTokenName([], 'background') === 'background', 'builtinTokenName falls back to the role name itself when nothing claims it (never dangles)');
-
-    // --- hasBuiltinToken (card 15): "renamed" vs "deleted", the distinction
-    // scripts.js renderFoldableGroups needs before it renders a field's row
-    // at all - builtinTokenName's fallback alone can't tell the two apart,
-    // since it returns the same role name either way.
-    ok(g.hasBuiltinToken(defaults, 'background') === true, 'hasBuiltinToken: true for an unrenamed built-in');
-    ok(g.hasBuiltinToken(renamedBg, 'background') === true, 'hasBuiltinToken: still true after a RENAME - the builtin identity moved, not vanished');
-    const deletedBg = defaults.filter(t => t.builtin !== 'background');
-    ok(g.hasBuiltinToken(deletedBg, 'background') === false, 'hasBuiltinToken: false once the role is genuinely DELETED (removed from the list, not renamed)');
-    ok(g.hasBuiltinToken([], 'background') === false, 'hasBuiltinToken([], …) is false');
 }
 
 // --- renameToken: pure, rewrites the token list + vars/tokenLinks (color) +

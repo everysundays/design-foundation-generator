@@ -347,19 +347,6 @@ function isTokenRenamable(token) {
     return !(token && token.kind === 'color' && token.name === 'shadow-color');
 }
 
-// True while some CURRENT token still claims `builtinRole` (renamed or not)
-// - false once it's been DELETED (card 15), never merely renamed (a rename
-// always keeps the builtin identity moving with the token - see renameToken
-// below). scripts.js renderFoldableGroups (the Summary tab's grouped
-// built-in rows, keyed by ALL_COLOR_GROUPS' fixed field list) checks this
-// BEFORE rendering a field's row at all: builtinTokenName's own fallback
-// (the role's own name, unchanged) exists only so a chrome var/export never
-// dangles when nothing claims a role - it is not a signal that the role is
-// still "there" to show a row for.
-function hasBuiltinToken(list, builtinRole) {
-    return (Array.isArray(list) ? list : []).some(t => t && t.kind === 'color' && t.builtin === builtinRole);
-}
-
 // The CURRENT name of whichever color token plays a built-in role (e.g.
 // resolving 'background' after it's been renamed to 'canvas') - scripts.js
 // cssVarBlockFor uses this to alias the four preview-chrome vars
