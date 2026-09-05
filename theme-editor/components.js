@@ -74,7 +74,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
-    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
 const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
@@ -133,7 +133,9 @@ const ELEMENTS = [
         [_colorPart('line', 'Line'), _part('width', 'Width', [['width', 'borderWidth']])]),
     _el('dialog', 'Dialog', null, ['default'],
         [_colorPart('overlay', 'Overlay'), _bg(), _border(), _radius(), _padding(), _gap(), _shadow(),
-         _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')])
+         _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')]),
+    _el('dropdown-menu', 'Dropdown menu', null, ['default'],
+        [_bg(), _text(), _border(), _radius(), _padding(), _gap(), _shadow()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -346,6 +348,13 @@ const SEED_SPEC = {
             'title.color': 'color.foreground', 'title.type': 'type.subheading',
             'description.color': 'color.muted-foreground', 'description.type': 'type.caption',
             close: 'color.muted-foreground'
+        }
+    },
+    'dropdown-menu': {
+        base: {
+            bg: 'color.popover', 'text.color': 'color.popover-foreground', 'text.type': 'type.label',
+            'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            radius: THEME_RADIUS_SEED, padding: 'space.1', gap: 'space.1', shadow: 'shadow.md'
         }
     }
 };
@@ -674,6 +683,20 @@ function renderAvatar(state, initials) {
     return `<span ${rootAttrs('avatar', null, state, 'bg')}><span class="ds-avatar-text" data-part="text">${initials}</span></span>`;
 }
 
+function renderListItem(state, icon, label, meta) {
+    return `<div role="menuitem" ${rootAttrs('list-item', null, state, 'bg')}>` +
+        galleryIcon(icon, 'ds-list-item-icon', 'icon') +
+        `<span class="ds-list-item-text" data-part="text">${label}</span>` +
+        `<span class="ds-list-item-meta" data-part="meta">${meta}</span></div>`;
+}
+
+function renderDropdownMenu(state, itemsHtml) {
+    return `<div role="menu" ${rootAttrs('dropdown-menu', null, state, 'bg')}>` +
+        `<div class="ds-dropdown-menu-text" data-part="text">My Account</div>` +
+        itemsHtml +
+        '</div>';
+}
+
 const GALLERY_RENDERERS = {
     button: (variant, state) => renderButton(variant, state),
     input: (variant, state) =>
@@ -736,11 +759,7 @@ const GALLERY_RENDERERS = {
         `<div ${rootAttrs('popover', null, state, 'bg')}>` +
         `<p class="ds-popover-text" data-part="text"><strong>Dimensions</strong></p>` +
         `<p class="ds-popover-text" data-part="text">Set the dimensions for the layer.</p></div>`,
-    'list-item': (variant, state) =>
-        `<div role="menuitem" ${rootAttrs('list-item', null, state, 'bg')}>` +
-        galleryIcon('user', 'ds-list-item-icon', 'icon') +
-        `<span class="ds-list-item-text" data-part="text">Profile</span>` +
-        `<span class="ds-list-item-meta" data-part="meta">⇧⌘P</span></div>`,
+    'list-item': (variant, state) => renderListItem(state, 'user', 'Profile', '⇧⌘P'),
     separator: (variant, state) =>
         `<div class="gallery-group"><hr ${rootAttrs('separator', null, state, 'line')}></div>`,
     dialog: (variant, state) =>
@@ -750,7 +769,12 @@ const GALLERY_RENDERERS = {
         `<h3 class="ds-dialog-title" data-part="title">Delete project?</h3>` +
         `<p class="ds-dialog-description" data-part="description">This action cannot be undone. This will permanently delete the project and remove your data from our servers.</p>` +
         `<div class="ds-dialog-actions">${renderButton('outline', 'default', 'Cancel')}${renderButton('primary', 'default', 'Continue')}</div>` +
-        '</div></div>'
+        '</div></div>',
+    'dropdown-menu': (variant, state) =>
+        renderDropdownMenu(state,
+            renderListItem('default', 'user', 'Profile', '⇧⌘P') +
+            renderListItem('default', 'plus', 'Billing', '⌘B') +
+            renderListItem('default', 'check', 'Settings', '⌘S'))
 };
 
 function renderGalleryInstance(elementKey, variant, state) {

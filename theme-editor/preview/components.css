@@ -58,7 +58,8 @@
 .ds-avatar,
 .ds-tooltip,
 .ds-popover,
-.ds-list-item {
+.ds-list-item,
+.ds-dropdown-menu {
     color: var(--_text-color);
     font-family: var(--_text-family);
     font-weight: var(--_text-weight);
@@ -580,4 +581,22 @@
     display: flex;
     justify-content: flex-end;
     gap: var(--_gap);
+}
+
+/* --- Dropdown menu ---------------------------------------------------------- */
+
+.ds-dropdown-menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    max-inline-size: 100%;
+    padding: var(--_padding);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+}
+
+.ds-dropdown-menu-text {
+    color: var(--_text-color);
 }

@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -130,6 +130,19 @@ SOURCES.forEach(source => {
 ok(g.seedComponentTokens('tailwind', {})['dialog.shadow'] === 'shadow.lg', 'tailwind dialog shadow');
 ok(g.seedComponentTokens('atlassian', {})['dialog.shadow'] === 'shadow.elevation.shadow.overflow', 'atlassian dialog shadow remap');
 
+// --- Dropdown menu spot checks ---------------------------------------------
+ok(g.propKind('dropdown-menu', 'text', 'color') === 'color', 'dropdown-menu text color kind');
+ok(g.propKind('dropdown-menu', 'text', 'type') === 'type', 'dropdown-menu text type kind');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['dropdown-menu.bg'] === 'color.popover', `${source}: dropdown-menu bg seed`);
+    ok(seeds['dropdown-menu.text.color'] === 'color.popover-foreground', `${source}: dropdown-menu text color seed`);
+    ok(seeds['dropdown-menu.text.type'] === 'type.label', `${source}: dropdown-menu text type seed`);
+    assertRefValid(seeds['dropdown-menu.padding'], 'space', source, `${source} dropdown-menu padding seed`);
+    assertRefValid(seeds['dropdown-menu.gap'], 'space', source, `${source} dropdown-menu gap seed`);
+    assertRefValid(seeds['dropdown-menu.shadow'], 'shadow', source, `${source} dropdown-menu shadow seed`);
+});
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -153,6 +166,8 @@ SOURCES.forEach(source => {
     css.split('\n').forEach(line => ok(/^  --[a-z0-9-]+: var\(--[a-z0-9-]+\);$/.test(line), `${source}: well-formed line "${line}"`));
 });
 ok(g.componentVarLines({}, 'tailwind').includes('  --dialog-title-type-family: var(--type-subheading-family);'), 'dialog title type expands');
+ok(g.componentVarLines({}, 'tailwind').includes('  --dropdown-menu-text-type-family: var(--type-label-family);'), 'dropdown-menu text type expands');
+ok(g.componentVarLines({}, 'tailwind').includes('  --dropdown-menu-bg: var(--popover);'), 'dropdown-menu bg line');
 ok(g.componentVarLines({}, 'atlassian').includes('  --button-primary-padding-x: var(--space-'), 'atlassian space var');
 ok(!g.componentVarLines({}, 'atlassian').includes('--space-space-'), 'atlassian group stripped by refToVar');
 {
@@ -182,6 +197,9 @@ ok(!wiring.includes('[data-element="card"]:is('), 'card has no state rules');
 ok(wiring.includes('--_overlay: var(--dialog-overlay);'), 'dialog overlay private');
 ok(wiring.includes('--_close: var(--dialog-close);'), 'dialog close private');
 ok(!wiring.includes('[data-element="dialog"]:is('), 'dialog has no state rules');
+ok(wiring.includes('[data-element="dropdown-menu"] {\n  --_bg: var(--dropdown-menu-bg);'), 'dropdown-menu default block');
+ok(wiring.includes('--_text-family: var(--dropdown-menu-text-type-family);'), 'dropdown-menu text type private');
+ok(!wiring.includes('[data-element="dropdown-menu"]:is('), 'dropdown-menu has no state rules');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -244,8 +262,10 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('nope') === 'other', 'unknown element -> other');
     ok(g.categoryOf('button') === 'actions' && g.categoryOf('avatar') === 'data', 'spot checks');
     ok(g.categoryOf('dialog') === 'surfaces', 'dialog categorized as surfaces');
+    ok(g.categoryOf('dropdown-menu') === 'navigation', 'dropdown-menu categorized as navigation');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
+ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -259,6 +279,19 @@ ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'),
     ok(dialogHtml.includes('data-variant="outline"'), 'dialog cancel is outline');
     ok(dialogHtml.includes('data-variant="primary"'), 'dialog continue is primary');
     ok(!dialogHtml.includes('<dialog'), 'no native <dialog> element');
+}
+
+// --- Dropdown menu gallery markup -------------------------------------------
+{
+    const menuHtml = g.renderGalleryInstance('dropdown-menu', null, 'default');
+    ok(menuHtml.startsWith('<div role="menu" class="ds-dropdown-menu" data-element="dropdown-menu" data-state="default" data-part="bg">'), 'dropdown-menu root carries data-part="bg" and role="menu"');
+    ok(menuHtml.includes('data-part="text"'), 'dropdown-menu has a paintable/clickable text part');
+    ok(!/<h[1-6][ >]/.test(menuHtml), 'dropdown-menu label is not a heading element');
+    ok((menuHtml.match(/data-element="list-item"/g) || []).length === 3, 'dropdown-menu nests exactly three list items');
+    ok((menuHtml.match(/data-state="default"/g) || []).length === 4, 'dropdown-menu + all three items are in their default state');
+    ok(!menuHtml.includes('data-state="hover"') && !menuHtml.includes('data-state="active"') && !menuHtml.includes('data-state="disabled"'), 'nested list items carry no non-default state');
+    ok(!menuHtml.includes('gallery-stage'), 'dropdown-menu instance carries no nested stage markup');
+    ok(!menuHtml.includes('id="gallery-list-item"'), 'nested list items are not full gallery sections');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');
