@@ -170,6 +170,10 @@ let state = {
     activeTab: 'colors',
     // kind -> prop key, for parts with several props of one kind (padding x/y).
     activeProp: {},
+    // The type-set list itself (typesets.js DEFAULT_TYPE_SETS + any added via
+    // the Type tab's "Add type set" row) - see addTypeSet/typeRefNames below.
+    typeSets: normalizeTypeSets(null),
+    loadedTypeSets: normalizeTypeSets(null),
     selection: null           // { element, variant, part, state } | null
 };
 
@@ -194,20 +198,10 @@ function remToPx(rem) {
 }
 
 // --- Typography sets ---
-// Each set is five CSS vars: --type-<key>-family/-weight/-size/-leading/
-// -tracking. Family references the theme's family token (var(--font-sans))
-// so the chain set -> family token -> face stays visible. abbr/color are
-// editor chrome for the badge shown in the sidebar and the preview gutter.
-const TYPE_SETS = [
-    { key: 'display',    label: 'Display',    abbr: 'D',  color: '#7c3aed', family: 'sans', weight: '700', size: 2.25,  leading: 2.5,  tracking: '-0.025em' },
-    { key: 'heading',    label: 'Heading',    abbr: 'H',  color: '#2563eb', family: 'sans', weight: '600', size: 1.5,   leading: 2,    tracking: '-0.015em' },
-    { key: 'subheading', label: 'Subheading', abbr: 'SH', color: '#0891b2', family: 'sans', weight: '500', size: 1.125, leading: 1.75, tracking: '0em' },
-    { key: 'body',       label: 'Body',       abbr: 'B',  color: '#16a34a', family: 'sans', weight: '400', size: 1,     leading: 1.5,  tracking: '0em' },
-    { key: 'label',      label: 'Label',      abbr: 'L',  color: '#d97706', family: 'sans', weight: '500', size: 0.875, leading: 1.25, tracking: '0em' },
-    { key: 'caption',    label: 'Caption',    abbr: 'C',  color: '#db2777', family: 'sans', weight: '400', size: 0.75,  leading: 1,    tracking: '0em' },
-    { key: 'code',       label: 'Code',       abbr: 'M',  color: '#475569', family: 'mono', weight: '400', size: 0.875, leading: 1.25, tracking: '0em' }
-];
-
+// The set LIST itself (DEFAULT_TYPE_SETS, typeVarKey, the "Add type set"
+// helpers) lives in typesets.js, loaded before this file - see index.html.
+// state.typeSets is the live list; TYPE_WEIGHTS below is scripts.js-only UI
+// (the weight <select>'s options), not part of a set's own data.
 const TYPE_WEIGHTS = [['300', '300 Light'], ['400', '400 Regular'], ['500', '500 Medium'], ['600', '600 Semibold'], ['700', '700 Bold'], ['800', '800 Extrabold']];
 
 function typeSizeEntries() { return scaleEntries(activePaletteSource, 'typeSize'); }
@@ -232,17 +226,19 @@ function typeTokenLabel(entries, rem) {
     return entries[i] && Math.abs(entries[i].rem - rem) < 0.001 ? entries[i].name : `${rem}rem`;
 }
 
-function typeVarKey(setKey, prop) {
-    return `type-${setKey}-${prop}`;
-}
+// typeVarKey moved to typesets.js (loaded before this file).
 
 // Snaps every set's size/leading onto the active source's scale so the
-// sidebar names the token the preview renders. Returns whether anything moved.
-function snapTypeToScale(vars) {
+// sidebar names the token the preview renders. Returns whether anything
+// moved. `sets` defaults to the live list (switchPaletteSource/applyCssImport
+// re-snap the CURRENT system in place); loadTheme/applyTokensImport pass the
+// list the theme being loaded actually resolves to, since state.typeSets
+// still holds the PREVIOUS system's list at the point they call this.
+function snapTypeToScale(vars, sets = state.typeSets) {
     let changed = false;
     const sizes = typeSizeEntries();
     const leadings = typeLeadingEntries();
-    TYPE_SETS.forEach(set => {
+    sets.forEach(set => {
         [['size', sizes, set.size], ['leading', leadings, set.leading]].forEach(([prop, entries, fallback]) => {
             const key = typeVarKey(set.key, prop);
             if (vars[key] === undefined) return;
@@ -254,9 +250,9 @@ function snapTypeToScale(vars) {
     return changed;
 }
 
-function withTypographyFallback(vars) {
+function withTypographyFallback(vars, sets = state.typeSets) {
     const defaults = {};
-    TYPE_SETS.forEach(set => {
+    sets.forEach(set => {
         defaults[typeVarKey(set.key, 'family')] = `var(--font-${set.family})`;
         defaults[typeVarKey(set.key, 'weight')] = set.weight;
         defaults[typeVarKey(set.key, 'size')] = `${set.size}rem`;
@@ -272,15 +268,15 @@ function withShadowFallback(vars) {
     return { 'shadow-color': '#000000', ...vars };
 }
 
-function withFallbacks(vars) {
-    return withTypographyFallback(withShadowFallback(vars));
+function withFallbacks(vars, sets = state.typeSets) {
+    return withTypographyFallback(withShadowFallback(vars), sets);
 }
 
-function flattenVars(theme) {
+function flattenVars(theme, sets = state.typeSets) {
     const t = theme.cssVars.theme || {};
     return {
-        light: withFallbacks({ ...t, ...(theme.cssVars.light || {}) }),
-        dark: withFallbacks({ ...t, ...(theme.cssVars.dark || {}) })
+        light: withFallbacks({ ...t, ...(theme.cssVars.light || {}) }, sets),
+        dark: withFallbacks({ ...t, ...(theme.cssVars.dark || {}) }, sets)
     };
 }
 
@@ -303,7 +299,7 @@ function isLinkInPalette(link) {
 
 // --- Load / undo ---
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, typeSets: state.typeSets });
 }
 
 function restoreSnapshot(json) {
@@ -319,6 +315,7 @@ function restoreSnapshot(json) {
     state.components = snap.components || state.components;
     state.palette = snap.palette || state.palette;
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
+    state.typeSets = normalizeTypeSets(snap.typeSets);
 }
 
 function pushUndo() {
@@ -340,7 +337,7 @@ function seedComponentsFor(vars) {
     return typeof seedComponentTokens === 'function' ? seedComponentTokens(activePaletteSource, { radiusRem }) : {};
 }
 
-function applyLoaded({ name, vars, links, families, components, customScale }) {
+function applyLoaded({ name, vars, links, families, components, customScale, typeSets }) {
     state.themeName = name;
     state.vars = { light: { ...vars.light }, dark: { ...vars.dark } };
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
@@ -354,6 +351,10 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
     // saved system) before calling applyLoaded.
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
     state.loadedCustomScale = cloneCustomScale(state.customScale);
+    // A caller with no set list of its own (applyTokensImport - card [40]'s
+    // scope, not this one) gets the 7 defaults via normalizeTypeSets(undefined).
+    state.typeSets = normalizeTypeSets(typeSets);
+    state.loadedTypeSets = state.typeSets.map(s => ({ ...s }));
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -364,30 +365,37 @@ function loadTheme(name) {
     const saved = customSystems[name];
     if (saved && saved.vars) {
         if (saved.source && saved.source !== activePaletteSource) setPaletteSourceUi(saved.source);
-        const vars = { light: withFallbacks({ ...saved.vars.light }), dark: withFallbacks({ ...saved.vars.dark }) };
+        // Resolved BEFORE the fallback merge below, so a saved set the 7
+        // defaults don't know about still gets its --type-<key>-* fallbacks.
+        const typeSets = normalizeTypeSets(saved.typeSets);
+        const vars = { light: withFallbacks({ ...saved.vars.light }, typeSets), dark: withFallbacks({ ...saved.vars.dark }, typeSets) };
         const links = saved.tokenLinks || { light: {}, dark: {} };
         applyLoaded({
             name, vars, links,
             families: saved.palette && saved.palette.families,
             components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
-            customScale: saved.customScale
+            customScale: saved.customScale,
+            typeSets
         });
         return;
     }
     const legacy = customThemes[name];
     const theme = allThemes.find(t => t.title === name || t.name === name);
+    // A vendored preset/legacy theme never carries custom type sets - always
+    // the 7 defaults, regardless of whatever the previously-loaded system had.
+    const typeSets = normalizeTypeSets(null);
     const flat = legacy
-        ? { light: withFallbacks({ ...legacy.light }), dark: withFallbacks({ ...legacy.dark }) }
-        : flattenVars(theme || DEFAULT_THEME);
+        ? { light: withFallbacks({ ...legacy.light }, typeSets), dark: withFallbacks({ ...legacy.dark }, typeSets) }
+        : flattenVars(theme || DEFAULT_THEME, typeSets);
     // Every linkable color gets linked and snapped to its nearest swatch of
     // the whole source; the palette subset is then derived from what got used.
     const links = {
         light: snapVarsToPalette(flat.light, activePaletteSource, LINKABLE_COLOR_KEYS),
         dark: snapVarsToPalette(flat.dark, activePaletteSource, LINKABLE_COLOR_KEYS)
     };
-    snapTypeToScale(flat.light);
-    snapTypeToScale(flat.dark);
-    applyLoaded({ name, vars: flat, links, families: null, components: seedComponentsFor(flat.light) });
+    snapTypeToScale(flat.light, typeSets);
+    snapTypeToScale(flat.dark, typeSets);
+    applyLoaded({ name, vars: flat, links, families: null, components: seedComponentsFor(flat.light), typeSets });
 }
 
 function currentVars() {
@@ -464,6 +472,41 @@ function addCustomScaleEntry(kind, rawName, rawValue) {
     }
     pushUndo();
     state.customScale[kind].push(entry);
+    renderAll();
+    return null;
+}
+
+// Every name a new type set's key must not collide with: the live set keys,
+// plus (once a later card's semantic type tokens exist) every semantic
+// type-token name. state.semanticTokens doesn't exist yet in this build, so
+// today this is exactly the key list - see typesets.js's typeSetKeyError,
+// which this list is handed to.
+function typeRefNames() {
+    const semanticTypeNames = (state.semanticTokens || []).filter(t => t.kind === 'type').map(t => t.name);
+    return [...state.typeSets.map(s => s.key), ...semanticTypeNames];
+}
+
+// Adds a new type set from the Type tab's "Add type set" row. Same contract
+// as addCustomScaleEntry: returns an error string on failure (nothing
+// changed), or null on success. The new set's descriptor (family/weight/
+// size/leading/tracking) is copied from Body by typesets.js newTypeSet; this
+// copies the ACTUAL --type-body-* var VALUES (both modes, so a dark-mode
+// override on Body carries over) onto the new keys.
+function addTypeSet(rawName) {
+    let set;
+    try {
+        set = newTypeSet(state.typeSets, rawName, state.typeSets.find(s => s.key === 'body'), typeRefNames());
+    } catch (e) {
+        return e.message;
+    }
+    pushUndo();
+    state.typeSets.push(set);
+    ['light', 'dark'].forEach(mode => {
+        const resolved = withTypographyFallback(state.vars[mode], state.typeSets);
+        TYPE_PROP_FIELDS.forEach(prop => {
+            state.vars[mode][typeVarKey(set.key, prop)] = resolved[typeVarKey('body', prop)];
+        });
+    });
     renderAll();
     return null;
 }
@@ -703,122 +746,145 @@ function typeSetSummary(vars, set) {
     return `${family} · ${size} / ${leading} · ${weight}`;
 }
 
-// Built once; values refreshed by renderTypeSetGroups so folds and half-typed
-// custom families survive re-renders.
-function buildTypeSetGroups() {
-    const container = document.getElementById('typeSetGroups');
+// Builds ONE set's group, wires its listeners once and returns the <details>
+// (unattached - ensureTypeSetGroups appends it). Split out of the old
+// buildTypeSetGroups(), which rebuilt every set's group every time the Type
+// tab first rendered - now that the set list can grow/shrink after load
+// (Add type set, undo, Reset, switching systems), the OTHER sets' groups
+// must survive untouched (same listeners, same open/closed fold) when one
+// set is added or removed.
+function buildTypeSetGroup(set) {
     const el = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
     const option = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
 
-    TYPE_SETS.forEach(set => {
-        const details = el('details', 'color-group type-set-group');
-        details.dataset.set = set.key;
-        if (set.key === 'display' || set.key === 'body') details.open = true;
+    const details = el('details', 'color-group type-set-group');
+    details.dataset.set = set.key;
+    // Matches the original static behaviour for the 7 built-ins (only
+    // Display/Body start open); a set added at runtime isn't one of the 7,
+    // so it starts open - the controls it just copied from Body would
+    // otherwise be invisible behind a closed fold right after "+ Add".
+    const isBuiltIn = DEFAULT_TYPE_SETS.some(d => d.key === set.key);
+    details.open = isBuiltIn ? (set.key === 'display' || set.key === 'body') : true;
 
-        const summary = el('summary', 'color-group-label');
-        const title = el('span', 'type-set-title');
-        const badge = el('span', 'type-set-badge', { textContent: set.abbr });
-        badge.style.setProperty('--type-badge-color', set.color);
-        title.append(badge, document.createTextNode(set.label));
-        const meta = el('span', 'type-set-fold-meta', { id: `typeMeta-${set.key}` });
-        summary.append(title, meta);
+    const summary = el('summary', 'color-group-label');
+    const title = el('span', 'type-set-title');
+    const badge = el('span', 'type-set-badge', { textContent: set.abbr });
+    badge.style.setProperty('--type-badge-color', set.color);
+    title.append(badge, document.createTextNode(set.label));
+    const meta = el('span', 'type-set-fold-meta', { id: `typeMeta-${set.key}` });
+    summary.append(title, meta);
 
-        const body = el('div', 'color-group-body');
+    const body = el('div', 'color-group-body');
 
-        const familyLabel = el('label', 'field-label', { textContent: 'Font', htmlFor: `typeFamily-${set.key}` });
-        const familySelect = el('select', 'field-select', { id: `typeFamily-${set.key}` });
-        const tokenGroup = Object.assign(document.createElement('optgroup'), { label: 'Theme family tokens' });
-        tokenGroup.append(option('sans', 'Sans (font-sans)'), option('serif', 'Serif (font-serif)'), option('mono', 'Mono (font-mono)'));
-        familySelect.append(tokenGroup);
-        Object.entries(FONT_OPTIONS).forEach(([pool, faces]) => {
-            const group = Object.assign(document.createElement('optgroup'), { label: `${pool[0].toUpperCase()}${pool.slice(1)} faces` });
-            faces.forEach(face => group.append(option(face, face)));
-            familySelect.append(group);
-        });
-        familySelect.append(option('custom', 'Custom…'));
-        const customInput = el('input', 'field-select type-custom-family', { id: `typeCustom-${set.key}`, type: 'text', placeholder: "'My Face', sans-serif", hidden: true });
+    const familyLabel = el('label', 'field-label', { textContent: 'Font', htmlFor: `typeFamily-${set.key}` });
+    const familySelect = el('select', 'field-select', { id: `typeFamily-${set.key}` });
+    const tokenGroup = Object.assign(document.createElement('optgroup'), { label: 'Theme family tokens' });
+    tokenGroup.append(option('sans', 'Sans (font-sans)'), option('serif', 'Serif (font-serif)'), option('mono', 'Mono (font-mono)'));
+    familySelect.append(tokenGroup);
+    Object.entries(FONT_OPTIONS).forEach(([pool, faces]) => {
+        const group = Object.assign(document.createElement('optgroup'), { label: `${pool[0].toUpperCase()}${pool.slice(1)} faces` });
+        faces.forEach(face => group.append(option(face, face)));
+        familySelect.append(group);
+    });
+    familySelect.append(option('custom', 'Custom…'));
+    const customInput = el('input', 'field-select type-custom-family', { id: `typeCustom-${set.key}`, type: 'text', placeholder: "'My Face', sans-serif", hidden: true });
 
-        const weightLabel = el('label', 'field-label', { textContent: 'Weight', htmlFor: `typeWeight-${set.key}` });
-        const weightSelect = el('select', 'field-select', { id: `typeWeight-${set.key}` });
-        TYPE_WEIGHTS.forEach(([value, text]) => weightSelect.append(option(value, text)));
+    const weightLabel = el('label', 'field-label', { textContent: 'Weight', htmlFor: `typeWeight-${set.key}` });
+    const weightSelect = el('select', 'field-select', { id: `typeWeight-${set.key}` });
+    TYPE_WEIGHTS.forEach(([value, text]) => weightSelect.append(option(value, text)));
 
-        const sizeLabel = el('label', 'field-label', { textContent: 'Size', htmlFor: `typeSize-${set.key}` });
-        const sizeRow = el('div', 'field-row');
-        const sizeRange = el('input', 'field-range', { id: `typeSize-${set.key}`, type: 'range', min: 0, step: 1 });
-        const sizeName = el('input', 'field-number field-number-token', { id: `typeSizeName-${set.key}`, type: 'text', readOnly: true });
-        const sizeReadout = el('span', 'field-readout', { id: `typeSizeReadout-${set.key}` });
-        sizeRow.append(sizeRange, sizeName, sizeReadout);
+    const sizeLabel = el('label', 'field-label', { textContent: 'Size', htmlFor: `typeSize-${set.key}` });
+    const sizeRow = el('div', 'field-row');
+    const sizeRange = el('input', 'field-range', { id: `typeSize-${set.key}`, type: 'range', min: 0, step: 1 });
+    const sizeName = el('input', 'field-number field-number-token', { id: `typeSizeName-${set.key}`, type: 'text', readOnly: true });
+    const sizeReadout = el('span', 'field-readout', { id: `typeSizeReadout-${set.key}` });
+    sizeRow.append(sizeRange, sizeName, sizeReadout);
 
-        const leadingLabel = el('label', 'field-label', { textContent: 'Line Height', htmlFor: `typeLeading-${set.key}` });
-        const leadingRow = el('div', 'field-row');
-        const leadingRange = el('input', 'field-range', { id: `typeLeading-${set.key}`, type: 'range', min: 0, step: 1 });
-        const leadingName = el('input', 'field-number field-number-token', { id: `typeLeadingName-${set.key}`, type: 'text', readOnly: true });
-        const leadingReadout = el('span', 'field-readout', { id: `typeLeadingReadout-${set.key}` });
-        leadingRow.append(leadingRange, leadingName, leadingReadout);
+    const leadingLabel = el('label', 'field-label', { textContent: 'Line Height', htmlFor: `typeLeading-${set.key}` });
+    const leadingRow = el('div', 'field-row');
+    const leadingRange = el('input', 'field-range', { id: `typeLeading-${set.key}`, type: 'range', min: 0, step: 1 });
+    const leadingName = el('input', 'field-number field-number-token', { id: `typeLeadingName-${set.key}`, type: 'text', readOnly: true });
+    const leadingReadout = el('span', 'field-readout', { id: `typeLeadingReadout-${set.key}` });
+    leadingRow.append(leadingRange, leadingName, leadingReadout);
 
-        const trackingLabel = el('label', 'field-label', { textContent: 'Letter Spacing', htmlFor: `typeTracking-${set.key}` });
-        const trackingRow = el('div', 'field-row');
-        const trackingRange = el('input', 'field-range', { id: `typeTracking-${set.key}`, type: 'range', min: -0.1, max: 0.1, step: 0.005 });
-        const trackingNumber = el('input', 'field-number', { id: `typeTrackingNumber-${set.key}`, type: 'number', step: 0.005 });
-        const trackingUnit = el('span', 'field-unit', { textContent: 'em' });
-        trackingRow.append(trackingRange, trackingNumber, trackingUnit);
+    const trackingLabel = el('label', 'field-label', { textContent: 'Letter Spacing', htmlFor: `typeTracking-${set.key}` });
+    const trackingRow = el('div', 'field-row');
+    const trackingRange = el('input', 'field-range', { id: `typeTracking-${set.key}`, type: 'range', min: -0.1, max: 0.1, step: 0.005 });
+    const trackingNumber = el('input', 'field-number', { id: `typeTrackingNumber-${set.key}`, type: 'number', step: 0.005 });
+    const trackingUnit = el('span', 'field-unit', { textContent: 'em' });
+    trackingRow.append(trackingRange, trackingNumber, trackingUnit);
 
-        body.append(familyLabel, familySelect, customInput, weightLabel, weightSelect, sizeLabel, sizeRow, leadingLabel, leadingRow, trackingLabel, trackingRow);
-        details.append(summary, body);
-        container.append(details);
+    body.append(familyLabel, familySelect, customInput, weightLabel, weightSelect, sizeLabel, sizeRow, leadingLabel, leadingRow, trackingLabel, trackingRow);
+    details.append(summary, body);
 
-        familySelect.addEventListener('change', () => {
-            const choice = familySelect.value;
-            customInput.hidden = choice !== 'custom';
-            if (choice === 'custom') {
-                customInput.value = currentVars()[typeVarKey(set.key, 'family')] || '';
-                customInput.focus();
-                return;
-            }
-            if (choice === 'sans' || choice === 'serif' || choice === 'mono') {
-                setVar(typeVarKey(set.key, 'family'), `var(--font-${choice})`);
-                return;
-            }
-            const pool = Object.keys(FONT_OPTIONS).find(p => FONT_OPTIONS[p].includes(choice)) || 'sans';
-            const generic = { sans: 'sans-serif', serif: 'serif', mono: 'monospace' }[pool];
-            const quoted = /\s/.test(choice) ? `'${choice}'` : choice;
-            setVar(typeVarKey(set.key, 'family'), `${quoted}, ${generic}`);
-        });
-        customInput.addEventListener('input', () => {
-            if (customInput.value.trim()) setVar(typeVarKey(set.key, 'family'), customInput.value.trim());
-        });
-        weightSelect.addEventListener('change', () => setVar(typeVarKey(set.key, 'weight'), weightSelect.value));
+    familySelect.addEventListener('change', () => {
+        const choice = familySelect.value;
+        customInput.hidden = choice !== 'custom';
+        if (choice === 'custom') {
+            customInput.value = currentVars()[typeVarKey(set.key, 'family')] || '';
+            customInput.focus();
+            return;
+        }
+        if (choice === 'sans' || choice === 'serif' || choice === 'mono') {
+            setVar(typeVarKey(set.key, 'family'), `var(--font-${choice})`);
+            return;
+        }
+        const pool = Object.keys(FONT_OPTIONS).find(p => FONT_OPTIONS[p].includes(choice)) || 'sans';
+        const generic = { sans: 'sans-serif', serif: 'serif', mono: 'monospace' }[pool];
+        const quoted = /\s/.test(choice) ? `'${choice}'` : choice;
+        setVar(typeVarKey(set.key, 'family'), `${quoted}, ${generic}`);
+    });
+    customInput.addEventListener('input', () => {
+        if (customInput.value.trim()) setVar(typeVarKey(set.key, 'family'), customInput.value.trim());
+    });
+    weightSelect.addEventListener('change', () => setVar(typeVarKey(set.key, 'weight'), weightSelect.value));
 
-        sizeRange.addEventListener('input', () => {
-            const i = Number(sizeRange.value);
-            const entry = typeSizeEntries()[i];
-            // One undo step for the pair: the paired leading follows with record:false.
-            setVar(typeVarKey(set.key, 'size'), `${entry.rem}rem`);
-            setVar(typeVarKey(set.key, 'leading'), `${typeSizeLeading()[i]}rem`, { record: false });
-        });
-        leadingRange.addEventListener('input', () => {
-            setVar(typeVarKey(set.key, 'leading'), `${typeLeadingEntries()[Number(leadingRange.value)].rem}rem`);
-        });
+    sizeRange.addEventListener('input', () => {
+        const i = Number(sizeRange.value);
+        const entry = typeSizeEntries()[i];
+        // One undo step for the pair: the paired leading follows with record:false.
+        setVar(typeVarKey(set.key, 'size'), `${entry.rem}rem`);
+        setVar(typeVarKey(set.key, 'leading'), `${typeSizeLeading()[i]}rem`, { record: false });
+    });
+    leadingRange.addEventListener('input', () => {
+        setVar(typeVarKey(set.key, 'leading'), `${typeLeadingEntries()[Number(leadingRange.value)].rem}rem`);
+    });
 
-        const syncTracking = (val) => {
-            trackingRange.value = val;
-            trackingNumber.value = val;
-            setVar(typeVarKey(set.key, 'tracking'), `${val}em`);
-        };
-        trackingRange.addEventListener('input', () => syncTracking(trackingRange.value));
-        trackingNumber.addEventListener('input', () => syncTracking(trackingNumber.value));
+    const syncTracking = (val) => {
+        trackingRange.value = val;
+        trackingNumber.value = val;
+        setVar(typeVarKey(set.key, 'tracking'), `${val}em`);
+    };
+    trackingRange.addEventListener('input', () => syncTracking(trackingRange.value));
+    trackingNumber.addEventListener('input', () => syncTracking(trackingNumber.value));
+    return details;
+}
+
+// Appends a group for every set in state.typeSets that doesn't have one yet
+// and removes any group whose set is gone (undo, Reset, or loading a system
+// with fewer sets) - never rebuilds a group that's already there, so its
+// listeners and open/closed fold survive.
+function ensureTypeSetGroups() {
+    const container = document.getElementById('typeSetGroups');
+    if (!container) return;
+    const keys = new Set(state.typeSets.map(s => s.key));
+    [...container.children].forEach(child => {
+        if (!keys.has(child.dataset.set)) child.remove();
+    });
+    state.typeSets.forEach(set => {
+        if (!container.querySelector(`[data-set="${CSS.escape(set.key)}"]`)) container.append(buildTypeSetGroup(set));
     });
 }
 
 function renderTypeSetGroups(vars) {
     const container = document.getElementById('typeSetGroups');
     if (!container) return;
-    if (!container.children.length) buildTypeSetGroups();
+    ensureTypeSetGroups();
 
     const sizes = typeSizeEntries();
     const leadings = typeLeadingEntries();
 
-    TYPE_SETS.forEach(set => {
+    state.typeSets.forEach(set => {
         const familyValue = vars[typeVarKey(set.key, 'family')] || '';
         const selection = typeFamilySelection(familyValue);
         const familySelect = document.getElementById(`typeFamily-${set.key}`);
@@ -860,7 +926,7 @@ function renderTypeSetGroups(vars) {
 // Preview-only companions to the --type-* vars: per-set badge color/abbr and
 // the resolved summary string, painted by the pages with `content: var(...)`.
 function typeMetaCss(vars) {
-    return TYPE_SETS.map(set =>
+    return state.typeSets.map(set =>
         `  --type-${set.key}-badge: ${set.color};\n` +
         `  --type-${set.key}-abbr: "${set.abbr}";\n` +
         `  --type-${set.key}-meta: "${typeSetSummary(vars, set).replace(/"/g, "'")}";`
@@ -869,7 +935,7 @@ function typeMetaCss(vars) {
 
 function syncPreviewTypeHead(doc, vars) {
     const link = doc.getElementById('google-fonts');
-    const href = googleFontsHref(vars, TYPE_SETS);
+    const href = googleFontsHref(vars, state.typeSets);
     if (link && link.getAttribute('href') !== href) {
         if (href) link.setAttribute('href', href);
         else link.removeAttribute('href');
@@ -1145,7 +1211,8 @@ function buildSystemSnapshot() {
         vars: { light: { ...state.vars.light }, dark: { ...state.vars.dark } },
         tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
         components: { ...state.components },
-        customScale: cloneCustomScale(state.customScale)
+        customScale: cloneCustomScale(state.customScale),
+        typeSets: state.typeSets.map(s => ({ ...s }))
     };
 }
 
@@ -1197,7 +1264,7 @@ function cssVarBlockFor(vars, links) {
         emitted.add(key);
     });
 
-    TYPE_SETS.forEach(set => {
+    state.typeSets.forEach(set => {
         ['family', 'weight', 'size', 'leading', 'tracking'].forEach(prop => {
             const key = typeVarKey(set.key, prop);
             const raw = vars[key];
@@ -1233,7 +1300,7 @@ function safeBuild(fnName, ...args) {
 }
 
 function buildPreviewDocument(vars, links) {
-    const href = googleFontsHref(vars, TYPE_SETS);
+    const href = googleFontsHref(vars, state.typeSets);
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -1446,7 +1513,7 @@ function describeRef(ref) {
         return `${ref} (${entry ? entry.hex : '?'})`;
     }
     if (kind === 'type') {
-        const set = TYPE_SETS.find(s => s.key === name);
+        const set = state.typeSets.find(s => s.key === name);
         return set ? `${ref} → ${typeSetSummary(currentVars(), set)}` : ref;
     }
     const entry = findScaleEntry(activePaletteSource, kind, name);
@@ -1528,7 +1595,7 @@ function panelCtx() {
         })(),
         activeProps: state.activeProp,
         marks: computeMarks(),
-        typeSets: TYPE_SETS,
+        typeSets: state.typeSets,
         typeSetSummary,
         elementLabel
     };
@@ -1591,9 +1658,12 @@ function onPanelClick(e) {
         const row = addBtn.closest('[data-add-kind]');
         const kind = row.dataset.addKind;
         const nameInput = row.querySelector('[data-add-field="name"]');
-        const valueInput = row.querySelector('[data-add-field="value"]');
         const errorEl = row.querySelector('[data-add-error]');
-        const err = addCustomScaleEntry(kind, nameInput.value, valueInput.value);
+        // The type row has no value field (a new set copies Body's values) -
+        // see panels.js buildScaleAddRowHtml's nameOnly option.
+        const err = kind === 'type'
+            ? addTypeSet(nameInput.value)
+            : addCustomScaleEntry(kind, nameInput.value, row.querySelector('[data-add-field="value"]').value);
         if (errorEl) {
             errorEl.textContent = err || '';
             errorEl.hidden = !err;
@@ -1674,7 +1744,7 @@ function exportCtx() {
         vars: state.vars,
         links: tokenLinks,
         components: state.components,
-        typeSets: TYPE_SETS
+        typeSets: state.typeSets
     };
 }
 
@@ -1731,7 +1801,7 @@ async function buildDesignSystemCss() {
     // Union of light+dark vars: a face picked while the editor sits in dark
     // mode must still appear in the @import (setVar only writes state.mode).
     return `/* ${state.themeName} - design system (${foundationOf(activePaletteSource).label} scales) */\n` +
-        fontImportCss([state.vars.light, state.vars.dark], TYPE_SETS) +
+        fontImportCss([state.vars.light, state.vars.dark], state.typeSets) +
         `@layer tokens, components, states;\n\n` +
         `@layer tokens {\n:root {\n${cssVarBlockFor(state.vars.light, tokenLinks.light)}\n}\n\n.dark {\n${cssVarBlockFor(state.vars.dark, tokenLinks.dark)}\n}\n}\n\n` +
         `${wiring}\n\n@layer components {\n${componentsCss}\n}\n`;
@@ -1858,20 +1928,25 @@ function detectImportKind(text) {
 
 function applyTokensImport(parsed) {
     if (parsed.source && FOUNDATION[parsed.source] && parsed.source !== activePaletteSource) setPaletteSourceUi(parsed.source);
-    const vars = { light: withFallbacks({ ...(parsed.vars.light || {}) }), dark: withFallbacks({ ...(parsed.vars.dark || parsed.vars.light || {}) }) };
+    // A tokens.json's own type-set list (abbr/colour, sets beyond the 7) is
+    // card [40]'s scope - this card only has to default to the 7 so an
+    // import doesn't crash or silently inherit the PREVIOUS system's sets.
+    const typeSets = normalizeTypeSets(null);
+    const vars = { light: withFallbacks({ ...(parsed.vars.light || {}) }, typeSets), dark: withFallbacks({ ...(parsed.vars.dark || parsed.vars.light || {}) }, typeSets) };
     const links = { light: { ...(parsed.links.light || {}) }, dark: { ...(parsed.links.dark || {}) } };
     // Anything the file left unlinked still gets its nearest swatch so the
     // subset can be derived and the summary line is honest.
     ['light', 'dark'].forEach(mode => {
         const missing = LINKABLE_COLOR_KEYS.filter(key => !links[mode][key]);
         Object.assign(links[mode], snapVarsToPalette(vars[mode], activePaletteSource, missing));
-        snapTypeToScale(vars[mode]);
+        snapTypeToScale(vars[mode], typeSets);
     });
     applyLoaded({
         name: parsed.name || 'Imported system',
         vars, links,
         families: parsed.families,
-        components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) }
+        components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) },
+        typeSets
     });
 }
 
@@ -2023,6 +2098,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Panels: one delegated click handler, plus tooltips for [data-tip].
     const panelBody = document.getElementById('panelBody');
     panelBody.addEventListener('click', onPanelClick);
+    // Type tab's "Add type set" row: live key preview as the name is typed
+    // (the key is the trimmed name lowercased - see typesets.js typeSetKeyError
+    // for why validity itself is only checked on "+ Add").
+    panelBody.addEventListener('input', (e) => {
+        const nameInput = e.target.closest('[data-add-field="name"]');
+        const row = nameInput && nameInput.closest('[data-add-kind="type"]');
+        const keyEl = row && row.querySelector('[data-add-key]');
+        if (keyEl) keyEl.textContent = nameInput.value.trim().toLowerCase();
+    });
     panelBody.addEventListener('mouseover', (e) => {
         const tipped = e.target.closest('[data-tip]');
         if (tipped && panelBody.contains(tipped)) showSwatchTooltip(tipped, tipped.dataset.tip);
@@ -2115,6 +2199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
+        state.typeSets = state.loadedTypeSets.map(s => ({ ...s }));
         renderAll();
     });
 

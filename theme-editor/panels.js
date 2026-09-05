@@ -191,7 +191,18 @@ const SCALE_ADD_PLACEHOLDER = {
 // Inline "add a custom entry" row (see scripts.js addCustomScaleEntry / the
 // onPanelClick [data-add-confirm] branch) - one row per kind, self-contained
 // so the click handler only needs to look inside its own [data-add-kind].
-function buildScaleAddRowHtml(kind) {
+// `opts.nameOnly` (the Type tab's "Add type set" row - scripts.js addTypeSet)
+// drops the value field for a live key-preview span instead: the set's key
+// is derived from its name alone, nothing else to type.
+function buildScaleAddRowHtml(kind, opts = {}) {
+    if (opts.nameOnly) {
+        return `<div class="fp-add-row" data-add-kind="${panelEsc(kind)}">
+  <input type="text" class="fp-add-input fp-add-input-name" placeholder="${panelEsc(opts.placeholder || 'name')}" data-add-field="name">
+  <span class="fp-add-key" data-add-key></span>
+  <button type="button" class="fp-add-btn" data-add-confirm>+ Add</button>
+  <span class="fp-add-error" data-add-error hidden></span>
+</div>`;
+    }
     const placeholder = SCALE_ADD_PLACEHOLDER[kind] || 'value';
     return `<div class="fp-add-row" data-add-kind="${panelEsc(kind)}">
   <input type="text" class="fp-add-input fp-add-input-name" placeholder="name" data-add-field="name">
@@ -275,6 +286,7 @@ ${buildPropChipsHtml(ctx, 'type')}
 ${cards}
 </div>
 <div id="typeControlsMount" class="fp-type-controls"></div>
+${buildScaleAddRowHtml('type', { nameOnly: true, placeholder: 'Overline' })}
 </div>`;
 }
 

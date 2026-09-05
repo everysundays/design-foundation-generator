@@ -393,6 +393,20 @@
   flex-basis: 64px;
 }
 
+/* Type tab's "Add type set" row only (buildScaleAddRowHtml nameOnly) - the
+   live lowercased-name key preview, in place of the other kinds' value input. */
+.fp-add-key {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: var(--ui-text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
 .fp-add-btn {
   flex-shrink: 0;
   height: 24px;
