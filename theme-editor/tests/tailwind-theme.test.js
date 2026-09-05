@@ -306,9 +306,17 @@ test('twThemeVar: null for kinds with no v4 namespace, "_" spelling for fraction
 // repo holding tailwind.css (this system's Export > tailwind.css tab,
 // copied verbatim - here, Feynman: Tailwind foundation, custom Space step
 // "18" = 4.5rem), input.css:
-//   @import "tailwindcss";
+//   @import "tailwindcss" source(none);
 //   @import "./tailwind.css";
 //   @source "./index.html";
+// (`source(none)` turns OFF Tailwind's automatic whole-directory content
+// scan, so only the explicit @source line is scanned - without it, rerunning
+// the build in the SAME dir once out.css/check.js already exist there feeds
+// their own text back in as "content" and silently adds incidental
+// class-shaped utilities, e.g. a bare `.block`/`.p-0` picked up from the
+// literal words inside Preflight's reset CSS and check.js. Confirmed fixed:
+// rebuilding the recorded dir three times in place with source(none) yields
+// byte-identical out.css every time, 13/13 check.js assertions still pass.)
 // and an index.html with a real button/card built from the utilities that
 // name Feynman's component-token refs (bg-primary text-primary-foreground
 // px-4 py-2 rounded-lg shadow-xs font-sans text-sm leading-5 font-medium for
