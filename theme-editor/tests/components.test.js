@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -112,6 +112,9 @@ SOURCES.forEach(source => {
     ok(seeds['toast.destructive.icon'] === 'color.destructive', `${source}: toast destructive icon`);
     ok(seeds['toast.destructive.title.color'] === 'color.destructive', `${source}: toast destructive title`);
     ok(seeds['breadcrumb.link.color.hover'] === 'color.foreground', `${source}: breadcrumb link hover`);
+    ok(seeds['pagination-item.inactive.bg.hover'] === 'color.accent', `${source}: pagination-item inactive hover bg`);
+    ok(seeds['pagination-item.inactive.ring.color.focus'] === 'color.ring', `${source}: pagination-item inactive focus ring`);
+    ok(seeds['pagination-item.inactive.bg.disabled'] === 'color.muted', `${source}: pagination-item inactive disabled bg`);
 });
 // theme radius seeding
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0.5 })['button.primary.radius'] === 'radius.lg', 'radius 0.5rem -> lg');
@@ -235,6 +238,40 @@ ok(g.componentVarLines({}, 'tailwind').includes('  --breadcrumb-current-type-fam
 ok(JSON.stringify(g.tokenIdParts('breadcrumb.link.color.hover')) === JSON.stringify({ element: 'breadcrumb', variant: null, part: 'link', prop: 'color', state: 'hover' }), 'breadcrumb link hover id parses');
 ok(g.tokenIdParts('breadcrumb.gap.focus') === null, 'breadcrumb has no focus state');
 
+// --- Pagination spot checks ------------------------------------------------
+ok(g.propKind('pagination', 'gap') === 'space', 'pagination.gap kind');
+ok(g.propKind('pagination-item', 'bg') === 'color', 'pagination-item.bg kind');
+ok(g.propKind('pagination-item', 'text', 'color') === 'color', 'pagination-item text color kind');
+ok(g.propKind('pagination-item', 'text', 'type') === 'type', 'pagination-item text type kind');
+ok(g.propKind('pagination-item', 'border', 'width') === 'borderWidth', 'pagination-item border width kind');
+ok(g.propKind('pagination-item', 'radius') === 'radius', 'pagination-item radius kind');
+ok(g.propKind('pagination-item', 'size') === 'space', 'pagination-item size kind');
+ok(g.propKind('pagination-item', 'ring', 'color') === 'color', 'pagination-item ring color kind');
+ok(g.ELEMENTS.find(el => el.key === 'pagination').variants === null, 'pagination has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'pagination').states) === JSON.stringify(['default']), 'pagination has only the default state');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'pagination-item').variants) === JSON.stringify(['inactive', 'active']), 'pagination-item variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'pagination-item').states) === JSON.stringify(['default', 'hover', 'focus', 'disabled']), 'pagination-item states (no active - active is a variant here)');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['pagination-item.inactive.bg'] === 'palette.transparent', `${source}: pagination-item inactive bg seed`);
+    ok(seeds['pagination-item.active.bg'] === 'color.background', `${source}: pagination-item active bg seed`);
+    ok(seeds['pagination-item.active.border.color'] === 'color.input', `${source}: pagination-item active border seed`);
+    ok(seeds['pagination-item.inactive.bg.hover'] === 'color.accent', `${source}: pagination-item inactive hover bg (repeat)`);
+    ok(seeds['pagination-item.active.bg.hover'] === 'color.accent', `${source}: pagination-item active hover bg (hover applies to every variant)`);
+    ok(seeds['pagination-item.inactive.text.color.disabled'] === 'color.muted-foreground', `${source}: pagination-item disabled text`);
+    assertRefValid(seeds['pagination-item.inactive.size'], 'space', source, `${source} pagination-item size seed`);
+    assertRefValid(seeds['pagination-item.inactive.radius'], 'radius', source, `${source} pagination-item radius seed`);
+    assertRefValid(seeds['pagination.gap'], 'space', source, `${source} pagination gap seed`);
+});
+ok(g.componentVarLines({}, 'tailwind').includes('  --pagination-gap: var(--space-1);'), 'pagination gap line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --pagination-item-inactive-bg-hover: var(--accent);'), 'pagination-item inactive hover line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --pagination-item-inactive-ring-color-focus: var(--ring);'), 'pagination-item focus ring line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --pagination-item-inactive-bg-disabled: var(--muted);'), 'pagination-item disabled bg line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --pagination-item-inactive-text-type-family: var(--type-label-family);'), 'pagination-item text type expands');
+ok(JSON.stringify(g.tokenIdParts('pagination-item.inactive.bg.hover')) === JSON.stringify({ element: 'pagination-item', variant: 'inactive', part: 'bg', prop: null, state: 'hover' }), 'pagination-item hover id parses');
+ok(g.tokenIdParts('pagination-item.inactive.bg.active') === null, 'pagination-item has no active STATE (active is a variant)');
+ok(g.tokenIdParts('pagination.gap.hover') === null, 'pagination host has no hover state');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -318,6 +355,17 @@ ok(wiring.includes('[data-element="breadcrumb"]:is(:hover:not([data-state]), [da
 ok(wiring.includes('--_separator: var(--breadcrumb-separator);'), 'breadcrumb separator private');
 ok(wiring.includes('--_gap: var(--breadcrumb-gap);'), 'breadcrumb gap private');
 ok(!wiring.includes('[data-element="breadcrumb"]:is(:focus'), 'breadcrumb has no focus/active/disabled state rules');
+ok(wiring.includes('[data-element="pagination"] {\n  --_gap: var(--pagination-gap);'), 'pagination default block');
+ok(!wiring.includes('[data-element="pagination"]:is('), 'pagination has no state rules');
+ok(wiring.includes('[data-element="pagination-item"][data-variant="inactive"] {\n  --_bg: var(--pagination-item-inactive-bg);'), 'pagination-item inactive default block');
+ok(wiring.includes('[data-element="pagination-item"][data-variant="active"] {\n  --_bg: var(--pagination-item-active-bg);'), 'pagination-item active default block');
+ok(wiring.includes('[data-element="pagination-item"][data-variant="inactive"]:is(:hover:not([data-state]), [data-state="hover"]) {\n  --_bg: var(--pagination-item-inactive-bg-hover);'), 'pagination-item inactive hover block');
+ok(wiring.includes('[data-element="pagination-item"][data-variant="inactive"]:is(:focus-visible:not([data-state]), :focus-within:not([data-state]), [data-state="focus"]) {\n  --_bg: var(--pagination-item-inactive-bg-focus);'), 'pagination-item inactive focus block');
+ok(wiring.includes('--_ring-color: var(--pagination-item-inactive-ring-color-focus);'), 'pagination-item focus ring private');
+ok(wiring.includes('[data-element="pagination-item"][data-variant="inactive"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {\n  --_bg: var(--pagination-item-inactive-bg-disabled);'), 'pagination-item inactive disabled block');
+ok(!wiring.includes('[data-element="pagination-item"][data-variant="inactive"]:is(:active'), 'pagination-item has no active STATE rule (active is a variant)');
+ok(wiring.includes('--_size: var(--pagination-item-inactive-size);'), 'pagination-item size private');
+ok(wiring.includes('--_text-family: var(--pagination-item-inactive-text-type-family);'), 'pagination-item text type private');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -385,6 +433,7 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('progress') === 'feedback', 'progress categorized as feedback');
     ok(g.categoryOf('skeleton') === 'feedback', 'skeleton categorized as feedback');
     ok(g.categoryOf('breadcrumb') === 'navigation', 'breadcrumb categorized as navigation');
+    ok(g.categoryOf('pagination') === 'navigation' && g.categoryOf('pagination-item') === 'navigation', 'pagination categorized as navigation');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
@@ -393,6 +442,8 @@ ok(html.indexOf('id="gallery-toast"') > html.indexOf('id="gallery-tooltip"'), 't
 ok(html.indexOf('id="gallery-progress"') > html.indexOf('id="gallery-toast"'), 'progress appears after toast in the gallery');
 ok(html.indexOf('id="gallery-skeleton"') > html.indexOf('id="gallery-progress"'), 'skeleton appears after progress in the gallery');
 ok(html.indexOf('id="gallery-breadcrumb"') > html.indexOf('id="gallery-dropdown-menu"'), 'breadcrumb appears after dropdown-menu (end of the navigation group)');
+ok(html.indexOf('id="gallery-pagination"') > html.indexOf('id="gallery-breadcrumb"'), 'pagination appears after breadcrumb in the gallery');
+ok(html.indexOf('id="gallery-pagination-item"') > html.indexOf('id="gallery-pagination"'), 'pagination-item appears after pagination (end of the navigation group)');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -487,6 +538,28 @@ ok(html.indexOf('id="gallery-breadcrumb"') > html.indexOf('id="gallery-dropdown-
     ok(!crumbHtml.includes('gallery-stage'), 'breadcrumb instance carries no nested stage markup');
     ok(!/<h[1-6][ >]/.test(crumbHtml), 'breadcrumb has no heading copy');
     ok(!crumbHtml.includes('<img') && !crumbHtml.includes('http') && !/ src=/.test(crumbHtml), 'breadcrumb has no external assets');
+}
+// --- Pagination gallery markup ------------------------------------------------
+{
+    const pagerHtml = g.renderGalleryInstance('pagination', null, 'default');
+    ok(pagerHtml.startsWith('<nav aria-label="Pagination" class="ds-pagination" data-element="pagination" data-state="default" data-part="gap">'), 'pagination root carries data-part="gap"');
+    ok((pagerHtml.match(/data-element="pagination-item"/g) || []).length === 7, 'seven pagination-item instances (‹ 1 2 3 … 10 ›)');
+    ok((pagerHtml.match(/data-variant="active"/g) || []).length === 1, 'exactly one active item (page 2)');
+    ok((pagerHtml.match(/data-variant="inactive"/g) || []).length === 6, 'six inactive items');
+    ok((pagerHtml.match(/data-state="default"/g) || []).length === 8, 'host + all seven items are in their default state');
+    ok(!pagerHtml.includes('data-state="hover"') && !pagerHtml.includes('data-state="disabled"'), 'gallery specimen is not shown in hover/disabled');
+    ['‹', '1', '2', '3', '…', '10', '›'].forEach(g2 => ok(pagerHtml.includes(`data-part="text">${g2}<`), `renders the "${g2}" item`));
+    ok(!pagerHtml.includes('gallery-stage'), 'pagination instance carries no nested stage markup');
+    ok(!/<h[1-6][ >]/.test(pagerHtml), 'pagination has no heading copy');
+    ok(!pagerHtml.includes('<img') && !pagerHtml.includes('http') && !/ src=/.test(pagerHtml), 'pagination has no external assets');
+}
+{
+    const itemHtml = g.renderGalleryInstance('pagination-item', 'inactive', 'default');
+    ok((itemHtml.match(/data-element="pagination-item"/g) || []).length === 1, 'pagination-item stage shows exactly one item');
+    ok(itemHtml.includes('data-variant="inactive"'), 'pagination-item stage shows the inactive variant alone');
+    ok(!itemHtml.includes('data-variant="active"'), 'pagination-item stage carries no active instance');
+    ok(itemHtml.includes('data-part="text"'), 'pagination-item text part is paintable/clickable');
+    ok(!itemHtml.includes('gallery-stage'), 'pagination-item instance carries no nested stage markup');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

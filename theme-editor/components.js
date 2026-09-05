@@ -74,7 +74,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
-    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
 const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
@@ -145,7 +145,11 @@ const ELEMENTS = [
     _el('skeleton', 'Skeleton', null, ['default'],
         [_bg(), _radius()]),
     _el('breadcrumb', 'Breadcrumb', null, ['default', 'hover'],
-        [_textPart('link', 'Link'), _textPart('current', 'Current'), _colorPart('separator', 'Separator'), _gap()])
+        [_textPart('link', 'Link'), _textPart('current', 'Current'), _colorPart('separator', 'Separator'), _gap()]),
+    _el('pagination', 'Pagination', null, ['default'],
+        [_gap()]),
+    _el('pagination-item', 'Pagination item', ['inactive', 'active'], FORM_STATES,
+        [_bg(), _text(), _border(), _radius(), _spacePart('size', 'Size'), _ring()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -399,6 +403,25 @@ const SEED_SPEC = {
         },
         states: {
             '*.hover': { 'link.color': 'color.foreground' }
+        }
+    },
+    pagination: {
+        base: { gap: 'space.1' }
+    },
+    'pagination-item': {
+        base: {
+            'text.type': 'type.label', 'border.style': 'border.style.solid',
+            radius: THEME_RADIUS_SEED, size: 'space.9',
+            'ring.color': 'color.ring', 'ring.width': 'border.width.2'
+        },
+        variants: {
+            inactive: { bg: 'palette.transparent', 'text.color': 'color.foreground', 'border.color': 'palette.transparent', 'border.width': 'border.width.0' },
+            active: { bg: 'color.background', 'text.color': 'color.foreground', 'border.color': 'color.input', 'border.width': 'border.width.1' }
+        },
+        states: {
+            '*.hover': ACCENT_HOVER,
+            '*.focus': { 'ring.color': 'color.ring' },
+            '*.disabled': DISABLED_BOX
         }
     }
 };
@@ -752,6 +775,19 @@ function renderProgress(state, value) {
         `<span class="ds-progress-indicator" data-part="indicator"></span></div>`;
 }
 
+// Every page number, the ellipsis and the prev/next glyphs are the SAME
+// pagination-item instance (a token-painted button) - there is no separate
+// "ellipsis" or "arrow" part, so clicking any of them selects Pagination
+// item like clicking a number does.
+function renderPaginationItem(variant, state, label) {
+    return `<button type="button" ${rootAttrs('pagination-item', variant, state, 'bg')}>` +
+        `<span class="ds-pagination-item-text" data-part="text">${label}</span></button>`;
+}
+
+function renderPagination(state, itemsHtml) {
+    return `<nav aria-label="Pagination" ${rootAttrs('pagination', null, state, 'gap')}>${itemsHtml}</nav>`;
+}
+
 const GALLERY_RENDERERS = {
     button: (variant, state) => renderButton(variant, state),
     input: (variant, state) =>
@@ -866,7 +902,11 @@ const GALLERY_RENDERERS = {
         galleryIcon('chevron-right', 'ds-breadcrumb-separator', 'separator') +
         `<a class="ds-breadcrumb-link" data-part="link" href="#">Library</a>` +
         galleryIcon('chevron-right', 'ds-breadcrumb-separator', 'separator') +
-        `<span class="ds-breadcrumb-current" data-part="current" aria-current="page">Data</span></nav>`
+        `<span class="ds-breadcrumb-current" data-part="current" aria-current="page">Data</span></nav>`,
+    pagination: (variant, state) =>
+        renderPagination(state, [['‹', 'inactive'], ['1', 'inactive'], ['2', 'active'], ['3', 'inactive'], ['…', 'inactive'], ['10', 'inactive'], ['›', 'inactive']]
+            .map(([label, v]) => renderPaginationItem(v, 'default', label)).join('')),
+    'pagination-item': (variant, state) => renderPagination('default', renderPaginationItem(variant, state, '2'))
 };
 
 function renderGalleryInstance(elementKey, variant, state) {
