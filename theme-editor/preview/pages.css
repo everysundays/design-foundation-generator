@@ -155,13 +155,15 @@ body {
   gap: var(--pg-space-2);
 }
 
-/* A phone-width frame around a mobile specimen (Mobile top menu and any
-   sibling mobile specimens). Chrome, not a themed element - the frame itself
-   carries no data-part/data-element. min-block-size gives it a phone-like
-   silhouette and leaves clear frame background below a top-docked bar (or
-   above a bottom-docked one) - without it the frame shrink-wraps flush to
-   the bar and there is no frame left to click. */
+/* A phone-width frame around a mobile specimen (Mobile top/bottom menu and
+   any sibling mobile specimens). Chrome, not a themed element - the frame
+   itself carries no data-part/data-element. min-block-size gives it a
+   phone-like silhouette and leaves clear frame background below a top-docked
+   bar (or above a bottom-docked one, which anchors to `position: relative`
+   here) - without it the frame shrink-wraps flush to the bar and there is no
+   frame left to click. */
 .gallery-phone {
+  position: relative;
   inline-size: min(100%, 22.5rem);
   min-block-size: 32rem;
   border: var(--pg-border-width) solid var(--border);

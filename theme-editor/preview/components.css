@@ -28,7 +28,8 @@
 .ds-combobox:is(:focus-visible:not([data-state]), [data-state="focus"]),
 .ds-pagination-item:is(:focus-visible:not([data-state]), [data-state="focus"]),
 .ds-accordion-item:is(:focus-within:not([data-state]), [data-state="focus"]),
-.ds-side-menu-item:is(:focus-visible:not([data-state]), [data-state="focus"]) {
+.ds-side-menu-item:is(:focus-visible:not([data-state]), [data-state="focus"]),
+.ds-mobile-bottom-menu-item:is(:focus-visible:not([data-state]), [data-state="focus"]) {
     outline: var(--_ring-width) solid var(--_ring-color);
     outline-offset: 2px;
 }
@@ -52,7 +53,8 @@
 .ds-combobox[aria-disabled="true"],
 .ds-pagination-item:is(:disabled, [aria-disabled="true"]),
 .ds-accordion-item[aria-disabled="true"],
-.ds-side-menu-item[aria-disabled="true"] {
+.ds-side-menu-item[aria-disabled="true"],
+.ds-mobile-bottom-menu-item[aria-disabled="true"] {
     cursor: not-allowed;
 }
 
@@ -82,7 +84,8 @@
 /* Parts with their own {color,type}: label, title, description, body, meta. */
 .ds-checkbox-label,
 .ds-radio-label,
-.ds-switch-label {
+.ds-switch-label,
+.ds-mobile-bottom-menu-item-label {
     color: var(--_label-color);
     font-family: var(--_label-family);
     font-weight: var(--_label-weight);
@@ -153,7 +156,8 @@
     .ds-combobox,
     .ds-pagination-item,
     .ds-accordion-item,
-    .ds-side-menu-item {
+    .ds-side-menu-item,
+    .ds-mobile-bottom-menu-item {
         transition: background-color 150ms, color 150ms, border-color 150ms, box-shadow 150ms, outline-color 150ms;
     }
     .ds-switch-thumb {
@@ -981,4 +985,58 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* --- Mobile bottom menu -----------------------------------------------------
+ * A phone-width bar pinned to the bottom edge of its frame (.gallery-phone,
+ * preview/pages.css, carries position:relative for this to anchor to). The
+ * top line - against the content above a bottom-docked bar - is a child
+ * span, not painted on the root, like Mobile top menu's bottom line. Each
+ * item has no bg/radius of its own: hover/active only recolour its icon and
+ * label (an iOS-style tab-bar look), and it resets the UA button padding
+ * since it has no padding part - it fills the bar's height instead.
+ */
+
+.ds-mobile-bottom-menu {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    display: flex;
+    align-items: stretch;
+    gap: var(--_gap);
+    block-size: var(--_height);
+    padding: var(--_padding);
+    background: var(--_bg);
+    box-shadow: var(--_shadow);
+}
+
+.ds-mobile-bottom-menu-border {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 0;
+    border-block-start: var(--_border-width) var(--_border-style) var(--_border-color);
+}
+
+.ds-mobile-bottom-menu-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--_gap);
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-mobile-bottom-menu-item-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    font-size: var(--_label-size);
+    line-height: var(--_label-leading);
+    color: var(--_icon);
 }

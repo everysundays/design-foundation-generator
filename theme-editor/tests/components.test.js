@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item', 'accordion', 'accordion-item', 'side-menu', 'side-menu-item', 'mobile-top-menu'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item', 'accordion', 'accordion-item', 'side-menu', 'side-menu-item', 'mobile-top-menu', 'mobile-bottom-menu', 'mobile-bottom-menu-item'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -144,6 +144,33 @@ SOURCES.forEach(source => {
     assertRefValid(seeds['mobile-top-menu.padding-x'], 'space', source, `${source} mobile-top-menu padding-x seed`);
     assertRefValid(seeds['mobile-top-menu.gap'], 'space', source, `${source} mobile-top-menu gap seed`);
     assertRefValid(seeds['mobile-top-menu.shadow'], 'shadow', source, `${source} mobile-top-menu shadow seed`);
+    ok(seeds['mobile-bottom-menu.bg'] === 'color.background', `${source}: mobile-bottom-menu bg seed`);
+    ok(seeds['mobile-bottom-menu.border.color'] === 'color.border', `${source}: mobile-bottom-menu border color seed`);
+    ok(seeds['mobile-bottom-menu.border.style'] === 'border.style.solid', `${source}: mobile-bottom-menu border style seed`);
+    assertRefValid(seeds['mobile-bottom-menu.border.width'], 'borderWidth', source, `${source} mobile-bottom-menu border width seed`);
+    assertRefValid(seeds['mobile-bottom-menu.shadow'], 'shadow', source, `${source} mobile-bottom-menu shadow seed`);
+    assertRefValid(seeds['mobile-bottom-menu.height'], 'space', source, `${source} mobile-bottom-menu height seed`);
+    assertRefValid(seeds['mobile-bottom-menu.padding'], 'space', source, `${source} mobile-bottom-menu padding seed`);
+    assertRefValid(seeds['mobile-bottom-menu.gap'], 'space', source, `${source} mobile-bottom-menu gap seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.icon'] === 'color.muted-foreground', `${source}: mobile-bottom-menu-item inactive icon seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.label.color'] === 'color.muted-foreground', `${source}: mobile-bottom-menu-item inactive label color seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.label.type'] === 'type.caption', `${source}: mobile-bottom-menu-item label type seed`);
+    ok(seeds['mobile-bottom-menu-item.active.icon'] === 'color.primary', `${source}: mobile-bottom-menu-item active icon seed`);
+    ok(seeds['mobile-bottom-menu-item.active.label.color'] === 'color.primary', `${source}: mobile-bottom-menu-item active label color seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.ring.color'] === 'color.ring' && seeds['mobile-bottom-menu-item.active.ring.color'] === 'color.ring', `${source}: mobile-bottom-menu-item focus ring seed (both variants, default state)`);
+    assertRefValid(seeds['mobile-bottom-menu-item.inactive.ring.width'], 'borderWidth', source, `${source} mobile-bottom-menu-item ring width seed`);
+    assertRefValid(seeds['mobile-bottom-menu-item.inactive.gap'], 'space', source, `${source} mobile-bottom-menu-item gap seed`);
+    // DoD-pinned state seeds: inactive hover (icon + label) and the focus
+    // ring delta (applies to every variant via '*.focus') must resolve to
+    // valid refs in both foundations.
+    ok(seeds['mobile-bottom-menu-item.inactive.icon.hover'] === 'color.foreground', `${source}: mobile-bottom-menu-item inactive icon hover seed`);
+    assertRefValid(seeds['mobile-bottom-menu-item.inactive.icon.hover'], 'color', source, `${source} mobile-bottom-menu-item inactive icon hover seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.label.color.hover'] === 'color.foreground', `${source}: mobile-bottom-menu-item inactive label hover seed`);
+    assertRefValid(seeds['mobile-bottom-menu-item.inactive.label.color.hover'], 'color', source, `${source} mobile-bottom-menu-item inactive label hover seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.ring.color.focus'] === 'color.ring' && seeds['mobile-bottom-menu-item.active.ring.color.focus'] === 'color.ring', `${source}: mobile-bottom-menu-item focus ring seed (applies to every variant)`);
+    assertRefValid(seeds['mobile-bottom-menu-item.inactive.ring.color.focus'], 'color', source, `${source} mobile-bottom-menu-item focus ring seed`);
+    ok(seeds['mobile-bottom-menu-item.inactive.icon.disabled'] === 'color.muted-foreground', `${source}: mobile-bottom-menu-item inactive disabled icon`);
+    ok(seeds['mobile-bottom-menu-item.active.icon.disabled'] === 'color.muted-foreground', `${source}: mobile-bottom-menu-item active disabled icon (both variants mute)`);
 });
 ok(g.seedComponentTokens('tailwind', {})['mobile-top-menu.height'] === 'space.14', 'mobile-top-menu height seed value (tailwind)');
 ok(g.seedComponentTokens('tailwind', {})['mobile-top-menu.padding-x'] === 'space.4', 'mobile-top-menu padding-x seed value (tailwind)');
@@ -153,6 +180,13 @@ ok(g.seedComponentTokens('atlassian', {})['mobile-top-menu.height'] === 'space.s
 ok(g.seedComponentTokens('atlassian', {})['mobile-top-menu.padding-x'] === 'space.space.200', 'mobile-top-menu padding-x remaps exactly (16px)');
 ok(g.seedComponentTokens('atlassian', {})['mobile-top-menu.gap'] === 'space.space.150', 'mobile-top-menu gap remaps exactly (12px)');
 ok(g.seedComponentTokens('atlassian', {})['mobile-top-menu.shadow'] === 'shadow.none', 'mobile-top-menu shadow remaps to none on both sources');
+ok(g.seedComponentTokens('tailwind', {})['mobile-bottom-menu.height'] === 'space.14', 'mobile-bottom-menu height seed value (tailwind, same bar height as Mobile top menu)');
+ok(g.seedComponentTokens('tailwind', {})['mobile-bottom-menu.padding'] === 'space.2', 'mobile-bottom-menu padding seed value (tailwind)');
+ok(g.seedComponentTokens('tailwind', {})['mobile-bottom-menu.gap'] === 'space.1', 'mobile-bottom-menu gap seed value (tailwind)');
+ok(g.seedComponentTokens('tailwind', {})['mobile-bottom-menu.shadow'] === 'shadow.sm', 'mobile-bottom-menu shadow seed value (tailwind)');
+ok(g.seedComponentTokens('atlassian', {})['mobile-bottom-menu.height'] === 'space.space.600', 'mobile-bottom-menu height remaps the same as Mobile top menu (56px -> 48px)');
+ok(g.seedComponentTokens('atlassian', {})['mobile-bottom-menu.padding'] === 'space.space.100', 'mobile-bottom-menu padding remaps to the nearest Atlassian step (8px)');
+ok(g.seedComponentTokens('atlassian', {})['mobile-bottom-menu.gap'] === 'space.space.050', 'mobile-bottom-menu gap remaps to the nearest Atlassian step (4px)');
 // theme radius seeding
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0.5 })['button.primary.radius'] === 'radius.lg', 'radius 0.5rem -> lg');
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0 })['card.radius'] === 'radius.none', 'radius 0 -> none');
@@ -405,6 +439,48 @@ ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-top-menu-icon: var(-
 ok(JSON.stringify(g.tokenIdParts('mobile-top-menu.border.color')) === JSON.stringify({ element: 'mobile-top-menu', variant: null, part: 'border', prop: 'color', state: 'default' }), 'mobile-top-menu border color id parses');
 ok(g.tokenIdParts('mobile-top-menu.bg.hover') === null, 'mobile-top-menu host has no hover state');
 
+// --- Mobile bottom menu spot checks -------------------------------------------
+ok(g.propKind('mobile-bottom-menu', 'bg') === 'color', 'mobile-bottom-menu.bg kind');
+ok(g.propKind('mobile-bottom-menu', 'border', 'color') === 'color', 'mobile-bottom-menu border color kind');
+ok(g.propKind('mobile-bottom-menu', 'border', 'width') === 'borderWidth', 'mobile-bottom-menu border width kind');
+ok(g.propKind('mobile-bottom-menu', 'border', 'style') === 'borderStyle', 'mobile-bottom-menu border style kind');
+ok(g.propKind('mobile-bottom-menu', 'shadow') === 'shadow', 'mobile-bottom-menu.shadow kind');
+ok(g.propKind('mobile-bottom-menu', 'height') === 'space', 'mobile-bottom-menu.height kind');
+ok(g.propKind('mobile-bottom-menu', 'padding') === 'space', 'mobile-bottom-menu.padding kind (single-prop)');
+ok(g.propKind('mobile-bottom-menu', 'gap') === 'space', 'mobile-bottom-menu.gap kind');
+ok(g.ELEMENTS.find(el => el.key === 'mobile-bottom-menu').variants === null, 'mobile-bottom-menu has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'mobile-bottom-menu').states) === JSON.stringify(['default']), 'mobile-bottom-menu has only the default state');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'mobile-bottom-menu').parts.map(p => p.key)) ===
+    JSON.stringify(['bg', 'border', 'shadow', 'height', 'padding', 'gap']), 'mobile-bottom-menu part order (height before padding/gap, so it is the first space part)');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-bg: var(--background);'), 'mobile-bottom-menu bg line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-border-color: var(--border);'), 'mobile-bottom-menu border color line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-shadow: var(--shadow-sm);'), 'mobile-bottom-menu shadow line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-height: var(--space-14);'), 'mobile-bottom-menu height line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-padding: var(--space-2);'), 'mobile-bottom-menu single-prop padding line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-gap: var(--space-1);'), 'mobile-bottom-menu gap line');
+ok(JSON.stringify(g.tokenIdParts('mobile-bottom-menu.border.color')) === JSON.stringify({ element: 'mobile-bottom-menu', variant: null, part: 'border', prop: 'color', state: 'default' }), 'mobile-bottom-menu border color id parses');
+ok(g.tokenIdParts('mobile-bottom-menu.bg.hover') === null, 'mobile-bottom-menu host has no hover state');
+
+// --- Mobile bottom menu item spot checks --------------------------------------
+ok(g.propKind('mobile-bottom-menu-item', 'icon') === 'color', 'mobile-bottom-menu-item.icon kind');
+ok(g.propKind('mobile-bottom-menu-item', 'label', 'color') === 'color', 'mobile-bottom-menu-item label color kind');
+ok(g.propKind('mobile-bottom-menu-item', 'label', 'type') === 'type', 'mobile-bottom-menu-item label type kind');
+ok(g.propKind('mobile-bottom-menu-item', 'gap') === 'space', 'mobile-bottom-menu-item.gap kind');
+ok(g.propKind('mobile-bottom-menu-item', 'ring', 'color') === 'color', 'mobile-bottom-menu-item ring color kind');
+ok(g.propKind('mobile-bottom-menu-item', 'ring', 'width') === 'borderWidth', 'mobile-bottom-menu-item ring width kind');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'mobile-bottom-menu-item').variants) === JSON.stringify(['inactive', 'active']), 'mobile-bottom-menu-item variants (inactive first)');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'mobile-bottom-menu-item').states) === JSON.stringify(['default', 'hover', 'focus', 'disabled']), 'mobile-bottom-menu-item states (no active - active is a variant)');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'mobile-bottom-menu-item').parts.map(p => p.key)) ===
+    JSON.stringify(['icon', 'label', 'gap', 'ring']), 'mobile-bottom-menu-item has no bg/padding/radius part, per the DoD');
+ok(g.resolveComponentRef('mobile-bottom-menu-item.active.icon.hover', {}) === 'color.primary', 'mobile-bottom-menu-item active hover inherits its own default (no active.hover delta - only inactive.hover is seeded)');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-item-inactive-icon: var(--muted-foreground);'), 'mobile-bottom-menu-item inactive icon line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-item-inactive-label-color-hover: var(--foreground);'), 'mobile-bottom-menu-item inactive label hover line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-item-inactive-ring-color-focus: var(--ring);'), 'mobile-bottom-menu-item inactive focus ring line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-item-active-icon: var(--primary);'), 'mobile-bottom-menu-item active icon line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --mobile-bottom-menu-item-active-label-type-family: var(--type-caption-family);'), 'mobile-bottom-menu-item label type expands');
+ok(JSON.stringify(g.tokenIdParts('mobile-bottom-menu-item.inactive.icon.hover')) === JSON.stringify({ element: 'mobile-bottom-menu-item', variant: 'inactive', part: 'icon', prop: null, state: 'hover' }), 'mobile-bottom-menu-item hover id parses');
+ok(JSON.stringify(g.tokenIdParts('mobile-bottom-menu-item.inactive.gap.hover')) === JSON.stringify({ element: 'mobile-bottom-menu-item', variant: 'inactive', part: 'gap', prop: null, state: 'hover' }), 'mobile-bottom-menu-item single-prop gap id takes no prop segment, hover parses as the state');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -541,6 +617,23 @@ ok(wiring.includes('--_title-color: var(--mobile-top-menu-title-color);'), 'mobi
 ok(wiring.includes('--_title-family: var(--mobile-top-menu-title-type-family);'), 'mobile-top-menu title type private');
 ok(wiring.includes('--_icon: var(--mobile-top-menu-icon);'), 'mobile-top-menu icon private');
 ok(!wiring.includes('[data-element="mobile-top-menu"]:is('), 'mobile-top-menu has no state rules');
+ok(wiring.includes('[data-element="mobile-bottom-menu"] {\n  --_bg: var(--mobile-bottom-menu-bg);'), 'mobile-bottom-menu default block');
+ok(wiring.includes('--_border-color: var(--mobile-bottom-menu-border-color);'), 'mobile-bottom-menu border color private');
+ok(wiring.includes('--_shadow: var(--mobile-bottom-menu-shadow);'), 'mobile-bottom-menu shadow private');
+ok(wiring.includes('--_height: var(--mobile-bottom-menu-height);'), 'mobile-bottom-menu height private');
+ok(wiring.includes('--_padding: var(--mobile-bottom-menu-padding);'), 'mobile-bottom-menu single-prop padding private');
+ok(wiring.includes('--_gap: var(--mobile-bottom-menu-gap);'), 'mobile-bottom-menu gap private');
+ok(!wiring.includes('[data-element="mobile-bottom-menu"]:is('), 'mobile-bottom-menu has no state rules');
+ok(wiring.includes('[data-element="mobile-bottom-menu-item"][data-variant="inactive"] {\n  --_icon: var(--mobile-bottom-menu-item-inactive-icon);'), 'mobile-bottom-menu-item inactive default block');
+ok(wiring.includes('[data-element="mobile-bottom-menu-item"][data-variant="active"] {\n  --_icon: var(--mobile-bottom-menu-item-active-icon);'), 'mobile-bottom-menu-item active default block');
+ok(wiring.includes('[data-element="mobile-bottom-menu-item"][data-variant="inactive"]:is(:hover:not([data-state]), [data-state="hover"]) {\n  --_icon: var(--mobile-bottom-menu-item-inactive-icon-hover);'), 'mobile-bottom-menu-item inactive hover block');
+ok(wiring.includes('[data-element="mobile-bottom-menu-item"][data-variant="inactive"]:is(:focus-visible:not([data-state]), :focus-within:not([data-state]), [data-state="focus"]) {\n  --_icon: var(--mobile-bottom-menu-item-inactive-icon-focus);'), 'mobile-bottom-menu-item inactive focus block');
+ok(wiring.includes('[data-element="mobile-bottom-menu-item"][data-variant="inactive"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {\n  --_icon: var(--mobile-bottom-menu-item-inactive-icon-disabled);'), 'mobile-bottom-menu-item inactive disabled block');
+ok(!wiring.includes('[data-element="mobile-bottom-menu-item"][data-variant="inactive"]:is(:active'), 'mobile-bottom-menu-item has no active STATE rule (active is a variant)');
+ok(wiring.includes('--_label-color: var(--mobile-bottom-menu-item-inactive-label-color);'), 'mobile-bottom-menu-item label color private');
+ok(wiring.includes('--_label-family: var(--mobile-bottom-menu-item-inactive-label-type-family);'), 'mobile-bottom-menu-item label type private');
+ok(wiring.includes('--_ring-color: var(--mobile-bottom-menu-item-inactive-ring-color-focus);'), 'mobile-bottom-menu-item focus ring private');
+ok(wiring.includes('--_ring-width: var(--mobile-bottom-menu-item-inactive-ring-width);'), 'mobile-bottom-menu-item ring width private');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -612,6 +705,7 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('accordion') === 'surfaces' && g.categoryOf('accordion-item') === 'surfaces', 'accordion categorized as surfaces');
     ok(g.categoryOf('side-menu') === 'navigation' && g.categoryOf('side-menu-item') === 'navigation', 'side-menu categorized as navigation');
     ok(g.categoryOf('mobile-top-menu') === 'navigation', 'mobile-top-menu categorized as navigation');
+    ok(g.categoryOf('mobile-bottom-menu') === 'navigation' && g.categoryOf('mobile-bottom-menu-item') === 'navigation', 'mobile-bottom-menu categorized as navigation');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
@@ -627,6 +721,8 @@ ok(html.indexOf('id="gallery-accordion-item"') > html.indexOf('id="gallery-accor
 ok(html.indexOf('id="gallery-side-menu"') > html.indexOf('id="gallery-pagination-item"'), 'side-menu appears after pagination-item (end of the navigation group)');
 ok(html.indexOf('id="gallery-side-menu-item"') > html.indexOf('id="gallery-side-menu"'), 'side-menu-item appears after side-menu');
 ok(html.indexOf('id="gallery-mobile-top-menu"') > html.indexOf('id="gallery-side-menu-item"'), 'mobile-top-menu appears after side-menu-item (end of the navigation group)');
+ok(html.indexOf('id="gallery-mobile-bottom-menu"') > html.indexOf('id="gallery-mobile-top-menu"'), 'mobile-bottom-menu appears after mobile-top-menu (end of the navigation group)');
+ok(html.indexOf('id="gallery-mobile-bottom-menu-item"') > html.indexOf('id="gallery-mobile-bottom-menu"'), 'mobile-bottom-menu-item appears after mobile-bottom-menu');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -815,6 +911,34 @@ ok(html.indexOf('id="gallery-mobile-top-menu"') > html.indexOf('id="gallery-side
     ok(!barHtml.includes('gallery-stage'), 'mobile-top-menu instance carries no nested stage markup');
     ok(!/<h[1-6][ >]/.test(barHtml), 'mobile-top-menu has no heading copy');
     ok(!barHtml.includes('<img') && !barHtml.includes('http') && !/ src=/.test(barHtml), 'mobile-top-menu has no external assets');
+}
+// --- Mobile bottom menu gallery markup ----------------------------------------
+{
+    const barHtml = g.renderGalleryInstance('mobile-bottom-menu', null, 'default');
+    ok(barHtml.startsWith('<div class="gallery-phone"><nav class="ds-mobile-bottom-menu" data-element="mobile-bottom-menu" data-state="default" data-part="bg">'), 'mobile-bottom-menu root carries data-part="bg", wrapped in the phone frame');
+    ok(barHtml.includes('data-part="border"') && barHtml.includes('aria-hidden="true"'), 'mobile-bottom-menu top border is its own paintable/clickable part, hidden from AT');
+    ok((barHtml.match(/data-element="mobile-bottom-menu-item"/g) || []).length === 4, 'mobile-bottom-menu hosts exactly four mobile-bottom-menu-item instances');
+    ok((barHtml.match(/data-variant="active"/g) || []).length === 1, 'exactly one active item');
+    ok((barHtml.match(/data-variant="inactive"/g) || []).length === 3, 'three inactive items');
+    ok((barHtml.match(/data-state="default"/g) || []).length === 5, 'host + all four items are in their default state');
+    ok((barHtml.match(/data-part="icon"/g) || []).length === 8, 'four items, each showing "icon" twice (button root fallback + the svg child)');
+    ok((barHtml.match(/data-part="label"/g) || []).length === 4, 'four paintable/clickable label parts');
+    ok((barHtml.match(/<svg /g) || []).length === 4, 'four inline svg icons');
+    ok(!barHtml.includes('data-state="hover"') && !barHtml.includes('data-state="disabled"'), 'gallery specimen is not shown in hover/disabled');
+    ok(!barHtml.includes('gallery-stage'), 'mobile-bottom-menu instance carries no nested stage markup');
+    ok(!/<h[1-6][ >]/.test(barHtml), 'mobile-bottom-menu has no heading copy');
+    ok(!barHtml.includes('<img') && !barHtml.includes('http') && !/ src=/.test(barHtml), 'mobile-bottom-menu has no external assets');
+}
+{
+    const itemHtml = g.renderGalleryInstance('mobile-bottom-menu-item', 'inactive', 'default');
+    ok((itemHtml.match(/data-element="mobile-bottom-menu-item"/g) || []).length === 1, 'mobile-bottom-menu-item stage shows exactly one item');
+    ok(itemHtml.includes('data-variant="inactive"'), 'mobile-bottom-menu-item stage shows the inactive variant alone');
+    ok(!itemHtml.includes('data-variant="active"'), 'mobile-bottom-menu-item stage carries no active instance');
+    ok(itemHtml.includes('data-part="icon"'), 'mobile-bottom-menu-item icon part is paintable/clickable');
+    ok(itemHtml.includes('data-part="label"'), 'mobile-bottom-menu-item label part is paintable/clickable');
+    ok(itemHtml.includes('data-element="mobile-bottom-menu"'), 'mobile-bottom-menu-item is hosted inside a mobile-bottom-menu, wrapped in the phone frame');
+    ok(itemHtml.startsWith('<div class="gallery-phone">'), 'mobile-bottom-menu-item stage is also framed like the bar');
+    ok(!itemHtml.includes('gallery-stage'), 'mobile-bottom-menu-item instance carries no nested stage markup');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

@@ -74,7 +74,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog', 'accordion', 'accordion-item'] },
-    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item', 'side-menu', 'side-menu-item', 'mobile-top-menu'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item', 'side-menu', 'side-menu-item', 'mobile-top-menu', 'mobile-bottom-menu', 'mobile-bottom-menu-item'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
 const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
@@ -164,7 +164,19 @@ const ELEMENTS = [
     // child span, components.css) rather than folded onto "bg" like Card's,
     // so it is independently clickable per the DoD.
     _el('mobile-top-menu', 'Mobile top menu', null, ['default'],
-        [_bg(), _border(), _shadow(), _spacePart('height', 'Height'), _spacePart('padding-x', 'Padding x'), _gap(), _textPart('title', 'Title'), _icon()])
+        [_bg(), _border(), _shadow(), _spacePart('height', 'Height'), _spacePart('padding-x', 'Padding x'), _gap(), _textPart('title', 'Title'), _icon()]),
+    // Height precedes padding/gap so it is the first part with a `space`
+    // prop, matching Mobile top menu (see effectivePartSpec in scripts.js).
+    // The top line (against the content above a bottom-docked bar) is its
+    // own child span (data-part="border"), independently clickable.
+    _el('mobile-bottom-menu', 'Mobile bottom menu', null, ['default'],
+        [_bg(), _border(), _shadow(), _spacePart('height', 'Height'), _padding(), _gap()]),
+    // No bg/radius on the item: hover/active can only recolour the icon and
+    // label (an iOS-style tab-bar look), not paint a Material active-
+    // indicator pill. Icon comes first so a click that misses both the icon
+    // and label nodes (root's own data-part) still lands on a real part.
+    _el('mobile-bottom-menu-item', 'Mobile bottom menu item', ['inactive', 'active'], FORM_STATES,
+        [_icon(), _textPart('label', 'Label'), _gap(), _ring()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -488,6 +500,27 @@ const SEED_SPEC = {
             bg: 'color.background', 'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
             shadow: 'shadow.none', height: 'space.14', 'padding-x': 'space.4', gap: 'space.3',
             'title.color': 'color.foreground', 'title.type': 'type.label', icon: 'color.foreground'
+        }
+    },
+    'mobile-bottom-menu': {
+        base: {
+            bg: 'color.background', 'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            shadow: 'shadow.sm', height: 'space.14', padding: 'space.2', gap: 'space.1'
+        }
+    },
+    'mobile-bottom-menu-item': {
+        base: {
+            'label.type': 'type.caption', gap: 'space.1',
+            'ring.color': 'color.ring', 'ring.width': 'border.width.2'
+        },
+        variants: {
+            inactive: { icon: 'color.muted-foreground', 'label.color': 'color.muted-foreground' },
+            active: { icon: 'color.primary', 'label.color': 'color.primary' }
+        },
+        states: {
+            'inactive.hover': { icon: 'color.foreground', 'label.color': 'color.foreground' },
+            '*.focus': { 'ring.color': 'color.ring' },
+            '*.disabled': { icon: 'color.muted-foreground', 'label.color': 'color.muted-foreground' }
         }
     }
 };
@@ -919,6 +952,26 @@ function renderMobileTopMenu(state) {
         '</header>';
 }
 
+// No bg part, so the root's own data-part is "icon" - the first listed part,
+// and the fallback hit for a click inside the button that misses both the
+// icon and label child nodes (see the ELEMENTS comment above
+// mobile-bottom-menu-item).
+function renderMobileBottomMenuItem(variant, state, icon, label) {
+    return `<button type="button" ${rootAttrs('mobile-bottom-menu-item', variant, state, 'icon')}>` +
+        galleryIcon(icon, 'ds-mobile-bottom-menu-item-icon', 'icon') +
+        `<span class="ds-mobile-bottom-menu-item-label" data-part="label">${label}</span></button>`;
+}
+
+// components.css pins the bar to the phone frame's bottom edge. The top line
+// is a child span, not painted on the root - like Mobile top menu's bottom
+// line, independently clickable.
+function renderMobileBottomMenu(state, itemsHtml) {
+    return `<nav ${rootAttrs('mobile-bottom-menu', null, state, 'bg')}>` +
+        `<span class="ds-mobile-bottom-menu-border" data-part="border" aria-hidden="true"></span>` +
+        itemsHtml +
+        '</nav>';
+}
+
 const GALLERY_RENDERERS = {
     button: (variant, state) => renderButton(variant, state),
     input: (variant, state) =>
@@ -1052,7 +1105,13 @@ const GALLERY_RENDERERS = {
             renderSideMenuItem('inactive', 'default', 'Tasks', 'check') +
             renderSideMenuItem('inactive', 'default', 'Notifications', 'info')),
     'side-menu-item': (variant, state) => renderSideMenu('default', 'Workspace', renderSideMenuItem(variant, state, capitalize(variant), 'user')),
-    'mobile-top-menu': (variant, state) => renderPhoneFrame(renderMobileTopMenu(state))
+    'mobile-top-menu': (variant, state) => renderPhoneFrame(renderMobileTopMenu(state)),
+    'mobile-bottom-menu': (variant, state) => renderPhoneFrame(renderMobileBottomMenu(state,
+        renderMobileBottomMenuItem('active', 'default', 'home', 'Home') +
+        renderMobileBottomMenuItem('inactive', 'default', 'search', 'Search') +
+        renderMobileBottomMenuItem('inactive', 'default', 'alert', 'Alerts') +
+        renderMobileBottomMenuItem('inactive', 'default', 'user', 'Profile'))),
+    'mobile-bottom-menu-item': (variant, state) => renderPhoneFrame(renderMobileBottomMenu('default', renderMobileBottomMenuItem(variant, state, 'home', capitalize(variant))))
 };
 
 function renderGalleryInstance(elementKey, variant, state) {
