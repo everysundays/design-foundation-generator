@@ -109,6 +109,31 @@ function panelSwatchHtml(ctx, name, hex, family, label) {
         (text ? `<span class="fp-swatch-label">${panelEsc(text)}</span>` : '') + panelBadgeHtml(mark) + `</button>`;
 }
 
+// A semantic role's swatch (color.<role>) - always labelled, since a role
+// isn't guessable from its colour alone (ctx.semantic entries carry the
+// describeRef() chain as `tip`, passed through as panelTip's `name` with an
+// empty `value` so the tooltip's first line is exactly that chain).
+function panelSemanticSwatchHtml(ctx, s) {
+    const mark = panelMark(ctx, s.ref);
+    const tip = panelTip(s.tip || s.ref, '', mark);
+    const cls = 'fp-swatch fp-swatch-semantic' + (panelSwatchIsDark(s.hex) ? ' fp-swatch-dark' : '');
+    return `<button type="button" class="${cls}" ${panelMarkAttrs(s.ref, tip, mark)}` +
+        ` style="--swatch: ${panelEsc(s.hex)}" aria-label="${panelEsc(s.role)}" title="">` +
+        `<span class="fp-swatch-label">${panelEsc(s.role)}</span>${panelBadgeHtml(mark)}</button>`;
+}
+
+// The semantic role row - every ctx.semantic entry as an assignable swatch,
+// above the palette ramps. Empty ctx.semantic (or none supplied) renders
+// nothing.
+function buildSemanticRowHtml(ctx) {
+    const list = ctx.semantic || [];
+    if (!list.length) return '';
+    return `<div class="fp-ramp fp-ramp-semantic">
+  <span class="fp-ramp-label">semantic</span>
+  <div class="fp-swatches">${list.map(s => panelSemanticSwatchHtml(ctx, s)).join('')}</div>
+</div>`;
+}
+
 function buildColorsPanelHtml(ctx) {
     const foundation = ctx.foundation || foundationOf(ctx.source);
     const families = foundation.color.families();
@@ -126,6 +151,7 @@ function buildColorsPanelHtml(ctx) {
     return `<div class="fp-panel fp-panel-colors">
 <div class="fp-panel-head"><span class="fp-panel-title">${panelEsc(foundation.label)}</span><span class="fp-panel-note">${families.length} ramps · click a swatch to assign</span></div>
 ${buildPropChipsHtml(ctx, 'color')}
+${buildSemanticRowHtml(ctx)}
 ${specials}
 ${rows}
 </div>`;

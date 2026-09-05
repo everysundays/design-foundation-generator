@@ -105,7 +105,7 @@ const ELEMENT_GROUPS = [
 
 const ALL_COLOR_GROUPS = [...COLOR_GROUPS, ...ELEMENT_GROUPS];
 
-// Every palette-linkable semantic color key (34: the 33 shadcn roles plus
+// Every palette-linkable semantic color key (33: the 32 shadcn roles plus
 // shadow-color).
 const LINKABLE_COLOR_KEYS = ALL_COLOR_GROUPS.flatMap(g => g.fields.map(([key]) => key));
 const COLOR_LABELS = Object.fromEntries(ALL_COLOR_GROUPS.flatMap(g => g.fields.map(([key, label]) => [key, g.label === label ? label : `${g.label} ${label}`])));
@@ -484,7 +484,7 @@ function showSidebarTab(key) {
 }
 
 // --- Semantic roles (Summary tab) ---
-// The 34 palette-linked roles as foldable groups, rendered into the Summary
+// The 33 palette-linked roles as foldable groups, rendered into the Summary
 // panel's #semanticRolesMount so a role can still be re-linked through the
 // palette popover and reconciled with what the work actually uses.
 const openGroups = new Set(ALL_COLOR_GROUPS.filter(g => g.open).map(g => g.key));
@@ -1465,6 +1465,17 @@ function describeRef(ref) {
     return entry && entry.px !== null && entry.px !== undefined ? `${ref} (${entry.px}px)` : ref;
 }
 
+// The Colors tab's semantic row (ctx.semantic): every semantic role as an
+// assignable color.<role> ref, painted at its current value, with
+// describeRef()'s chain ("color.primary → neutral-900 (#171717)") ready to
+// use as the swatch's tooltip.
+function semanticColorEntries() {
+    return LINKABLE_COLOR_KEYS.map(role => {
+        const ref = `color.${role}`;
+        return { role, ref, hex: cssColorToHex(currentVars()[role] || '') || '#000000', tip: describeRef(ref) };
+    });
+}
+
 function elementLabel(element, variant, part) {
     const spec = typeof elementSpec === 'function' ? elementSpec(element) : null;
     const crumbs = [spec ? spec.label : titleCase(element)];
@@ -1492,11 +1503,15 @@ function computeMarks() {
     const marks = {};
     const entry = (ref) => (marks[ref] = marks[ref] || { count: 0, ids: [], roles: [], used: false, active: false });
 
+    // Count/ids land on the ref a part is actually assigned to - color.<role>
+    // or palette.<name> verbatim, never the palette step a role happens to
+    // resolve through - so a role's own swatch shows only what was assigned
+    // to that role directly.
     if (typeof componentTokenIds === 'function') {
         componentTokenIds().forEach(id => {
-            const target = resolveToFoundation(componentRef(id), state.mode);
-            if (!target) return;
-            const m = entry(target);
+            const raw = componentRef(id);
+            if (!parseRef(raw)) return;
+            const m = entry(raw);
             m.count += 1;
             m.ids.push(id);
         });
@@ -1507,17 +1522,23 @@ function computeMarks() {
         if (link && link.source === activePaletteSource) entry(`palette.${link.name}`).roles.push(role);
     });
 
-    selectedElementIds().forEach(id => {
-        const target = resolveToFoundation(componentRef(id), state.mode);
-        if (target) entry(target).used = true;
-    });
+    // used/active mark both the ref itself and the foundation step it
+    // resolves through (identical for non-color kinds, so nothing changes
+    // there) - a part seeded on color.primary rings the primary swatch AND
+    // the palette step primary links to, not only the latter.
+    const markThrough = (ref, flag) => {
+        if (!parseRef(ref)) return;
+        entry(ref)[flag] = true;
+        const target = resolveToFoundation(ref, state.mode);
+        if (target && target !== ref) entry(target)[flag] = true;
+    };
+
+    selectedElementIds().forEach(id => markThrough(componentRef(id), 'used'));
 
     const kinds = TAB_KINDS[state.activeTab] || [];
     kinds.forEach(kind => {
         const id = activeTokenId(kind);
-        if (!id) return;
-        const target = resolveToFoundation(componentRef(id), state.mode);
-        if (target) entry(target).active = true;
+        if (id) markThrough(componentRef(id), 'active');
     });
     return marks;
 }
@@ -1540,6 +1561,7 @@ function panelCtx() {
         })(),
         activeProps: state.activeProp,
         marks: computeMarks(),
+        semantic: semanticColorEntries(),
         typeSets: TYPE_SETS,
         typeSetSummary,
         elementLabel

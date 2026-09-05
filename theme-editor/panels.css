@@ -199,6 +199,22 @@
   border-bottom: 1px solid var(--ui-border);
 }
 
+/* Semantic roles (color.<role>) sit in their own row above the palette
+   ramps, wrapped into a grid (33 roles don't fit one line). */
+.fp-ramp-semantic {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.fp-ramp-semantic .fp-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.fp-swatch-semantic .fp-swatch-label {
+  font-size: 9px;
+}
+
 /* --- Scale entries (space / radius / border / shadow / summary rows) --- */
 
 .fp-entries {

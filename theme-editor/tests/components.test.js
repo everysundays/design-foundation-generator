@@ -141,6 +141,11 @@ SOURCES.forEach(source => {
 });
 ok(g.componentVarLines({}, 'atlassian').includes('  --button-primary-padding-x: var(--space-'), 'atlassian space var');
 ok(!g.componentVarLines({}, 'atlassian').includes('--space-space-'), 'atlassian group stripped by refToVar');
+// an explicit component entry pointed at a semantic role (color.<role>, not
+// the palette step it links to) still emits var(--<role>) - see card 7.
+SOURCES.forEach(source => {
+    ok(g.componentVarLines({ 'card.bg': 'color.primary' }, source).includes('  --card-bg: var(--primary);'), `${source}: explicit color.* ref emits var(--role)`);
+});
 {
     // one line per element x variant x part x prop x state (type = 5)
     let expected = 0;
