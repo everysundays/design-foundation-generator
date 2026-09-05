@@ -285,6 +285,15 @@ test('semantic space/radius/shadow tokens resolve to a literal length, never a v
     assert(!/--radius-control/.test(tw));
 });
 
+test('every declaration line in :root/.dark/@theme inline parses as "--name: value;" (optional --line-height suffix / trailing comment)', () => {
+    const DECL = /^  --[a-z][a-z0-9_-]*(--line-height)?: [^;]+;( \/\*.*\*\/)?$/;
+    [tw, buildTailwindCss(atlassianCtx())].forEach(css => {
+        [':root {', '.dark {', '@theme inline {'].forEach(opener => {
+            extractBlock(css, opener).forEach(line => assert(DECL.test(line), `malformed declaration line: ${JSON.stringify(line)}`));
+        });
+    });
+});
+
 test('twThemeVar: null for kinds with no v4 namespace, "_" spelling for fractional steps', () => {
     assert.strictEqual(twThemeVar('border.width.1'), null);
     assert.strictEqual(twThemeVar('type.body'), null);
