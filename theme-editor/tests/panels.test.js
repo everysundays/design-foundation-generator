@@ -23,7 +23,7 @@ const ctx = vm.createContext({ console });
 });
 // Script-scoped `const`s/`function`s are not properties of the context; lift
 // what the test needs out of the shared global lexical scope.
-const g = vm.runInContext('({ buildColorsPanelHtml, panelTip, buildScalePanelHtml, buildSummaryPanelHtml, buildTypePanelHtml })', ctx);
+const g = vm.runInContext('({ buildColorsPanelHtml, panelTip, buildScalePanelHtml, buildSummaryPanelHtml, buildTypePanelHtml, buildTokenRenameHtml })', ctx);
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -149,6 +149,7 @@ function baseCtx(overrides) {
 
     const withToken = g.buildSummaryPanelHtml({ source: 'tailwind', marks: {}, semanticTokens: [{ kind: 'space', name: 'card-padding', ref: 'space.6' }] });
     ok(withToken.includes('data-semantic-target="space.card-padding"'), 'an existing token gets a step-picker keyed by its own ref');
+    ok(withToken.includes('data-rename-kind="space" data-rename-name="card-padding"'), 'the row carries the rename contract (card 14) on its own container');
 }
 
 // --- semantic type tokens (card 13: buildTypePanelHtml token row + buildSummaryPanelHtml Type section) ---
@@ -174,6 +175,17 @@ function baseCtx(overrides) {
     const summaryHtml = g.buildSummaryPanelHtml(baseTypeCtx);
     ok(summaryHtml.includes('data-add-semantic-kind="type"'), "the Type section's add-row is reachable even with zero tokens");
     ok(summaryHtml.includes('data-semantic-target="type.nav"'), 'an existing token gets a set-picker keyed by its own ref');
+
+    // --- rename control (card 14): a Summary-tab type token row too --------
+    ok(summaryHtml.includes('data-rename-kind="type" data-rename-name="nav"'), 'the type token row carries the rename contract on its own container');
+}
+
+// --- buildTokenRenameHtml (card 14): the button+input pair shared by every
+// non-color Summary-tab token row.
+{
+    const html = g.buildTokenRenameHtml('card-padding');
+    ok(html.includes('data-rename-toggle') && html.includes('>card-padding<'), 'the button shows the current name and carries the toggle marker');
+    ok(html.includes('data-rename-input') && html.includes('value="card-padding"') && html.includes('hidden'), 'the input is prefilled with the current name and starts hidden');
 }
 
 console.log(`panels.test.js: ${checks} checks passed`);

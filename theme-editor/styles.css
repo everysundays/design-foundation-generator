@@ -389,8 +389,11 @@ body.resizing-sidebar .preview-frame {
   padding-top: 8px;
 }
 
+/* flex-wrap so a rename error (below) drops to its own line under the row
+   instead of squeezing the palette/reset buttons. */
 .color-field-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -408,11 +411,63 @@ body.resizing-sidebar .preview-frame {
   place-items: center;
 }
 
-.color-field-label {
+/* --- Inline rename (card 14): the token's own name, in place of the old
+   static field label - click to edit (Enter confirms, Escape cancels; see
+   scripts.js createColorFieldRow/onPanelClick/onPanelKeydown/
+   renameSemanticToken). shadow-color has no rename control (foundation
+   shadow steps and the tokens.json shadow layers name it directly) and
+   renders .color-field-name-static instead - same box, no button/input. */
+.color-field-name {
+  display: flex;
+  align-items: center;
   width: 90px;
+  min-width: 0;
   flex-shrink: 0;
+}
+
+.color-field-name-btn,
+.color-field-name-static {
+  width: 100%;
+  min-width: 0;
   font-size: 12px;
+  font-family: ui-monospace, monospace;
   color: var(--ui-text);
+  overflow-wrap: break-word;
+}
+
+.color-field-name-btn {
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.color-field-name-btn:hover {
+  background: var(--ui-bg-subtle);
+}
+
+.color-field-name-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius-sm);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.color-field-name-error {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--ui-warning);
+}
+
+.color-field-name-error[hidden] {
+  display: none;
 }
 
 .color-field-input {

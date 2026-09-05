@@ -406,6 +406,18 @@ function panelSummaryItemHtml(ctx, kind, item) {
 // instead of picking from a plain <select> - see buildAddSemanticTokenRow in
 // scripts.js - so it isn't part of this generic, non-color-only shape.
 
+// The rename control shared by every non-color Summary-tab token row (card
+// 14): a name button that swaps for a text input on click
+// (scripts.js onPanelClick's [data-rename-toggle] branch); Enter confirms
+// (onPanelKeydown -> scripts.js renameSemanticToken), Escape cancels. The
+// containing row carries data-rename-kind/data-rename-name (every non-color
+// token is renamable - only the color built-in shadow-color is not, see
+// createColorFieldRow in scripts.js for that DOM-built equivalent).
+function buildTokenRenameHtml(name) {
+    return `<button type="button" class="fp-entry-name fp-rename-btn" data-rename-toggle>${panelEsc(name)}</button>
+  <input type="text" class="fp-rename-input" data-rename-input value="${panelEsc(name)}" hidden>`;
+}
+
 // Every scaleEntries() step as an <option>, `selectedName` marked selected
 // (null selects nothing - the browser defaults to the first option, used by
 // the add-row before a step is deliberately picked).
@@ -416,16 +428,18 @@ function semanticTargetOptionsHtml(ctx, kind, selectedName) {
     }).join('');
 }
 
-// One existing token: its name, and a step-picker for what it targets
-// (scripts.js setSemanticTokenTarget) - re-pointing it here moves every part
-// assigned to the token, without touching those parts' own assignments.
+// One existing token: a rename control (card 14) for its name, and a
+// step-picker for what it targets (scripts.js setSemanticTokenTarget) -
+// re-pointing it here moves every part assigned to the token, without
+// touching those parts' own assignments.
 function buildSemanticTokenSummaryRowHtml(ctx, kind, token) {
     const ref = scaleRef(kind, token.name);
     const targetParsed = parseRef(token.ref);
     const targetName = targetParsed ? targetParsed.name : null;
-    return `<div class="fp-semantic-token-row">
-  <span class="fp-entry-name">${panelEsc(token.name)}</span>
+    return `<div class="fp-semantic-token-row" data-rename-kind="${panelEsc(kind)}" data-rename-name="${panelEsc(token.name)}">
+  ${buildTokenRenameHtml(token.name)}
   <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTargetOptionsHtml(ctx, kind, targetName)}</select>
+  <span class="fp-rename-error" data-rename-error hidden></span>
 </div>`;
 }
 
@@ -488,17 +502,19 @@ function semanticTypeTargetOptionsHtml(ctx, selectedKey) {
     }).join('');
 }
 
-// One existing type token: its name, and a set-picker for what it aliases
-// (scripts.js setSemanticTokenTarget, via onPanelChange's kind==='type'
-// branch) - re-pointing it here re-styles every part assigned to the token
-// without touching those parts' own assignments.
+// One existing type token: a rename control (card 14) for its name, and a
+// set-picker for what it aliases (scripts.js setSemanticTokenTarget, via
+// onPanelChange's kind==='type' branch) - re-pointing it here re-styles
+// every part assigned to the token without touching those parts' own
+// assignments.
 function buildSemanticTypeTokenRowHtml(ctx, token) {
     const ref = `type.${token.name}`;
     const targetParsed = parseRef(token.ref);
     const targetKey = targetParsed && targetParsed.kind === 'type' ? targetParsed.name : null;
-    return `<div class="fp-semantic-token-row">
-  <span class="fp-entry-name">${panelEsc(token.name)}</span>
+    return `<div class="fp-semantic-token-row" data-rename-kind="type" data-rename-name="${panelEsc(token.name)}">
+  ${buildTokenRenameHtml(token.name)}
   <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTypeTargetOptionsHtml(ctx, targetKey)}</select>
+  <span class="fp-rename-error" data-rename-error hidden></span>
 </div>`;
 }
 

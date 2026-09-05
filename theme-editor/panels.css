@@ -598,14 +598,55 @@
   border-bottom: 1px dashed var(--ui-border);
 }
 
-/* One row per existing token on the Summary tab: its name, and a step
-   picker to re-target it (scripts.js setSemanticTokenTarget). */
+/* One row per existing token on the Summary tab: a rename control (card 14)
+   for its name, and a step/set picker to re-target it (scripts.js
+   setSemanticTokenTarget). flex-wrap so a rename error (below) drops to its
+   own line instead of squeezing the picker. */
 .fp-semantic-token-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 2px 4px;
+}
+
+/* --- Inline rename (card 14): the name cell of a Summary-tab token row
+   (space/radius/border/shadow/type - see panels.js buildTokenRenameHtml).
+   The color row's DOM-built equivalent is styles.css's .color-field-name-*.
+   A click swaps the button for the input (scripts.js onPanelClick's
+   [data-rename-toggle] branch); Enter confirms (onPanelKeydown ->
+   renameSemanticToken), Escape cancels - both toggle the `hidden` property,
+   never rebuild this markup, so mid-edit state never depends on a re-render. */
+.fp-rename-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fp-rename-btn:hover {
+  color: var(--ui-accent);
+}
+
+.fp-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.fp-rename-error {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--ui-warning, #b45309);
 }
 
 .fp-semantic-target-select {

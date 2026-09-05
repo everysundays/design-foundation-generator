@@ -290,7 +290,14 @@ function buildTokensJson(ctx) {
             'theme-editor': Object.assign(
                 { version: DTCG_FILE_VERSION, name: ctx.name || 'Untitled', source, families: families.slice() },
                 (ctxAllTokens && !tokensAreDefault)
-                    ? { semantic: { tokens: ctxAllTokens.map(({ kind, name }) => ({ kind, name })) } }
+                    // `builtin` (card 14): a renamed built-in color role's
+                    // stable identity - carried along whenever it's a
+                    // non-empty string so a round trip through this file
+                    // doesn't strip it (see parseTokensJson's matching
+                    // read-back); omitted entirely for a plain/never-renamed
+                    // entry, so an export with no renamed role stays exactly
+                    // byte-identical to before this field existed.
+                    ? { semantic: { tokens: ctxAllTokens.map(t => (t.builtin ? { kind: t.kind, name: t.name, builtin: t.builtin } : { kind: t.kind, name: t.name })) } }
                     : null
             )
         }
@@ -502,7 +509,13 @@ function parseTokensJson(obj) {
                     return;
                 }
                 seen.add(key);
-                result.semanticTokens.push({ kind: t.kind, name: t.name });
+                // `builtin` (card 14): read back verbatim when the file
+                // carries one (buildTokensJson only ever writes a non-empty
+                // string) - scripts.js normalizeSemanticTokens is still the
+                // one place that BACKFILLS a missing builtin by name match,
+                // so an older export or a foreign tokens file (no builtin at
+                // all) still round-trips a renamed-away role correctly.
+                result.semanticTokens.push(typeof t.builtin === 'string' && t.builtin ? { kind: t.kind, name: t.name, builtin: t.builtin } : { kind: t.kind, name: t.name });
                 return;
             }
             const ref = semanticGroupRef(t.kind, t.name);

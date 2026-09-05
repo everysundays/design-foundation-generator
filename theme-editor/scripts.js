@@ -570,6 +570,43 @@ function setSemanticTokenTarget(kind, name, ref) {
     renderAll();
 }
 
+// Renames a semantic token of any kind (the Summary tab's per-row rename
+// control - see createColorFieldRow / panels.js buildTokenRenameHtml and the
+// onPanelClick/onPanelKeydown wiring below). Validates the new name the same
+// way the matching add-flow does (kind 'type' -> typeTokenNameError, every
+// other kind -> semanticNameError + varCollision, color -> semanticNameError
+// alone - a color role's var is bare, so the reserved-prefix check alone
+// already refuses e.g. "space-4"), checked against every OTHER token (never
+// itself, so re-confirming the unchanged name never reads as "already
+// exists"). Returns an error string on failure (nothing changed), or null on
+// success - including the no-op case (newName === oldName), which pushes no
+// undo step. The actual rewrite is semantic.js's pure renameToken; this only
+// validates, snapshots for undo, and applies the result to live state.
+function renameSemanticToken(kind, oldName, newName) {
+    const trimmed = String(newName === undefined || newName === null ? '' : newName).trim();
+    if (trimmed === oldName) return null;
+    const others = state.semanticTokens.filter(t => !(t && t.kind === kind && t.name === oldName));
+    const err = kind === 'type'
+        ? typeTokenNameError(trimmed, others, TYPE_SETS)
+        : semanticNameError(trimmed, others, semanticReservedNames());
+    if (err) return err;
+    if (SEMANTIC_SCALE_KINDS.includes(kind)) {
+        const collision = varCollision(kind, trimmed, others);
+        if (collision) return semanticVarCollisionMessage(trimmed, collision);
+    }
+    pushUndo();
+    const result = renameToken(
+        { semanticTokens: state.semanticTokens, vars: state.vars, tokenLinks, components: state.components },
+        kind, oldName, trimmed
+    );
+    state.semanticTokens = result.semanticTokens;
+    state.vars = result.vars;
+    tokenLinks = result.tokenLinks;
+    state.components = result.components;
+    renderAll();
+    return null;
+}
+
 function updateUndoRedoButtons() {
     document.getElementById('undoButton').disabled = undoStack.length === 0;
     document.getElementById('redoButton').disabled = redoStack.length === 0;
@@ -590,6 +627,16 @@ function showSidebarTab(key) {
 // panel's #semanticRolesMount so a role can still be re-linked through the
 // palette popover and reconciled with what the work actually uses.
 const openGroups = new Set(ALL_COLOR_GROUPS.filter(g => g.open).map(g => g.key));
+
+// ALL_COLOR_GROUPS/COLOR_GROUPS/ELEMENT_GROUPS's `fields` name every slot by
+// its ORIGINAL built-in name (a `const`, never rewritten by a rename) - this
+// resolves a slot to whichever token CURRENTLY plays it (semantic.js
+// builtinTokenName), so a renamed role stays in its group, showing its new
+// name, rather than leaving a stale "accent" row behind while the renamed
+// token orphans itself into the ungrouped user-token list below.
+function groupFieldCurrentKey(builtinKey) {
+    return builtinTokenName(state.semanticTokens, builtinKey);
+}
 
 function renderFoldableGroups(groups, container) {
     container.innerHTML = '';
@@ -613,7 +660,7 @@ function renderFoldableGroups(groups, container) {
         group.fields.forEach(([key]) => {
             const dot = document.createElement('span');
             dot.className = 'color-group-fold-swatch';
-            dot.style.backgroundColor = cssColorToHex(vars[key]) || '#000000';
+            dot.style.backgroundColor = cssColorToHex(vars[groupFieldCurrentKey(key)]) || '#000000';
             summarySwatches.appendChild(dot);
         });
         summary.append(summaryText, summarySwatches);
@@ -621,7 +668,7 @@ function renderFoldableGroups(groups, container) {
 
         const body = document.createElement('div');
         body.className = 'color-group-body';
-        group.fields.forEach(([key, label]) => body.appendChild(createColorFieldRow(key, label, vars)));
+        group.fields.forEach(([key]) => body.appendChild(createColorFieldRow(groupFieldCurrentKey(key), vars)));
         details.appendChild(body);
         container.appendChild(details);
     });
@@ -709,15 +756,22 @@ function renderSemanticRoles() {
     groups.className = 'color-groups';
     renderFoldableGroups(ALL_COLOR_GROUPS, groups);
 
-    // User-added tokens (not part of any built-in group) render as ungrouped
-    // rows directly above the add row - see the Reorder-and-group card for
-    // where they eventually land inside ALL_COLOR_GROUPS.
-    const userNames = linkableColorKeys().filter(key => !SEMANTIC_COLOR_ROLES.includes(key));
+    // User-added tokens (no builtin identity - see semantic.js's field on
+    // the token record) render as ungrouped rows directly above the add row.
+    // A RENAMED built-in keeps its builtin identity through the rename (only
+    // `name` moves), so it stays inside its group via groupFieldCurrentKey
+    // above and never lands here, even though its CURRENT name is no longer
+    // one of SEMANTIC_COLOR_ROLES' original 33 - see the Reorder-and-group
+    // card for where a genuine user token eventually gets its own group.
+    const userNames = linkableColorKeys().filter(name => {
+        const token = state.semanticTokens.find(t => t && t.kind === 'color' && t.name === name);
+        return !token || !token.builtin;
+    });
     if (userNames.length) {
         const body = document.createElement('div');
         body.className = 'color-group-body';
         const vars = currentVars();
-        userNames.forEach(name => body.appendChild(createColorFieldRow(name, name, vars)));
+        userNames.forEach(name => body.appendChild(createColorFieldRow(name, vars)));
         groups.appendChild(body);
     }
     mount.appendChild(groups);
@@ -729,9 +783,14 @@ function renderSemanticRolesIfMounted() {
     if (document.getElementById('semanticRolesMount')) renderSemanticRoles();
 }
 
-// One semantic color row: swatch, label, read-only token-name field, palette
-// button, reset. Only a palette swatch may set it - never typed free text.
-function createColorFieldRow(key, label, vars) {
+// One semantic color row: swatch, a rename control (card 14 - click the
+// name, type, Enter to confirm, Escape to cancel; see onPanelClick/
+// onPanelKeydown/renameSemanticToken) for its name, read-only token-name
+// field, palette button, reset. Only a palette swatch may set the color
+// value - never typed free text; renaming only changes which var the row
+// edits. shadow-color has no rename control (see semantic.js
+// isTokenRenamable) and renders its name as plain text.
+function createColorFieldRow(key, vars) {
     const value = vars[key] || '';
     const hex = cssColorToHex(value) || '#000000';
 
@@ -743,9 +802,33 @@ function createColorFieldRow(key, label, vars) {
     swatch.className = 'color-field-swatch';
     swatch.style.backgroundColor = hex;
 
-    const fieldLabel = document.createElement('label');
-    fieldLabel.className = 'color-field-label';
-    fieldLabel.textContent = label;
+    const nameWrap = document.createElement('span');
+    nameWrap.className = 'color-field-name';
+    if (isTokenRenamable({ kind: 'color', name: key })) {
+        row.dataset.renameKind = 'color';
+        row.dataset.renameName = key;
+        const nameBtn = document.createElement('button');
+        nameBtn.type = 'button';
+        nameBtn.className = 'color-field-name-btn';
+        nameBtn.dataset.renameToggle = '';
+        nameBtn.textContent = key;
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'color-field-name-input';
+        nameInput.dataset.renameInput = '';
+        nameInput.value = key;
+        nameInput.hidden = true;
+        const nameError = document.createElement('span');
+        nameError.className = 'color-field-name-error';
+        nameError.dataset.renameError = '';
+        nameError.hidden = true;
+        nameWrap.append(nameBtn, nameInput, nameError);
+    } else {
+        const nameStatic = document.createElement('span');
+        nameStatic.className = 'color-field-name-static';
+        nameStatic.textContent = key;
+        nameWrap.appendChild(nameStatic);
+    }
 
     const link = tokenLinks[state.mode][key];
     const inPalette = isLinkInPalette(link);
@@ -788,7 +871,7 @@ function createColorFieldRow(key, label, vars) {
         setVar(key, loaded, { link: loadedLink ? { ...loadedLink } : null });
     });
 
-    row.append(swatch, fieldLabel, input, paletteBtn, resetBtn);
+    row.append(swatch, nameWrap, input, paletteBtn, resetBtn);
     return row;
 }
 
@@ -797,7 +880,13 @@ function createColorFieldRow(key, label, vars) {
 // only needs the row itself to already be in the DOM (renderSemanticRoles
 // renders it ungrouped, above the add row).
 function revealSemanticRow(key) {
-    const group = ALL_COLOR_GROUPS.find(g => g.fields.some(([k]) => k === key));
+    // `key` is the token's CURRENT name, which for a renamed built-in no
+    // longer matches ALL_COLOR_GROUPS' hardcoded field key (that's the
+    // original built-in name) - go through the token's own builtin identity
+    // first, same as groupFieldCurrentKey does in reverse.
+    const token = state.semanticTokens.find(t => t && t.kind === 'color' && t.name === key);
+    const builtinKey = token && token.builtin;
+    const group = builtinKey ? ALL_COLOR_GROUPS.find(g => g.fields.some(([k]) => k === builtinKey)) : null;
     if (group) openGroups.add(group.key);
     else if (!linkableColorKeys().includes(key)) return;
     showSidebarTab('summary');
@@ -1347,6 +1436,14 @@ function scaleKinds() {
     return ['space', 'radius', 'borderWidth', 'borderStyle', 'shadow', 'typeSize', 'typeLeading'];
 }
 
+// Built-in color roles the preview page ITSELF reads directly
+// (preview/pages.css: body background/text, muted copy, the hover/selection
+// outline) rather than through a component part's own token chain - see
+// cssVarBlockFor, which aliases each to a --pg-<key> var through
+// semantic.js builtinTokenName so a rename of any of these four keeps the
+// preview painted (card 14 DoD).
+const PREVIEW_CHROME_ROLES = { bg: 'background', fg: 'foreground', ring: 'ring', 'muted-fg': 'muted-foreground' };
+
 // The whole token chain as CSS custom properties: palette -> scales ->
 // semantic (as var() into the palette when linked) -> type sets -> component
 // parts. This is what the preview renders from and what the CSS export emits.
@@ -1378,6 +1475,16 @@ function cssVarBlockFor(vars, links) {
         const linked = isLinkInPalette(link) && (isSpecialName(link.name) || !!paletteEntryByName(source, link.name));
         lines.push(`  --${key}: ${linked ? `var(${refToVar(`palette.${link.name}`)})` : vars[key]};`);
         emitted.add(key);
+    });
+
+    // Preview-chrome aliases (card 14): preview/pages.css paints the page
+    // itself (background/text, muted copy, the hover/selection outline)
+    // through these four vars rather than a role's own var name directly, so
+    // renaming background/foreground/ring/muted-foreground keeps the preview
+    // painted - builtinTokenName finds whichever token currently plays that
+    // role, however many times it's been renamed.
+    Object.entries(PREVIEW_CHROME_ROLES).forEach(([chromeKey, role]) => {
+        lines.push(`  --pg-${chromeKey}: var(${refToVar(`color.${builtinTokenName(state.semanticTokens, role)}`)});`);
     });
 
     ['font-sans', 'font-serif', 'font-mono', 'tracking-normal'].forEach(key => {
@@ -1816,9 +1923,99 @@ function renderPanel() {
     if (tab === 'summary') renderSemanticRoles();
 }
 
+// --- Inline rename (card 14) -------------------------------------------
+// Every Summary-tab token row (color: createColorFieldRow; every other
+// kind: panels.js buildTokenRenameHtml) shares one data-* contract: the row
+// itself carries data-rename-kind/data-rename-name, and holds a
+// [data-rename-toggle] button plus a [data-rename-input]/[data-rename-error]
+// pair. Both the button and the input are ALWAYS in the DOM (never rebuilt
+// on open/cancel - only `hidden` toggles) so a half-typed name is never at
+// risk of a stray re-render; only a SUCCESSFUL rename triggers renderAll(),
+// which naturally redraws the row showing the new name as a plain button.
+
+// The four elements of one rename row, from any element inside it (or null
+// outside a [data-rename-kind] row).
+function renameRowEls(anchor) {
+    const row = anchor.closest('[data-rename-kind]');
+    if (!row) return null;
+    return {
+        row,
+        btn: row.querySelector('[data-rename-toggle]'),
+        input: row.querySelector('[data-rename-input]'),
+        error: row.querySelector('[data-rename-error]')
+    };
+}
+
+// Reverts every OTHER open rename row to its button state before a new one
+// opens - at most one row edits at a time.
+function closeAllRenameInputs(exceptRow) {
+    document.querySelectorAll('#panelBody [data-rename-kind]').forEach(row => {
+        if (row === exceptRow) return;
+        const input = row.querySelector('[data-rename-input]');
+        if (!input || input.hidden) return;
+        cancelRenameInput(input);
+    });
+}
+
+function openRenameInput(btn) {
+    const els = renameRowEls(btn);
+    if (!els || !els.input) return;
+    closeAllRenameInputs(els.row);
+    els.input.value = els.row.dataset.renameName;
+    els.btn.hidden = true;
+    els.input.hidden = false;
+    if (els.error) { els.error.hidden = true; els.error.textContent = ''; }
+    els.input.focus();
+    els.input.select();
+}
+
+// Escape, or reverting a row that lost focus to a NEW rename opening
+// elsewhere - discards whatever was typed, no state change.
+function cancelRenameInput(input) {
+    const els = renameRowEls(input);
+    if (!els) return;
+    els.input.value = els.row.dataset.renameName;
+    els.input.hidden = true;
+    if (els.btn) els.btn.hidden = false;
+    if (els.error) { els.error.hidden = true; els.error.textContent = ''; }
+}
+
+// Enter - validates and applies via renameSemanticToken. An error stays
+// inline and keeps editing (per the DoD: "a colliding or invalid name is
+// refused inline"); success lets renameSemanticToken's own renderAll()
+// rebuild the row from scratch, so there's nothing left to clean up here.
+function confirmRenameInput(input) {
+    const els = renameRowEls(input);
+    if (!els) return;
+    const err = renameSemanticToken(els.row.dataset.renameKind, els.row.dataset.renameName, input.value);
+    if (err && els.error) {
+        els.error.textContent = err;
+        els.error.hidden = false;
+    }
+}
+
+// One delegated keydown listener for every rename input (see the
+// DOMContentLoaded wiring below).
+function onPanelKeydown(e) {
+    const input = e.target.closest('[data-rename-input]');
+    if (!input || !input.closest('#panelBody')) return;
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmRenameInput(input);
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelRenameInput(input);
+    }
+}
+
 // One delegated click handler for every panel: chips choose the prop a kind
 // assigns; refs assign to the active token of their kind.
 function onPanelClick(e) {
+    const renameToggle = e.target.closest('[data-rename-toggle]');
+    if (renameToggle && renameToggle.closest('#panelBody')) {
+        openRenameInput(renameToggle);
+        return;
+    }
     const chip = e.target.closest('[data-prop]');
     if (chip && chip.closest('#panelBody')) {
         const kindHolder = chip.closest('[data-kind]');
@@ -2314,6 +2511,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const panelBody = document.getElementById('panelBody');
     panelBody.addEventListener('click', onPanelClick);
     panelBody.addEventListener('change', onPanelChange);
+    panelBody.addEventListener('keydown', onPanelKeydown);
     panelBody.addEventListener('mouseover', (e) => {
         const tipped = e.target.closest('[data-tip]');
         if (tipped && panelBody.contains(tipped)) showSwatchTooltip(tipped, tipped.dataset.tip);

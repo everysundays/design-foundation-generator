@@ -25,7 +25,8 @@ const g = vm.runInContext(`({
     isCssIdentifier, semanticNameError, addSemanticToken, normalizeSemanticTokens,
     resolveSemanticTarget, varCollision, semanticVarCollisionMessage, remapSemanticTokens, semanticVarLines,
     semanticTypeFallbackKey, resolveTypeSetForRef, resolveSemanticTypeSet, typeTokenNameError, semanticTypeAliasLines,
-    parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale
+    isTokenRenamable, builtinTokenName, renameToken,
+    parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale, buildTokensJson, parseTokensJson
 })`, ctx);
 
 // vm-context arrays/objects carry that realm's own Array/Object prototypes,
@@ -109,10 +110,14 @@ eq(new Set(g.SEMANTIC_COLOR_ROLES), new Set(g.DTCG_COLOR_ROLES), 'SEMANTIC_COLOR
     const roles = g.defaultSemanticTokens();
     const next = g.addSemanticToken(roles, 'color', 'warning');
     ok(next.length === 34, 'addSemanticToken appends one entry');
-    eq(next[next.length - 1], { kind: 'color', name: 'warning' }, 'the appended entry has the given kind/name');
+    // builtin: null (explicit, not merely absent) - card 14's rename needs
+    // this to tell "a fresh user token that happens to be named like a
+    // built-in role" apart from an actual built-in (see addSemanticToken's
+    // own comment and normalizeSemanticTokens' backfill rule below).
+    eq(next[next.length - 1], { kind: 'color', name: 'warning', builtin: null }, 'the appended entry has the given kind/name and an explicit builtin: null');
     ok(roles.length === 33, 'addSemanticToken does not mutate the list it was given');
     eq(next.slice(0, 33), roles, 'every original entry is preserved, in order, before the new one');
-    eq(g.addSemanticToken(next, 'color', '  spacey  '), [...next, { kind: 'color', name: 'spacey' }], 'the stored name is trimmed');
+    eq(g.addSemanticToken(next, 'color', '  spacey  '), [...next, { kind: 'color', name: 'spacey', builtin: null }], 'the stored name is trimmed');
 }
 
 // --- normalizeSemanticTokens -------------------------------------------------
@@ -132,11 +137,27 @@ eq(new Set(g.SEMANTIC_COLOR_ROLES), new Set(g.DTCG_COLOR_ROLES), 'SEMANTIC_COLOR
     const withDupe = [...defaults, { kind: 'color', name: 'warning' }, { kind: 'color', name: 'warning' }];
     eq(g.normalizeSemanticTokens(withDupe), withExtra, 'a duplicate kind+name entry is deduped, keeping the first occurrence');
 
+    // "primary" carries no `builtin` field here (a pre-card-14 shape) - see
+    // the backfill test below for why the output still gets one.
     const mixed = [{ kind: 'color', name: 'primary' }, { bad: true }, { kind: 'color', name: 'Not-Valid' }, { kind: 'color', name: '' }, { kind: 'color', name: 'warning' }];
-    eq(g.normalizeSemanticTokens(mixed), [{ kind: 'color', name: 'primary' }, { kind: 'color', name: 'warning' }], 'invalid entries (bad shape, non-identifier name, blank name) are dropped, valid ones kept');
+    eq(g.normalizeSemanticTokens(mixed), [{ kind: 'color', name: 'primary', builtin: 'primary' }, { kind: 'color', name: 'warning' }], 'invalid entries (bad shape, non-identifier name, blank name) are dropped, valid ones kept');
 
     // Trimmed on the way in, same as addSemanticToken.
     eq(g.normalizeSemanticTokens([{ kind: 'color', name: '  warning  ' }]), [{ kind: 'color', name: 'warning' }], 'a name is trimmed during normalization');
+
+    // --- builtin backfill (card 14): every save from before this field
+    // existed names a color entry after its built-in role verbatim (renaming
+    // didn't exist yet), so a missing `builtin` is safely inferred from the
+    // name; a name that isn't one of the 33 roles (a genuine user token)
+    // gets no builtin at all, exactly as addSemanticToken produces today.
+    eq(g.normalizeSemanticTokens([{ kind: 'color', name: 'primary' }]), [{ kind: 'color', name: 'primary', builtin: 'primary' }], 'a legacy color entry named after a built-in role is backfilled with that builtin');
+    eq(g.normalizeSemanticTokens([{ kind: 'color', name: 'warning' }]), [{ kind: 'color', name: 'warning' }], 'a legacy color entry NOT named after a built-in role gets no builtin');
+    // An explicit `builtin` (a string, or null) is always kept verbatim,
+    // never overridden by the name-match heuristic - this is what lets a
+    // name freed up by an earlier rename be reused by a genuinely new token
+    // without being mistaken for the original built-in.
+    eq(g.normalizeSemanticTokens([{ kind: 'color', name: 'primary', builtin: null }]), [{ kind: 'color', name: 'primary', builtin: null }], 'an explicit builtin: null is respected even when the name matches a built-in role');
+    eq(g.normalizeSemanticTokens([{ kind: 'color', name: 'canvas', builtin: 'background' }]), [{ kind: 'color', name: 'canvas', builtin: 'background' }], 'an explicit builtin string survives normalize as-is, whatever the current name is');
 }
 
 // --- Non-color semantic scale tokens (card 9: "Semantic space tokens") -----
@@ -283,13 +304,16 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
     // --- addSemanticToken / normalizeSemanticTokens (non-color shape) ------
     {
         eq(g.addSemanticToken([], kind, c.name, stepRef), [token], `${kind}: addSemanticToken appends {kind, name, ref}`);
-        eq(g.addSemanticToken([], 'color', 'warning'), [{ kind: 'color', name: 'warning' }], 'addSemanticToken(color) still carries no ref field');
+        eq(g.addSemanticToken([], 'color', 'warning'), [{ kind: 'color', name: 'warning', builtin: null }], 'addSemanticToken(color) still carries no ref field (builtin: null instead)');
 
         eq(g.normalizeSemanticTokens([token]), [token], `${kind}: a valid non-color token survives normalize as-is`);
         eq(g.normalizeSemanticTokens([{ kind, name: c.name }]), g.defaultSemanticTokens(), `${kind}: a non-color entry with no ref is dropped (falls back to the defaults when nothing else survives)`);
         eq(g.normalizeSemanticTokens([{ kind, name: c.name, ref: 'not a ref!!' }]), g.defaultSemanticTokens(), `${kind}: a non-color entry with an unparseable ref is dropped`);
+        // "primary" carries no `builtin` here - normalize backfills it (see
+        // the dedicated backfill cases above), which is why the expectation
+        // isn't `withBoth` itself.
         const withBoth = [{ kind: 'color', name: 'primary' }, token];
-        eq(g.normalizeSemanticTokens(withBoth), withBoth, `${kind}: a color token and a non-color token coexist through normalize`);
+        eq(g.normalizeSemanticTokens(withBoth), [{ kind: 'color', name: 'primary', builtin: 'primary' }, token], `${kind}: a color token and a non-color token coexist through normalize`);
     }
 
     // --- remapSemanticTokens: a Foundation switch keeps the name, moves ref
@@ -390,6 +414,136 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
     eq(g.normalizeSemanticTokens([token]), [token], 'a valid type token survives normalize as-is');
     eq(g.normalizeSemanticTokens([{ kind: 'type', name: 'nav' }]), g.defaultSemanticTokens(), 'a type entry with no ref is dropped (falls back to the defaults)');
     eq(g.normalizeSemanticTokens([{ kind: 'type', name: 'nav', ref: 'not a ref!!' }]), g.defaultSemanticTokens(), 'a type entry with an unparseable ref is dropped');
+}
+
+// --- Rename a semantic token (card 14) --------------------------------------
+
+// --- isTokenRenamable / builtinTokenName ------------------------------------
+{
+    ok(g.isTokenRenamable({ kind: 'color', name: 'accent' }) === true, 'isTokenRenamable allows an ordinary built-in color role');
+    ok(g.isTokenRenamable({ kind: 'color', name: 'shadow-color' }) === false, 'isTokenRenamable refuses shadow-color');
+    ok(g.isTokenRenamable({ kind: 'space', name: 'shadow-color' }) === true, 'isTokenRenamable only special-cases the color kind - a coincidentally-named non-color token is unaffected');
+
+    const defaults = g.defaultSemanticTokens();
+    ok(g.builtinTokenName(defaults, 'background') === 'background', 'builtinTokenName: unrenamed - the role name itself');
+    const renamedBg = defaults.map(t => (t.builtin === 'background' ? { ...t, name: 'canvas' } : t));
+    ok(g.builtinTokenName(renamedBg, 'background') === 'canvas', 'builtinTokenName: finds whichever token now carries builtin === the role, wherever a rename moved it');
+    ok(g.builtinTokenName([], 'background') === 'background', 'builtinTokenName falls back to the role name itself when nothing claims it (never dangles)');
+}
+
+// --- renameToken: pure, rewrites the token list + vars/tokenLinks (color) +
+// every matching component ref, in one step, leaving nothing behind. The
+// fixture also carries an INJECTED space token (never added through
+// addSemanticScaleToken) to prove the same path renames a token of any kind.
+{
+    const spaceToken = { kind: 'space', name: 'card-padding', ref: 'space.6' };
+    const baseTokens = [...g.defaultSemanticTokens(), spaceToken];
+    const system = {
+        semanticTokens: baseTokens,
+        vars: {
+            light: { accent: '#f5f5f5', 'accent-foreground': '#171717', primary: '#111111' },
+            dark: { accent: '#262626', 'accent-foreground': '#fafafa', primary: '#eeeeee' }
+        },
+        tokenLinks: {
+            light: {
+                accent: { source: 'tailwind', name: 'neutral-100', hex: '#f5f5f5' },
+                'accent-foreground': { source: 'tailwind', name: 'neutral-900', hex: '#171717' }
+            },
+            dark: {
+                accent: { source: 'tailwind', name: 'neutral-800', hex: '#262626' },
+                'accent-foreground': { source: 'tailwind', name: 'neutral-50', hex: '#fafafa' }
+            }
+        },
+        // A mix of a seeded state override (the button outline/ghost hover
+        // background - see components.js ACCENT_HOVER), a ref to a sibling
+        // role that must NOT move, a ref to the injected space token, and a
+        // literal foundation-step ref that must never move either.
+        components: {
+            'button.outline.bg.hover': 'color.accent',
+            'button.ghost.bg.hover': 'color.accent',
+            'badge.default.text.color': 'color.accent-foreground',
+            'card.padding': 'space.card-padding',
+            'card.gap': 'space.4'
+        }
+    };
+
+    const renamed = g.renameToken(system, 'color', 'accent', 'highlight');
+    ok(renamed.semanticTokens.some(t => t.kind === 'color' && t.name === 'highlight' && t.builtin === 'accent'),
+        'the "accent" entry is renamed to "highlight", keeping its builtin identity');
+    ok(!renamed.semanticTokens.some(t => t.kind === 'color' && t.name === 'accent'), 'no entry is still named "accent"');
+    ok(renamed.semanticTokens.some(t => t.kind === 'color' && t.name === 'accent-foreground'),
+        '"accent-foreground" is untouched - exact-match rename, never a prefix rewrite');
+
+    eq(renamed.vars.light, { highlight: '#f5f5f5', 'accent-foreground': '#171717', primary: '#111111' },
+        'light vars: the value at "accent" moves to "highlight"; other keys untouched');
+    eq(renamed.vars.dark, { highlight: '#262626', 'accent-foreground': '#fafafa', primary: '#eeeeee' },
+        'dark vars move too, in the SAME call - one step covers both modes');
+    eq(renamed.tokenLinks.light.highlight, { source: 'tailwind', name: 'neutral-100', hex: '#f5f5f5' }, 'the light tokenLinks entry moves with the name');
+    ok(!('accent' in renamed.tokenLinks.light), 'no leftover "accent" tokenLinks entry (light) - leaves nothing behind');
+    eq(renamed.tokenLinks.dark.highlight, { source: 'tailwind', name: 'neutral-800', hex: '#262626' }, 'the dark tokenLinks entry moves too');
+    ok(!('accent' in renamed.tokenLinks.dark), 'no leftover "accent" tokenLinks entry (dark)');
+
+    eq(renamed.components['button.outline.bg.hover'], 'color.highlight', 'a seeded state override (button outline.hover bg) pointing at color.accent now points at color.highlight');
+    eq(renamed.components['button.ghost.bg.hover'], 'color.highlight', 'every component ref naming the old role moves, not just the first');
+    eq(renamed.components['badge.default.text.color'], 'color.accent-foreground', 'a ref to "accent-foreground" is untouched - exact match, not a prefix');
+    eq(renamed.components['card.padding'], 'space.card-padding', 'a ref naming an unrelated (space-kind) token is untouched by a color rename');
+    eq(renamed.components['card.gap'], 'space.4', 'a literal foundation-step ref is untouched');
+
+    // Pure: the original system is never mutated.
+    ok(system.semanticTokens.some(t => t.kind === 'color' && t.name === 'accent'), 'the original system.semanticTokens is untouched');
+    ok(system.vars.light.accent === '#f5f5f5', 'the original system.vars is untouched');
+    ok(system.tokenLinks.light.accent.name === 'neutral-100', 'the original system.tokenLinks is untouched');
+    ok(system.components['button.outline.bg.hover'] === 'color.accent', 'the original system.components is untouched');
+
+    // --- the same path renames a token of ANY kind (the injected space token) -
+    const renamedSpace = g.renameToken(system, 'space', 'card-padding', 'gutter');
+    ok(renamedSpace.semanticTokens.some(t => t.kind === 'space' && t.name === 'gutter' && t.ref === 'space.6'),
+        'a non-color token renames the same way, keeping its ref');
+    ok(!renamedSpace.semanticTokens.some(t => t.kind === 'space' && t.name === 'card-padding'), 'no entry is still named "card-padding"');
+    eq(renamedSpace.components['card.padding'], 'space.gutter', 'a component pointing at the renamed space token follows it to the new name');
+    eq(renamedSpace.components['card.gap'], 'space.4', 'an unrelated literal step ref is untouched');
+    eq(renamedSpace.components['button.outline.bg.hover'], 'color.accent', 'a color ref is untouched by a space-kind rename');
+    eq(renamedSpace.vars, system.vars, 'a non-color rename never touches vars');
+    eq(renamedSpace.tokenLinks, system.tokenLinks, 'a non-color rename never touches tokenLinks');
+
+    // --- no-ops: always safe to call, never partially applies --------------
+    const sameName = g.renameToken(system, 'color', 'accent', 'accent');
+    eq(sameName.components, system.components, 'renaming to the identical name is a no-op');
+    eq(sameName.vars, system.vars, 'a same-name no-op touches nothing');
+
+    const missing = g.renameToken(system, 'color', 'no-such-token', 'whatever');
+    eq(missing.semanticTokens, system.semanticTokens, 'renaming a name that is not in the list is a no-op (list unchanged)');
+    eq(missing.components, system.components, 'a not-found rename leaves components unchanged');
+
+    const shadowAttempt = g.renameToken(system, 'color', 'shadow-color', 'shadow-tint');
+    ok(shadowAttempt.semanticTokens.some(t => t.kind === 'color' && t.name === 'shadow-color'),
+        'renameToken itself also refuses shadow-color (defense in depth - the UI never offers the control at all)');
+
+    // --- export keys follow the rename (dtcg.js buildTokensJson, loaded in
+    // this same vm context) -------------------------------------------------
+    const exported = g.buildTokensJson({
+        name: 'Rename check', source: 'tailwind', families: [],
+        vars: renamed.vars, links: renamed.tokenLinks, components: renamed.components,
+        semanticTokens: renamed.semanticTokens
+    });
+    ok(exported.light.color.highlight !== undefined, 'tokens.json: light.color.highlight exists after the rename');
+    ok(exported.dark.color.highlight !== undefined, 'tokens.json: dark.color.highlight exists after the rename');
+    ok(exported.light.color.accent === undefined, 'tokens.json: no light.color.accent left behind');
+    ok(exported.dark.color.accent === undefined, 'tokens.json: no dark.color.accent left behind');
+    ok(exported.light.color['accent-foreground'] !== undefined, 'tokens.json: accent-foreground is untouched');
+    ok(exported.component.component.button.outline['bg-hover'].$value === '{color.highlight}',
+        'tokens.json: the seeded button.outline.bg.hover component token exports through the new name');
+
+    // --- the builtin identity itself round-trips through tokens.json, so a
+    // re-imported "highlight" is still recognised as "whichever token plays
+    // the background/foreground/ring/muted-foreground role" (the preview-
+    // chrome indirection - see scripts.js builtinTokenName/cssVarBlockFor) -
+    // not just its color VALUE.
+    const parsedBack = g.parseTokensJson(exported);
+    const parsedHighlight = parsedBack.semanticTokens.find(t => t.kind === 'color' && t.name === 'highlight');
+    ok(parsedHighlight && parsedHighlight.builtin === 'accent', 'parseTokensJson reads the builtin identity back from the extension, not just the bare name');
+    const normalizedBack = g.normalizeSemanticTokens(parsedBack.semanticTokens);
+    ok(g.builtinTokenName(normalizedBack, 'accent') === 'highlight', 'end to end: after a tokens.json round trip, builtinTokenName still resolves "accent" to "highlight"');
 }
 
 console.log(`semantic.test.js: ${checks} checks passed`);

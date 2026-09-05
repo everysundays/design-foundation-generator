@@ -49,8 +49,14 @@ const SEMANTIC_NAME_RE = /^[a-z][a-z0-9-]*$/;
 // too - kept out of this file so it stays loadable without components.js.
 const SEMANTIC_RESERVED_PREFIXES = ['palette-', 'space-', 'radius-', 'border-width-', 'border-style-', 'shadow-', 'font-', 'type-', 'tracking-'];
 
+// `builtin` is a color token's stable identity across a rename (card 14):
+// set once here to the role's own original name and carried unchanged by
+// every later rename (only `name` moves) - so "whichever token currently
+// plays the 'background' role" stays answerable no matter how many times
+// it's been renamed. A user-added color token (addSemanticToken) has no
+// built-in identity of its own and carries `builtin: null`.
 function defaultSemanticTokens() {
-    return SEMANTIC_COLOR_ROLES.map(name => ({ kind: 'color', name }));
+    return SEMANTIC_COLOR_ROLES.map(name => ({ kind: 'color', name, builtin: name }));
 }
 
 // Every name of one kind, in list order (scripts.js linkableColorKeys() is
@@ -80,10 +86,16 @@ function semanticNameError(name, list, reservedPrefixes) {
 
 // Appends one token; returns a NEW array (never mutates `list`). `ref` is
 // the foundation ref a non-color kind targets (e.g. 'space.6') - omitted for
-// 'color', whose value lives in tokenLinks/state.vars instead.
+// 'color', whose value lives in tokenLinks/state.vars instead. A freshly
+// added color token always carries an explicit `builtin: null` (never left
+// undefined) - a name freed up by an earlier rename (accent -> highlight,
+// then a NEW token later added as plain "accent") must never be mistaken
+// for the original built-in by normalizeSemanticTokens' back-compat
+// heuristic below, which only fires when `builtin` is missing entirely.
 function addSemanticToken(list, kind, name, ref) {
     const entry = { kind, name: String(name).trim() };
     if (kind !== 'color') entry.ref = ref;
+    else entry.builtin = null;
     return [...(Array.isArray(list) ? list : []), entry];
 }
 
@@ -107,7 +119,24 @@ function normalizeSemanticTokens(list) {
         if (seen.has(key)) return;
         if (t.kind === 'color') {
             seen.add(key);
-            out.push({ kind: t.kind, name });
+            // `builtin`: kept verbatim (string OR explicit null) when the
+            // entry already carries the field - an explicit null must
+            // survive as null, not fall through to the name-match guess
+            // below, or a name freed up by an earlier rename (a NEW token
+            // deliberately added as plain "primary") would be mistaken for
+            // the original built-in. Missing entirely (every save from
+            // before this field existed) is backfilled by name match against
+            // the 33 built-in roles - safe because renaming didn't exist
+            // before this card, so any pre-existing entry named e.g. "accent"
+            // really was that built-in, never a coincidence; a name that
+            // ISN'T one of the 33 gets no builtin key at all, same as
+            // addSemanticToken produces for an ordinary user token today.
+            let entry;
+            if (typeof t.builtin === 'string' && t.builtin) entry = { kind: t.kind, name, builtin: t.builtin };
+            else if (t.builtin === null) entry = { kind: t.kind, name, builtin: null };
+            else if (SEMANTIC_COLOR_ROLES.includes(name)) entry = { kind: t.kind, name, builtin: name };
+            else entry = { kind: t.kind, name };
+            out.push(entry);
         } else {
             if (typeof t.ref !== 'string' || !t.ref || (typeof parseRef === 'function' && !parseRef(t.ref))) return;
             seen.add(key);
@@ -295,4 +324,89 @@ function semanticTypeAliasLines(list, typeSets) {
         const setVar = refToVar(`type.${set.key}`);
         return fields.map(f => `  ${tokenVar}-${f}: var(${setVar}-${f});`).join('\n');
     }).filter(Boolean).join('\n');
+}
+
+// --- Rename a semantic token (card 14) --------------------------------------
+
+// shadow-color is the one built-in that can never be renamed: every
+// foundation shadow step draws its color from `--shadow-color` directly
+// (foundation.js SHADOW_COLOR_VAR) and the tokens.json shadow layers name it
+// directly too ("{color.shadow-color}") - neither goes through a token's
+// own name the way every other role does. Only ever true for a color token;
+// no other kind has a non-renamable entry.
+function isTokenRenamable(token) {
+    return !(token && token.kind === 'color' && token.name === 'shadow-color');
+}
+
+// The CURRENT name of whichever color token plays a built-in role (e.g.
+// resolving 'background' after it's been renamed to 'canvas') - scripts.js
+// cssVarBlockFor uses this to alias the four preview-chrome vars
+// (--pg-bg/-fg/-ring/-muted-fg) that preview/pages.css reads directly,
+// instead of the built-in's own (possibly stale) var name. Falls back to
+// `builtinRole` itself when no token claims it (a corrupt/stripped list),
+// so a chrome var always resolves to SOMETHING rather than dangling.
+function builtinTokenName(list, builtinRole) {
+    const found = (Array.isArray(list) ? list : []).find(t => t && t.kind === 'color' && t.builtin === builtinRole);
+    return found ? found.name : builtinRole;
+}
+
+// A NEW { semanticTokens, vars, tokenLinks, components } - pure, no DOM or
+// editor state, never mutates its arguments - with `kind`'s token named
+// `oldName` renamed to `newName` everywhere it's referenced: the token-list
+// entry itself (only `name` moves - builtin/ref/group ride along unchanged,
+// so a builtin identity survives any number of renames), its vars/
+// tokenLinks entry in BOTH modes (color only - every other kind's value
+// lives entirely behind the ref, never in vars/tokenLinks), and every
+// component whose ref names it EXACTLY (via parseRef, never a string
+// replace - "accent-foreground" is a different token from "accent" and must
+// never move with it). A no-op - oldName not found, not renamable
+// (shadow-color), or newName === oldName - still returns fresh copies with
+// nothing changed, so it's always safe to call; name validation
+// (semanticNameError/typeTokenNameError/varCollision) is the CALLER's job
+// (see scripts.js renameSemanticToken), not this function's.
+function renameToken(system, kind, oldName, newName) {
+    const sys = system || {};
+    const tokens = Array.isArray(sys.semanticTokens) ? sys.semanticTokens : [];
+    const vars = sys.vars || {};
+    const tokenLinks = sys.tokenLinks || {};
+    const components = sys.components || {};
+    const newVars = { light: { ...(vars.light || {}) }, dark: { ...(vars.dark || {}) } };
+    const newLinks = { light: { ...(tokenLinks.light || {}) }, dark: { ...(tokenLinks.dark || {}) } };
+    const i = tokens.findIndex(t => t && t.kind === kind && t.name === oldName);
+
+    if (i === -1 || oldName === newName || !isTokenRenamable(tokens[i])) {
+        return {
+            semanticTokens: tokens.map(t => ({ ...t })),
+            vars: newVars,
+            tokenLinks: newLinks,
+            components: { ...components }
+        };
+    }
+
+    const semanticTokens = tokens.map((t, idx) => (idx === i ? { ...t, name: newName } : { ...t }));
+
+    if (kind === 'color') {
+        ['light', 'dark'].forEach(mode => {
+            if (Object.prototype.hasOwnProperty.call(newVars[mode], oldName)) {
+                newVars[mode][newName] = newVars[mode][oldName];
+                delete newVars[mode][oldName];
+            }
+            if (Object.prototype.hasOwnProperty.call(newLinks[mode], oldName)) {
+                newLinks[mode][newName] = newLinks[mode][oldName];
+                delete newLinks[mode][oldName];
+            }
+        });
+    }
+
+    // scaleRef has no 'color' entry in KIND_PREFIX (color refs aren't a scale
+    // step - see the file header), so a color ref is built directly here,
+    // the same way scripts.js semanticColorEntries/makePopoverSwatch do.
+    const newRef = kind === 'color' ? `color.${newName}` : scaleRef(kind, newName);
+    const newComponents = {};
+    Object.entries(components).forEach(([id, ref]) => {
+        const parsed = parseRef(ref);
+        newComponents[id] = (parsed && parsed.kind === kind && parsed.name === oldName) ? newRef : ref;
+    });
+
+    return { semanticTokens, vars: newVars, tokenLinks: newLinks, components: newComponents };
 }
