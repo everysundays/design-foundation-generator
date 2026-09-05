@@ -413,7 +413,7 @@ function buildSemanticScaleAddRowHtml(ctx, kind) {
 
 // A kind's Summary-tab section: its existing tokens (if any) + the add row -
 // always rendered, even with zero tokens, so "Add token" stays reachable on
-// an empty system. Space (this card) calls it now; radius/border-width/
+// an empty system. Space and radius (cards 9/10) call it now; border-width/
 // border-style/shadow (later cards) add one call each, unchanged.
 function buildSemanticScaleSectionHtml(ctx, kind) {
     const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === kind);
@@ -445,5 +445,6 @@ ${sections}${empty}
 <div id="semanticRolesMount"></div>
 </div>
 ${buildSemanticScaleSectionHtml(ctx, 'space')}
+${buildSemanticScaleSectionHtml(ctx, 'radius')}
 </div>`;
 }

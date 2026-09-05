@@ -153,8 +153,20 @@ const SCALE_TOKEN_CASES = {
         stepCollisionName: '4',               // an existing Tailwind step, verbatim
         crossSourceCollisionName: '100',      // not a Tailwind step; matches Atlassian's "space.100" by var
         crossSourceCollisionStepName: 'space.100'
+    },
+    // card 10: "Semantic radius tokens". 'radius.100' isn't an Atlassian step
+    // (theirs are xsmall/small/medium/large/xlarge/xxlarge/full) - the
+    // cross-source collision case uses 'small', matching Atlassian's
+    // "radius.small" by var, per the board's correction.
+    radius: {
+        name: 'control',
+        stepName: 'md',                       // Tailwind radius.md = 0.375rem = 6px
+        atlassianStepName: 'radius.medium',   // the Atlassian entry at the same 6px
+        stepCollisionName: 'lg',              // an existing Tailwind step, verbatim
+        crossSourceCollisionName: 'small',    // not a Tailwind step; matches Atlassian's "radius.small" by var
+        crossSourceCollisionStepName: 'radius.small'
     }
-    // radius: { … }, borderWidth: { … }, borderStyle: { … }, shadow: { … }  (cards 10-13)
+    // borderWidth: { … }, borderStyle: { … }, shadow: { … }  (cards 11-13)
 };
 
 Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {

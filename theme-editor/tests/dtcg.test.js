@@ -592,4 +592,56 @@ test('parseTokensJson: a non-color extension entry with no value under global.se
     assert.match(parsed.warnings[0], /card-padding/);
 });
 
+// --- Non-color semantic tokens: radius (card 10: "Semantic radius tokens") -
+// Same kind-generic machinery as card 9's space cases above - exercised here
+// with a second kind (and a second DTCG_TYPE_OF_KIND entry, 'borderRadius')
+// to confirm nothing in buildTokensJson/parseTokensJson is space-specific.
+
+test('buildTokensJson: a radius token exports as a real alias under global.semantic, and a component ref to it translates to {semantic.<ref>}', () => {
+    const base = tailwindCtx();
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), { kind: 'radius', name: 'control', ref: 'radius.md' }];
+    const ctxWithToken = {
+        ...base,
+        components: { ...base.components, 'button.primary.radius': 'radius.control' },
+        semanticTokens
+    };
+    const f = buildTokensJson(ctxWithToken);
+
+    assert.deepStrictEqual(f.global.semantic.radius.control, { $type: 'borderRadius', $value: '{radius.md}' });
+    assert.deepStrictEqual(f.component.component.button.primary.radius, { $type: 'borderRadius', $value: '{semantic.radius.control}' });
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })) });
+
+    const n = assertAllRefsResolve(f, 'tailwind + radius token');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with a radius token is deep-equal');
+    assert.deepStrictEqual(
+        parsed.semanticTokens.find(t => t.kind === 'radius'),
+        { kind: 'radius', name: 'control', ref: 'radius.md' },
+        'round-trip keeps the token, with its resolved target ref restored from global.semantic'
+    );
+    assert.strictEqual(parsed.components['button.primary.radius'], 'radius.control', 'the component leaf survives the {semantic….} round-trip, not dropped');
+});
+
+test('atlassian source: a radius token\'s own component ref is source-independent - only global.semantic\'s target changes', () => {
+    const abase = atlassianCtx();
+    const radiusToken = { kind: 'radius', name: 'control', ref: 'radius.radius.medium' };
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), radiusToken];
+    const actxWithToken = {
+        ...abase,
+        components: { ...abase.components, 'card.radius': 'radius.control' },
+        semanticTokens
+    };
+    const af = buildTokensJson(actxWithToken);
+    assert.deepStrictEqual(af.global.semantic.radius.control, { $type: 'borderRadius', $value: '{radius.radius.medium}' });
+    assert.deepStrictEqual(af.component.component.card.radius, { $type: 'borderRadius', $value: '{semantic.radius.control}' });
+    assertAllRefsResolve(af, 'atlassian + radius token');
+
+    const { parsed, rebuilt } = roundTrip(af, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, af, 'round-trip with a radius token (atlassian) is deep-equal');
+    assert.deepStrictEqual(parsed.semanticTokens.find(t => t.kind === 'radius'), radiusToken);
+    assert.strictEqual(parsed.components['card.radius'], 'radius.control');
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);
