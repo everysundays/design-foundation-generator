@@ -16,7 +16,9 @@ const ctx = vm.createContext({ console });
 // Script-scoped `const`s are not properties of the context; lift what the
 // test needs out of the shared global lexical scope.
 const g = vm.runInContext(`({ DEFAULT_TYPE_SETS, TYPE_BADGE_COLORS, typeVarKey, typeSetKeyError,
-    typeSetAbbr, nextTypeBadgeColor, newTypeSet, normalizeTypeSets, refToVar })`, ctx);
+    typeSetAbbr, nextTypeBadgeColor, newTypeSet, normalizeTypeSets, refToVar,
+    typeSetUsage, retargetTypeSet, canRemoveTypeSet, defaultTypeSetTarget, removeTypeSetFromSystem,
+    componentTokenIds, resolveComponentRef, seedComponentTokens, tokenIdParts })`, ctx);
 // Strips the vm realm's Object.prototype so assert.deepStrictEqual compares
 // structure against an outer-realm fixture, not object identity (same
 // pattern as tests/dtcg.test.js).
@@ -119,5 +121,105 @@ const DEFAULT_KEYS = EXPECTED_DEFAULTS.map(s => s.key);
     assert.deepStrictEqual(normalized, withExtra, 'a valid 8-entry list is returned intact, extra set included');
     checks++;
 }
+
+// --- Removal (card [41]): typeSetUsage / retargetTypeSet / canRemoveTypeSet /
+// removeTypeSetFromSystem, over componentTokenIds() with seeded refs
+// included, for BOTH palette sources. -----------------------------------
+
+// canRemoveTypeSet: last-set guard + unknown key (source-independent).
+{
+    ok(typeof g.canRemoveTypeSet([{ key: 'body' }], 'body') === 'string', 'canRemoveTypeSet refuses the last remaining set');
+    ok(g.canRemoveTypeSet([{ key: 'body' }, { key: 'label' }], 'body') === null, 'canRemoveTypeSet allows removal when another set remains');
+    ok(typeof g.canRemoveTypeSet([{ key: 'body' }, { key: 'label' }], 'nope') === 'string', 'canRemoveTypeSet refuses an unknown key');
+}
+
+// defaultTypeSetTarget: Body if it survives, else the first remaining set;
+// never the set being removed (source-independent - it only reads the list).
+{
+    ok(g.defaultTypeSetTarget(EXPECTED_DEFAULTS, 'label') === 'body', "defaultTypeSetTarget prefers 'body' when it survives the removal");
+    ok(g.defaultTypeSetTarget(EXPECTED_DEFAULTS, 'body') === 'display', 'defaultTypeSetTarget falls back to the first remaining set when body itself is removed');
+}
+
+// Every default set's ten vars (light+dark) - the shape
+// scripts.js withTypographyFallback leaves behind - for removeTypeSetFromSystem's vars fixture.
+function fixtureTypeVars(sets) {
+    const one = {};
+    sets.forEach(set => {
+        one[g.typeVarKey(set.key, 'family')] = `var(--font-${set.family})`;
+        one[g.typeVarKey(set.key, 'weight')] = set.weight;
+        one[g.typeVarKey(set.key, 'size')] = `${set.size}rem`;
+        one[g.typeVarKey(set.key, 'leading')] = `${set.leading}rem`;
+        one[g.typeVarKey(set.key, 'tracking')] = set.tracking;
+    });
+    return { light: { ...one }, dark: { ...one } };
+}
+
+// A real hover-state id (button's Text part has both a color and a type
+// prop, so its id carries a prop segment: element.variant.part.prop.state).
+const HOVER_OVERRIDE_ID = 'button.primary.text.type.hover';
+ok(g.tokenIdParts(HOVER_OVERRIDE_ID) && g.tokenIdParts(HOVER_OVERRIDE_ID).state === 'hover',
+    `fixture id is a real hover-state id: ${JSON.stringify(g.tokenIdParts(HOVER_OVERRIDE_ID))}`);
+
+['tailwind', 'atlassian'].forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.5 });
+
+    // typeSetUsage: seeded refs, no explicit entries at all - matches
+    // components.js componentUsage()'s own counts (Label backs 18 seeded
+    // parts, Display backs none).
+    const labelUsage = g.typeSetUsage({}, 'label', source);
+    ok(labelUsage.length === 18, `${source}: typeSetUsage({}, 'label') finds all 18 seeded ids, got ${labelUsage.length}`);
+    ok(labelUsage.every(id => g.resolveComponentRef(id, {}, source) === 'type.label'),
+        `${source}: every id typeSetUsage returned actually resolves to type.label`);
+    ok(g.typeSetUsage({}, 'display', source).length === 0, `${source}: typeSetUsage({}, 'display') is empty (nothing seeded there)`);
+
+    // An explicit STATE-level override is counted too - componentTokenIds()
+    // only enumerates default-state ids, so this needs its own pass.
+    const withOverride = { [HOVER_OVERRIDE_ID]: 'type.display' };
+    const displayUsage = g.typeSetUsage(withOverride, 'display', source);
+    assert.deepStrictEqual(norm(displayUsage), [HOVER_OVERRIDE_ID], `${source}: typeSetUsage counts an explicit state-level override`);
+    checks++;
+
+    // retargetTypeSet: pure (never mutates its `components` argument), moves
+    // every id typeSetUsage found onto an explicit type.body entry, and
+    // leaves every other set's ids resolving exactly as before.
+    const seedsJsonBefore = JSON.stringify(seeds);
+    const retargeted = g.retargetTypeSet(seeds, 'label', 'body', source);
+    ok(JSON.stringify(seeds) === seedsJsonBefore, `${source}: retargetTypeSet does not mutate its components argument`);
+    // 7 ids already seeded to type.body, plus the 18 moved off type.label.
+    const nowBody = g.componentTokenIds().filter(id => retargeted[id] === 'type.body');
+    ok(nowBody.length === 25, `${source}: retargetTypeSet writes an explicit type.body for the 7 already-body + 18 moved ids, got ${nowBody.length}`);
+    ok(g.componentTokenIds().every(id => g.resolveComponentRef(id, retargeted, source) !== 'type.label'),
+        `${source}: after retargeting, no componentTokenIds() id resolves to type.label any more`);
+    ['display', 'heading', 'subheading', 'caption', 'code'].forEach(key => {
+        const before = g.componentTokenIds().filter(id => g.resolveComponentRef(id, seeds, source) === `type.${key}`);
+        const after = g.componentTokenIds().filter(id => g.resolveComponentRef(id, retargeted, source) === `type.${key}`);
+        assert.deepStrictEqual(after, before, `${source}: type.${key}'s ids are untouched by a label->body retarget`);
+        checks++;
+    });
+    // An explicit state-level entry naming the removed set is rewritten too.
+    const retargetedState = g.retargetTypeSet(withOverride, 'display', 'caption', source);
+    ok(retargetedState[HOVER_OVERRIDE_ID] === 'type.caption', `${source}: an explicit state-level 'type.display' entry is rewritten on retarget`);
+
+    // removeTypeSetFromSystem: filters the set out, deletes its vars from
+    // BOTH modes, retargets components, and is pure (the fixture is untouched).
+    const system = { typeSets: g.DEFAULT_TYPE_SETS.map(s => ({ ...s })), vars: fixtureTypeVars(g.DEFAULT_TYPE_SETS), components: seeds };
+    const systemJsonBefore = JSON.stringify(system);
+    const removed = g.removeTypeSetFromSystem(system, 'heading', 'body', source);
+    ok(JSON.stringify(system) === systemJsonBefore, `${source}: removeTypeSetFromSystem does not mutate its system argument`);
+    ok(removed.typeSets.length === 6 && !removed.typeSets.some(s => s.key === 'heading'), `${source}: heading is gone, 6 sets remain`);
+    ['light', 'dark'].forEach(mode => {
+        ok(!Object.keys(removed.vars[mode]).some(k => k.startsWith('type-heading-')), `${source}: no type-heading-* var survives in ${mode}`);
+        ok(removed.vars[mode]['type-body-family'] === system.vars[mode]['type-body-family'], `${source}: an untouched set's vars (${mode}) are unchanged`);
+    });
+    ok(g.componentTokenIds().every(id => g.resolveComponentRef(id, removed.components, source) !== 'type.heading'),
+        `${source}: after removal, no id resolves to the removed set any more`);
+
+    // Removing 'body' itself: the caller's own default (defaultTypeSetTarget)
+    // still lands on a real, different set.
+    const bodyTarget = g.defaultTypeSetTarget(system.typeSets, 'body');
+    const removedBody = g.removeTypeSetFromSystem(system, 'body', bodyTarget, source);
+    ok(bodyTarget && bodyTarget !== 'body' && !removedBody.typeSets.some(s => s.key === 'body'),
+        `${source}: removing body with its own default target (${bodyTarget}) works`);
+});
 
 console.log(`typesets.test.js: ${checks} checks passed`);

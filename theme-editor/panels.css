@@ -556,6 +556,95 @@
   display: none;
 }
 
+/* Remove control (card [41]) - a SIBLING of the assign button, not nested in
+   it (see panels.js buildTypePanelHtml). */
+.fp-type-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.fp-type-row .fp-type-set {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fp-type-remove {
+  flex-shrink: 0;
+  width: 26px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+.fp-type-remove:hover {
+  background: var(--ui-bg-subtle);
+  color: var(--ui-danger);
+}
+
+.fp-type-remove:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Inline "N parts use X" confirm row (buildTypeRemoveRowHtml) - same shape
+   as .fp-add-row, in the same danger tone as the remove control's hover. */
+.fp-remove-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-subtle);
+}
+
+.fp-remove-text {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: var(--ui-text);
+}
+
+.fp-remove-target {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.fp-remove-btn {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-remove-btn:hover {
+  border-color: var(--ui-danger);
+  color: var(--ui-danger);
+}
+
+.fp-remove-btn-cancel {
+  color: var(--ui-text-muted);
+  font-weight: 400;
+}
+
 /* --- Summary --- */
 
 .fp-panel-summary .fp-section {

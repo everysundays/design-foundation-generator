@@ -174,6 +174,9 @@ let state = {
     // the Type tab's "Add type set" row) - see addTypeSet/typeRefNames below.
     typeSets: normalizeTypeSets(null),
     loadedTypeSets: normalizeTypeSets(null),
+    // Key of the type set whose remove-confirm row is open (Type tab only;
+    // null when none) - see removeTypeSet/onPanelClick's [data-remove-set].
+    pendingRemoveTypeSet: null,
     selection: null           // { element, variant, part, state } | null
 };
 
@@ -507,6 +510,32 @@ function addTypeSet(rawName) {
             state.vars[mode][typeVarKey(set.key, prop)] = resolved[typeVarKey('body', prop)];
         });
     });
+    renderAll();
+    return null;
+}
+
+// Removes a type set from the Type tab's remove control. `toKey` is the set
+// chosen in the confirm row's select (or null for an unused set's immediate
+// removal, where nothing gets retargeted); when falsy it defaults via
+// defaultTypeSetTarget. Returns an error string (nothing changed) when the
+// set can't be removed - the last one, or an unknown key - same contract as
+// addTypeSet/addCustomScaleEntry. One pushUndo covers typeSets, both modes'
+// ten vars and every retargeted component ref, so Undo reverses it all in one
+// step; onPanelClick's [data-remove-set]/[data-remove-confirm] are the only
+// callers.
+function removeTypeSet(key, toKey) {
+    const err = canRemoveTypeSet(state.typeSets, key);
+    if (err) return err;
+    const target = toKey || defaultTypeSetTarget(state.typeSets, key);
+    pushUndo();
+    const result = removeTypeSetFromSystem(
+        { typeSets: state.typeSets, vars: state.vars, components: state.components },
+        key, target, activePaletteSource
+    );
+    state.typeSets = result.typeSets;
+    state.vars = result.vars;
+    state.components = result.components;
+    state.pendingRemoveTypeSet = null;
     renderAll();
     return null;
 }
@@ -1597,6 +1626,15 @@ function panelCtx() {
         marks: computeMarks(),
         typeSets: state.typeSets,
         typeSetSummary,
+        // Per-set count of parts a removal would retarget - what the Type
+        // tab's remove control shows and decides on: 0 removes with no
+        // confirm, otherwise the confirm row's "N parts use X" reuses this
+        // same number (see typesets.js typeSetUsage).
+        typeSetUsageCounts: state.typeSets.reduce((acc, s) => {
+            acc[s.key] = typeSetUsage(state.components, s.key, activePaletteSource).length;
+            return acc;
+        }, {}),
+        pendingRemoveTypeSet: state.pendingRemoveTypeSet || null,
         elementLabel
     };
 }
@@ -1668,6 +1706,35 @@ function onPanelClick(e) {
             errorEl.textContent = err || '';
             errorEl.hidden = !err;
         }
+        return;
+    }
+    // Type tab remove control - a SIBLING of the assign `[data-ref]` button
+    // (panels.js buildTypePanelHtml), never nested inside it: a click here
+    // must never also assign the set to the active token. Checked ahead of
+    // the [data-ref] branch below for the same reason.
+    const removeSetBtn = e.target.closest('[data-remove-set]');
+    if (removeSetBtn && removeSetBtn.closest('#panelBody')) {
+        const key = removeSetBtn.dataset.removeSet;
+        const usage = typeSetUsage(state.components, key, activePaletteSource);
+        if (usage.length === 0) {
+            removeTypeSet(key, null);
+        } else {
+            state.pendingRemoveTypeSet = key;
+            renderPanel();
+        }
+        return;
+    }
+    const removeConfirmBtn = e.target.closest('[data-remove-confirm]');
+    if (removeConfirmBtn && removeConfirmBtn.closest('#panelBody')) {
+        const row = removeConfirmBtn.closest('[data-remove-key]');
+        const select = row && row.querySelector('[data-remove-target]');
+        removeTypeSet(row.dataset.removeKey, select ? select.value : null);
+        return;
+    }
+    const removeCancelBtn = e.target.closest('[data-remove-cancel]');
+    if (removeCancelBtn && removeCancelBtn.closest('#panelBody')) {
+        state.pendingRemoveTypeSet = null;
+        renderPanel();
         return;
     }
     const target = e.target.closest('[data-ref]');
@@ -2200,6 +2267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
         state.typeSets = state.loadedTypeSets.map(s => ({ ...s }));
+        state.pendingRemoveTypeSet = null;
         renderAll();
     });
 

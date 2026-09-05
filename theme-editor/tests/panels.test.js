@@ -67,6 +67,45 @@ const DISPLAY_SET = TYPE_SETS_FIXTURE[0];
     });
 }
 
+// --- buildTypePanelHtml: remove control (card [41]) -------------------------
+// A SIBLING of the assign button (never nested - a <button> inside a <button>
+// is invalid HTML and would also assign on click), disabled only when a
+// single set remains, plus the inline confirm row when pendingRemoveTypeSet
+// names an in-use set.
+{
+    const ctxArg = { mode: 'light', vars: { light: {} }, typeSets: TYPE_SETS_FIXTURE };
+    const html = g.buildTypePanelHtml(ctxArg);
+    const removeButtons = html.match(/<button[^>]*data-remove-set="[a-z]+"[^>]*>/g) || [];
+    ok(removeButtons.length === 7, `one remove control per set, none disabled with 7 sets: got ${removeButtons.length}`);
+    ok(removeButtons.every(b => !b.includes('disabled')), 'no remove control is disabled while more than one set remains');
+    // Each assign button is a sibling of, not a parent of, its remove button -
+    // its own markup (up to its OWN closing tag) carries no data-remove-set.
+    const assignButtons = html.match(/<button type="button" class="fp-type-set"[\s\S]*?<\/button>/g) || [];
+    ok(assignButtons.length === 7, `found each set's own assign-button markup: got ${assignButtons.length}`);
+    ok(assignButtons.every(b => !b.includes('data-remove-set')), 'the remove control never lands inside the fp-type-set button itself');
+}
+{
+    // A single remaining set: its remove control is disabled, never absent.
+    const ctxArg = { mode: 'light', vars: { light: {} }, typeSets: [TYPE_SETS_FIXTURE[3]] };
+    const html = g.buildTypePanelHtml(ctxArg);
+    ok(/data-remove-set="body"[^>]*disabled/.test(html), 'the last remaining set\'s remove control is disabled');
+}
+{
+    // pendingRemoveTypeSet + typeSetUsageCounts (scripts.js panelCtx) render
+    // the inline "N parts use X" confirm row for that one set only.
+    const ctxArg = {
+        mode: 'light', vars: { light: {} }, typeSets: TYPE_SETS_FIXTURE,
+        pendingRemoveTypeSet: 'label', typeSetUsageCounts: { label: 18 }
+    };
+    const html = g.buildTypePanelHtml(ctxArg);
+    ok(html.includes('18 parts use Label'), `confirm row states the count and label: ${/18[^<]*/.exec(html)}`);
+    ok((html.match(/data-remove-key="label"/g) || []).length === 1, 'exactly one confirm row, keyed to the pending set');
+    ok(/data-remove-key="label"[\s\S]*?<option value="body"/.test(html), 'the target select offers the other sets (Body)');
+    ok(!/data-remove-key="label"[\s\S]*?<option value="label"/.test(html), 'the target select never offers the set being removed itself');
+    ok(html.includes('data-remove-confirm'), 'confirm row has a Remove button');
+    ok(html.includes('data-remove-cancel'), 'confirm row has a Cancel button');
+}
+
 // --- index.html: the Google Fonts <link> lives in <head>, inert by default -
 {
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');

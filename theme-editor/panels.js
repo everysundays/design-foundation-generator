@@ -261,15 +261,42 @@ function panelTypeSetStyle(vars, set) {
     return `font-family: ${family}; font-weight: ${weight}; font-size: ${size}; line-height: ${leading}; letter-spacing: ${tracking};`;
 }
 
+// Inline "N parts use X" confirm row for removing a type set that's in use
+// (scripts.js onPanelClick [data-remove-set]/[data-remove-confirm]/
+// [data-remove-cancel], removeTypeSet) - mirrors buildScaleAddRowHtml's
+// add-row shape (a self-contained block the click handler looks inside via
+// its own data-remove-key). The target <select> lists every OTHER set,
+// preselected via typesets.js defaultTypeSetTarget (Body if it survives,
+// else the first remaining set) - the set being removed is never an option.
+function buildTypeRemoveRowHtml(ctx, set, count) {
+    const remaining = (ctx.typeSets || []).filter(s => s.key !== set.key);
+    const fallback = remaining[0] ? remaining[0].key : null;
+    const defaultTarget = typeof defaultTypeSetTarget === 'function' ? defaultTypeSetTarget(ctx.typeSets, set.key) : fallback;
+    const options = remaining.map(s => `<option value="${panelEsc(s.key)}"${s.key === defaultTarget ? ' selected' : ''}>${panelEsc(s.label)}</option>`).join('');
+    return `<div class="fp-remove-row" data-remove-key="${panelEsc(set.key)}">
+  <span class="fp-remove-text">${count} part${count === 1 ? '' : 's'} ${count === 1 ? 'uses' : 'use'} ${panelEsc(set.label)}. Move ${count === 1 ? 'it' : 'them'} to:</span>
+  <select class="fp-remove-target" data-remove-target>${options}</select>
+  <button type="button" class="fp-remove-btn" data-remove-confirm>Remove</button>
+  <button type="button" class="fp-remove-btn fp-remove-btn-cancel" data-remove-cancel>Cancel</button>
+</div>`;
+}
+
 function buildTypePanelHtml(ctx) {
     const vars = (ctx.vars && ctx.vars[ctx.mode]) || {};
     const sets = ctx.typeSets || [];
+    const usage = ctx.typeSetUsageCounts || {};
+    const pending = ctx.pendingRemoveTypeSet || null;
     const cards = sets.map(set => {
         const ref = `type.${set.key}`;
         const mark = panelMark(ctx, ref);
         const summary = typeof ctx.typeSetSummary === 'function' ? ctx.typeSetSummary(vars, set) : '';
         const tip = panelTip(set.label, summary, mark);
-        return `<button type="button" class="fp-type-set" ${panelMarkAttrs(ref, tip, mark)}>
+        const count = usage[set.key] || 0;
+        // A SIBLING of the assign button, never nested inside it - a <button>
+        // inside a <button> is invalid HTML (the parser hoists it out) and
+        // would also assign the set to the active token on click.
+        const row = `<div class="fp-type-row">
+<button type="button" class="fp-type-set" ${panelMarkAttrs(ref, tip, mark)}>
   <span class="fp-type-badge" style="--type-badge-color: ${panelEsc(set.color)}">${panelEsc(set.abbr)}</span>
   <span class="fp-type-main">
     <span class="fp-type-label">${panelEsc(set.label)}</span>
@@ -277,7 +304,10 @@ function buildTypePanelHtml(ctx) {
     <span class="fp-type-specimen" style="${panelEsc(panelTypeSetStyle(vars, set))}">The quick brown fox</span>
   </span>
   ${panelBadgeHtml(mark)}
-</button>`;
+</button>
+<button type="button" class="fp-type-remove" data-remove-set="${panelEsc(set.key)}" aria-label="Remove ${panelEsc(set.label)}"${sets.length <= 1 ? ' disabled' : ''}><i class="fas fa-trash"></i></button>
+</div>`;
+        return pending === set.key ? `${row}\n${buildTypeRemoveRowHtml(ctx, set, count)}` : row;
     }).join('\n');
     return `<div class="fp-panel fp-panel-type">
 <div class="fp-panel-head"><span class="fp-panel-title">Type sets</span><span class="fp-panel-note">click a set to assign · edit below</span></div>

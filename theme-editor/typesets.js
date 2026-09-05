@@ -114,3 +114,96 @@ function normalizeTypeSets(list) {
     }
     return list.map(s => ({ ...s }));
 }
+
+// --- Removal (card [41]: "Remove a type set") -------------------------------
+// componentTokenIds()/resolveComponentRef/tokenIdParts come from components.js
+// (loaded before this file - see index.html); resolveComponentRef itself is
+// never modified here.
+
+// Every component-token id currently resolving to `type.<key>`: default-state
+// ids via componentTokenIds()+resolveComponentRef (seeded refs included -
+// resolveComponentRef already falls back to the seed when nothing explicit is
+// set for that id), plus any EXPLICIT non-default-state override that names
+// the set directly (componentTokenIds() only enumerates default-state ids, so
+// a state-level override needs its own pass, same as components.js's own
+// componentUsage). Drives both the "0 -> remove with no confirm" decision and
+// the confirm row's displayed count - the two stay in lockstep because
+// retargetTypeSet below moves exactly this same set of ids.
+function typeSetUsage(components, key, sourceKey) {
+    const ref = `type.${key}`;
+    const comps = components || {};
+    const ids = [];
+    componentTokenIds().forEach(id => {
+        if (resolveComponentRef(id, comps, sourceKey) === ref) ids.push(id);
+    });
+    Object.keys(comps).forEach(id => {
+        const parts = tokenIdParts(id);
+        if (parts && parts.state !== 'default' && comps[id] === ref) ids.push(id);
+    });
+    return ids;
+}
+
+// Every part that named `fromKey` now names `toKey` explicitly instead -
+// seeded refs included, since a part that never had its own entry still needs
+// one once its set is gone. Covers exactly what typeSetUsage counts (default-
+// state ids plus explicit state-level overrides); pure - `components` is
+// never mutated, a new object is returned - and resolveComponentRef itself is
+// unchanged.
+function retargetTypeSet(components, fromKey, toKey, sourceKey) {
+    const fromRef = `type.${fromKey}`;
+    const toRef = `type.${toKey}`;
+    const comps = components || {};
+    const out = { ...comps };
+    componentTokenIds().forEach(id => {
+        if (resolveComponentRef(id, comps, sourceKey) === fromRef) out[id] = toRef;
+    });
+    Object.keys(comps).forEach(id => {
+        const parts = tokenIdParts(id);
+        if (parts && parts.state !== 'default' && comps[id] === fromRef) out[id] = toRef;
+    });
+    return out;
+}
+
+// null when `key` can be removed, else the inline refusal text - the last
+// remaining set can never go, so a part with no explicit assignment always
+// has something to fall back on.
+function canRemoveTypeSet(typeSets, key) {
+    const list = Array.isArray(typeSets) ? typeSets : [];
+    if (!list.some(s => s.key === key)) return `"${key}" is not a type set.`;
+    if (list.length <= 1) return 'The last set cannot be removed.';
+    return null;
+}
+
+// The confirm row's preselected target when removing `fromKey`: Body if it
+// survives the removal, else the first remaining set in list order. Never the
+// set being removed.
+function defaultTypeSetTarget(typeSets, fromKey) {
+    const remaining = (typeSets || []).filter(s => s.key !== fromKey);
+    const body = remaining.find(s => s.key === 'body');
+    return body ? body.key : (remaining[0] ? remaining[0].key : null);
+}
+
+// The full removal as one pure state transform: `system` is
+// { typeSets, vars: {light, dark}, components } (scripts.js's own state, or a
+// fixture in the test). Returns a new object of the same shape with `key`
+// filtered out of typeSets, its five vars deleted from BOTH modes (so
+// cssVarBlockFor's leftover-vars loop can't resurrect them and the tokens.json
+// export sees nothing left to describe), and every part that used it
+// retargeted to `toKey` via retargetTypeSet. Never called when
+// canRemoveTypeSet(system.typeSets, key) returns an error - the caller
+// (scripts.js removeTypeSet) checks that first and never mutates on a refusal.
+function removeTypeSetFromSystem(system, key, toKey, sourceKey) {
+    const sys = system || {};
+    const typeSets = (sys.typeSets || []).filter(s => s.key !== key);
+    const vars = {
+        light: { ...((sys.vars && sys.vars.light) || {}) },
+        dark: { ...((sys.vars && sys.vars.dark) || {}) }
+    };
+    TYPE_PROP_FIELDS.forEach(prop => {
+        const varKey = typeVarKey(key, prop);
+        delete vars.light[varKey];
+        delete vars.dark[varKey];
+    });
+    const components = retargetTypeSet(sys.components, key, toKey, sourceKey);
+    return { typeSets, vars, components };
+}
