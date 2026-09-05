@@ -71,7 +71,7 @@ const FORM_STATES = ['default', 'hover', 'focus', 'disabled'];
 // from every list lands in the trailing "Other" category.
 const ELEMENT_CATEGORIES = [
     { key: 'actions',    label: 'Actions',    elements: ['button'] },
-    { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch'] },
+    { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
     { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu'] },
@@ -135,7 +135,9 @@ const ELEMENTS = [
         [_colorPart('overlay', 'Overlay'), _bg(), _border(), _radius(), _padding(), _gap(), _shadow(),
          _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')]),
     _el('dropdown-menu', 'Dropdown menu', null, ['default'],
-        [_bg(), _text(), _border(), _radius(), _padding(), _gap(), _shadow()])
+        [_bg(), _text(), _border(), _radius(), _padding(), _gap(), _shadow()]),
+    _el('combobox', 'Combobox', null, FORM_STATES,
+        [_bg(), _text(), _colorPart('placeholder', 'Placeholder'), _icon(), _border(), _radius(), _paddingXY(), _shadow(), _ring()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -147,6 +149,21 @@ const ELEMENTS = [
 const DISABLED_BOX = { bg: 'color.muted', 'text.color': 'color.muted-foreground', icon: 'color.muted-foreground', 'border.color': 'color.muted', placeholder: 'color.muted-foreground' };
 const DISABLED_CHECK = { box: 'color.muted', 'border.color': 'color.muted', mark: 'color.muted-foreground', 'label.color': 'color.muted-foreground' };
 const ACCENT_HOVER = { bg: 'color.accent', 'text.color': 'color.accent-foreground', icon: 'color.accent-foreground' };
+
+// Shared by every field-trigger element that opens a menu/list of options
+// (Select, Combobox): identical base + focus/disabled deltas.
+const FIELD_TRIGGER_SEED = {
+    base: {
+        bg: 'color.background', 'text.color': 'color.foreground', 'text.type': 'type.body', placeholder: 'color.muted-foreground', icon: 'color.muted-foreground',
+        'border.color': 'color.input', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+        radius: THEME_RADIUS_SEED, 'padding.x': 'space.3', 'padding.y': 'space.2', shadow: 'shadow.xs',
+        'ring.color': 'color.ring', 'ring.width': 'border.width.2'
+    },
+    states: {
+        '*.focus': { 'border.color': 'color.ring' },
+        '*.disabled': DISABLED_BOX
+    }
+};
 
 const SEED_SPEC = {
     button: {
@@ -182,18 +199,7 @@ const SEED_SPEC = {
             '*.disabled': { bg: 'color.muted', 'text.color': 'color.muted-foreground', 'border.color': 'color.muted', placeholder: 'color.muted-foreground' }
         }
     },
-    select: {
-        base: {
-            bg: 'color.background', 'text.color': 'color.foreground', 'text.type': 'type.body', placeholder: 'color.muted-foreground', icon: 'color.muted-foreground',
-            'border.color': 'color.input', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
-            radius: THEME_RADIUS_SEED, 'padding.x': 'space.3', 'padding.y': 'space.2', shadow: 'shadow.xs',
-            'ring.color': 'color.ring', 'ring.width': 'border.width.2'
-        },
-        states: {
-            '*.focus': { 'border.color': 'color.ring' },
-            '*.disabled': DISABLED_BOX
-        }
-    },
+    select: FIELD_TRIGGER_SEED,
     textarea: {
         base: {
             bg: 'color.background', 'text.color': 'color.foreground', 'text.type': 'type.body', placeholder: 'color.muted-foreground',
@@ -356,7 +362,8 @@ const SEED_SPEC = {
             'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
             radius: THEME_RADIUS_SEED, padding: 'space.1', gap: 'space.1', shadow: 'shadow.md'
         }
-    }
+    },
+    combobox: FIELD_TRIGGER_SEED
 };
 
 // --- Spec lookups ------------------------------------------------------------
@@ -628,7 +635,8 @@ const GALLERY_ICONS = {
     info: '<circle cx="8" cy="8" r="6.25"/><path d="M8 7v4M8 5v.5"/>',
     alert: '<path d="M8 2.5l6 11H2l6-11z"/><path d="M8 6.5v3M8 11.5v.5"/>',
     user: '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0 1 10.5 0"/>',
-    x: '<path d="M4 4l8 8M12 4l-8 8"/>'
+    x: '<path d="M4 4l8 8M12 4l-8 8"/>',
+    chevrons: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>'
 };
 
 function galleryIcon(name, cls, part) {
@@ -774,7 +782,15 @@ const GALLERY_RENDERERS = {
         renderDropdownMenu(state,
             renderListItem('default', 'user', 'Profile', '⇧⌘P') +
             renderListItem('default', 'plus', 'Billing', '⌘B') +
-            renderListItem('default', 'check', 'Settings', '⌘S'))
+            renderListItem('default', 'check', 'Settings', '⌘S')),
+    combobox: (variant, state) =>
+        `<div class="gallery-stack">` +
+        `<span role="combobox" aria-expanded="true" ${rootAttrs('combobox', null, state, 'bg')}>` +
+        `<span class="ds-combobox-placeholder" data-part="placeholder">Select framework…</span>` +
+        galleryIcon('chevrons', 'ds-combobox-icon', 'icon') +
+        '</span>' +
+        renderGalleryInstance('dropdown-menu', null, 'default') +
+        '</div>'
 };
 
 function renderGalleryInstance(elementKey, variant, state) {

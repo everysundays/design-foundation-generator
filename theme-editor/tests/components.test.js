@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -143,6 +143,25 @@ SOURCES.forEach(source => {
     assertRefValid(seeds['dropdown-menu.shadow'], 'shadow', source, `${source} dropdown-menu shadow seed`);
 });
 
+// --- Combobox spot checks ---------------------------------------------------
+ok(g.propKind('combobox', 'placeholder') === 'color', 'combobox.placeholder kind');
+ok(g.propKind('combobox', 'text', 'color') === 'color', 'combobox text color kind');
+ok(g.propKind('combobox', 'text', 'type') === 'type', 'combobox text type kind');
+{
+    const combo = g.ELEMENTS.find(el => el.key === 'combobox');
+    const select = g.ELEMENTS.find(el => el.key === 'select');
+    ok(JSON.stringify(combo.parts.map(p => p.key)) === JSON.stringify(select.parts.map(p => p.key)), 'combobox has the same parts as select, in order');
+    ok(JSON.stringify(combo.states) === JSON.stringify(select.states), 'combobox has the same states as select');
+}
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['combobox.border.color.focus'] === 'color.ring', `${source}: combobox focus ring`);
+    ok(seeds['combobox.bg.disabled'] === 'color.muted', `${source}: combobox disabled bg`);
+    ok(seeds['combobox.placeholder.disabled'] === 'color.muted-foreground', `${source}: combobox disabled placeholder`);
+    ok(seeds['combobox.bg'] === 'color.background', `${source}: combobox bg seed`);
+    ok(seeds['combobox.placeholder'] === 'color.muted-foreground', `${source}: combobox placeholder seed`);
+});
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -168,6 +187,10 @@ SOURCES.forEach(source => {
 ok(g.componentVarLines({}, 'tailwind').includes('  --dialog-title-type-family: var(--type-subheading-family);'), 'dialog title type expands');
 ok(g.componentVarLines({}, 'tailwind').includes('  --dropdown-menu-text-type-family: var(--type-label-family);'), 'dropdown-menu text type expands');
 ok(g.componentVarLines({}, 'tailwind').includes('  --dropdown-menu-bg: var(--popover);'), 'dropdown-menu bg line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --combobox-text-type-family: var(--type-body-family);'), 'combobox text type expands');
+ok(g.componentVarLines({}, 'tailwind').includes('  --combobox-placeholder: var(--muted-foreground);'), 'combobox placeholder line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --combobox-border-color-focus: var(--ring);'), 'combobox seeded focus delta expands');
+ok(g.componentVarLines({}, 'tailwind').includes('  --combobox-bg-disabled: var(--muted);'), 'combobox seeded disabled delta expands');
 ok(g.componentVarLines({}, 'atlassian').includes('  --button-primary-padding-x: var(--space-'), 'atlassian space var');
 ok(!g.componentVarLines({}, 'atlassian').includes('--space-space-'), 'atlassian group stripped by refToVar');
 {
@@ -200,6 +223,11 @@ ok(!wiring.includes('[data-element="dialog"]:is('), 'dialog has no state rules')
 ok(wiring.includes('[data-element="dropdown-menu"] {\n  --_bg: var(--dropdown-menu-bg);'), 'dropdown-menu default block');
 ok(wiring.includes('--_text-family: var(--dropdown-menu-text-type-family);'), 'dropdown-menu text type private');
 ok(!wiring.includes('[data-element="dropdown-menu"]:is('), 'dropdown-menu has no state rules');
+ok(wiring.includes('[data-element="combobox"] {\n  --_bg: var(--combobox-bg);'), 'combobox default block');
+ok(wiring.includes('[data-element="combobox"]:is(:hover:not([data-state]), [data-state="hover"]) {\n  --_bg: var(--combobox-bg-hover);'), 'combobox hover block');
+ok(wiring.includes('[data-element="combobox"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {'), 'combobox disabled selector verbatim');
+ok(wiring.includes('--_placeholder: var(--combobox-placeholder);'), 'combobox placeholder private');
+ok(wiring.includes('--_ring-color: var(--combobox-ring-color);'), 'combobox ring private');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -263,9 +291,11 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('button') === 'actions' && g.categoryOf('avatar') === 'data', 'spot checks');
     ok(g.categoryOf('dialog') === 'surfaces', 'dialog categorized as surfaces');
     ok(g.categoryOf('dropdown-menu') === 'navigation', 'dropdown-menu categorized as navigation');
+    ok(g.categoryOf('combobox') === 'forms', 'combobox categorized as forms');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
+ok(html.indexOf('id="gallery-combobox"') > html.indexOf('id="gallery-switch"'), 'combobox appears after switch in the gallery');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -292,6 +322,23 @@ ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-i
     ok(!menuHtml.includes('data-state="hover"') && !menuHtml.includes('data-state="active"') && !menuHtml.includes('data-state="disabled"'), 'nested list items carry no non-default state');
     ok(!menuHtml.includes('gallery-stage'), 'dropdown-menu instance carries no nested stage markup');
     ok(!menuHtml.includes('id="gallery-list-item"'), 'nested list items are not full gallery sections');
+}
+
+// --- Combobox gallery markup -------------------------------------------------
+{
+    const comboHtml = g.renderGalleryInstance('combobox', null, 'default');
+    ok(comboHtml.startsWith('<div class="gallery-stack">'), 'combobox instance wrapped in a gallery-stack');
+    ok((comboHtml.match(/data-element="combobox"/g) || []).length === 1, 'exactly one combobox trigger');
+    ok(comboHtml.includes('role="combobox"') && comboHtml.includes('aria-expanded="true"'), 'combobox trigger role + expanded state (menu is open)');
+    ok(comboHtml.includes('data-part="bg"'), 'combobox trigger root carries data-part="bg"');
+    ok(comboHtml.includes('data-part="placeholder"'), 'combobox placeholder part is paintable/clickable');
+    ok(comboHtml.includes('data-part="icon"'), 'combobox icon part is paintable/clickable');
+    ok(comboHtml.includes('data-element="dropdown-menu"'), 'combobox nests the dropdown menu');
+    ok((comboHtml.match(/data-element="list-item"/g) || []).length === 3, 'the nested dropdown menu keeps its three list items');
+    // trigger and menu are rendered as siblings (trigger's own markup closes - icon svg then the trigger span - before the menu opens), never nested
+    ok(comboHtml.indexOf('</svg></span>') > -1 && comboHtml.indexOf('</svg></span>') < comboHtml.indexOf('<div role="menu"'), 'trigger closes before the dropdown menu opens (siblings, not nested)');
+    ok(!comboHtml.includes('gallery-stage'), 'combobox instance carries no nested stage markup');
+    ok(!comboHtml.includes('id="gallery-dropdown-menu"') && !comboHtml.includes('id="gallery-list-item"'), 'nested instances are not full gallery sections');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

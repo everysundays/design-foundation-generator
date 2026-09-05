@@ -138,7 +138,14 @@ body {
 
 /* Wide compound elements (card, alert, popover) get a reading-width cap in
    the gallery so their body copy wraps instead of stretching the row. */
-.gallery-stage > :is(.ds-card, .ds-alert, .ds-popover, .ds-table, .ds-tabs-list, .ds-dialog, .ds-dropdown-menu) { max-inline-size: 32rem; }
+.gallery-stage > :is(.ds-card, .ds-alert, .ds-popover, .ds-table, .ds-tabs-list, .ds-dialog, .ds-dropdown-menu, .gallery-stack) { max-inline-size: 32rem; }
 
 /* Dialog's overlay is the stage's own dimmed frame around the panel. */
 .gallery-stage > .ds-dialog { padding: var(--pg-space-8); border-radius: var(--pg-radius-lg); }
+
+/* A gallery-stack holds a trigger and the panel it opens (Combobox's trigger
+   + Dropdown menu) as plain document-order siblings, one under the other. */
+.gallery-stack {
+  display: grid;
+  gap: var(--pg-space-2);
+}

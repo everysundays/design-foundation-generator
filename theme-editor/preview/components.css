@@ -24,7 +24,8 @@
 .ds-input:is(:focus-within:not([data-state]), [data-state="focus"]),
 .ds-select:is(:focus-visible:not([data-state]), [data-state="focus"]),
 .ds-textarea:is(:focus-within:not([data-state]), [data-state="focus"]),
-.ds-tab:is(:focus-visible:not([data-state]), [data-state="focus"]) {
+.ds-tab:is(:focus-visible:not([data-state]), [data-state="focus"]),
+.ds-combobox:is(:focus-visible:not([data-state]), [data-state="focus"]) {
     outline: var(--_ring-width) solid var(--_ring-color);
     outline-offset: 2px;
 }
@@ -44,7 +45,8 @@
 .ds-radio[aria-disabled="true"],
 .ds-switch[aria-disabled="true"],
 .ds-tab:is(:disabled, [aria-disabled="true"]),
-.ds-list-item[aria-disabled="true"] {
+.ds-list-item[aria-disabled="true"],
+.ds-combobox[aria-disabled="true"] {
     cursor: not-allowed;
 }
 
@@ -59,7 +61,8 @@
 .ds-tooltip,
 .ds-popover,
 .ds-list-item,
-.ds-dropdown-menu {
+.ds-dropdown-menu,
+.ds-combobox {
     color: var(--_text-color);
     font-family: var(--_text-family);
     font-weight: var(--_text-weight);
@@ -134,7 +137,8 @@
     .ds-switch-track,
     .ds-tab,
     .ds-table-row,
-    .ds-list-item {
+    .ds-list-item,
+    .ds-combobox {
         transition: background-color 150ms, color 150ms, border-color 150ms, box-shadow 150ms, outline-color 150ms;
     }
     .ds-switch-thumb {
@@ -599,4 +603,36 @@
 
 .ds-dropdown-menu-text {
     color: var(--_text-color);
+}
+
+/* --- Combobox ------------------------------------------------------------- */
+
+.ds-combobox {
+    display: inline-flex;
+    align-items: center;
+    inline-size: 100%;
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-combobox-placeholder {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--_placeholder);
+}
+
+.ds-combobox-icon {
+    flex: none;
+    margin-inline-start: auto;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
 }
