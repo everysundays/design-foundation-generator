@@ -952,6 +952,60 @@ function buildCustomElementSpec({ key, label, base, parts }) {
     };
 }
 
+// The base's actual PART + PROP object a (part, prop) slot of the CUSTOM
+// shape carries a live value from - same matching _customBaseSlotKey uses
+// (the base's own same-key part/prop, or - for the offered padding.x/
+// padding.y - the base's single-prop padding part), but returning the
+// base's real part/prop objects (what tokenId needs) rather than a
+// SEED_SPEC-style slot key. null when the base has nothing at that slot.
+function _customBaseTokenSlot(baseSpec, part, prop) {
+    const baseSamePart = baseSpec.parts.find(p => p.key === part.key);
+    if (baseSamePart) {
+        const baseProp = baseSamePart.props.find(p => p.key === prop.key);
+        if (baseProp) return { part: baseSamePart, prop: baseProp };
+    }
+    if (part.key === 'padding') {
+        const basePadding = baseSpec.parts.find(p => p.key === 'padding');
+        if (basePadding && basePadding.props.length === 1) return { part: basePadding, prop: basePadding.props[0] };
+    }
+    return null;
+}
+
+// buildCustomElementSpec's own seedSpec (_buildCustomSeedSpec) only ever
+// copies the base's DETERMINISTIC seed (SEED_SPEC[base] + the fixed
+// per-part defaults) - reproducible under undo/redo/reseed, which is what
+// tests/custom-elements.test.js's "equals the base's SEEDED hover ref"
+// checks. That covers only half of "its part tokens start from the base's
+// values": when the user already edited the base away from its seed (an
+// explicit entry in `components`, the live override map), the new element
+// should visually match the base as it stands right now too. This walks
+// every (part, prop) slot of the new spec across every variant x state it
+// carries, finds the base's matching slot (_customBaseTokenSlot - so a kept
+// part or an offered kind both work), and copies any EXPLICIT base override
+// found onto the new element's matching id. Returns a flat
+// { [customId]: ref } object to merge into `components` - never mutates it.
+function customElementLiveOverrides(components, baseSpec, spec) {
+    const overrides = {};
+    if (!components) return overrides;
+    const baseVariants = baseSpec.variants && baseSpec.variants.length ? baseSpec.variants : [null];
+    spec.parts.forEach(part => {
+        part.props.forEach(prop => {
+            const slot = _customBaseTokenSlot(baseSpec, part, prop);
+            if (!slot) return;
+            baseVariants.forEach((baseVariant, i) => {
+                const specVariant = spec.variants[i];
+                if (specVariant === undefined) return;
+                spec.states.forEach(stateKey => {
+                    const baseId = tokenId(baseSpec, baseVariant, slot.part.key, slot.prop.key, stateKey);
+                    if (components[baseId] === undefined || components[baseId] === null) return;
+                    overrides[tokenId(spec, specVariant, part.key, prop.key, stateKey)] = components[baseId];
+                });
+            });
+        });
+    });
+    return overrides;
+}
+
 // --- Custom elements: generic specimen ---------------------------------------
 //
 // Root paints bg/border/padding/shadow (whichever are ticked) through the

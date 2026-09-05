@@ -1728,10 +1728,27 @@ function createCustomElement({ base, parts, name }) {
     const spec = buildCustomElementSpec({ key, label, base: baseSpec.key, parts: parts || [] });
     pushUndo();
     state.customElements = [...state.customElements, spec];
+    // spec.seedSpec covers the deterministic half of "starts from the base's
+    // values" (undo/redo/reseed stay reproducible); copy the base's own
+    // EXPLICIT live overrides too, so the new element visually matches the
+    // base as it stands right now - the two halves the board's scope review
+    // called for (scratchpad/reviews/18.json, clarityIssues[3]).
+    if (typeof customElementLiveOverrides === 'function') {
+        Object.assign(state.components, customElementLiveOverrides(state.components, baseSpec, spec));
+    }
     applyCustomElementsChange();
     state.activeTab = 'colors';
     document.querySelectorAll('.sidebar-tab').forEach(b => b.classList.toggle('active', b.dataset.sidebarTab === 'colors'));
     selectElement(spec.key, spec.variants ? spec.variants[0] : null, spec.parts[0].key, 'default');
+    // applyCustomElementsChange() only patches #wiring and rebuilds the
+    // Custom section - unlike renderPreview() (see its own comment), it
+    // never refreshes #theme-vars, which is where componentVarLines() writes
+    // the new element's concrete `--<key>-...` declarations. Every other
+    // caller of applyCustomElementsChange() (restoreSnapshot's undo/redo,
+    // applyLoaded, Reset) finishes with renderAll() for exactly this reason -
+    // without it here too, a freshly created element rendered fully
+    // unstyled until some unrelated later action happened to call it.
+    renderAll();
     return null;
 }
 

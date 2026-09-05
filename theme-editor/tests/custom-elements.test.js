@@ -17,10 +17,10 @@ const ctx = vm.createContext({ console });
     vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
 });
 const g = vm.runInContext(`({ ELEMENTS, allElements, setCustomElements, customElementsSnapshot,
-    validateCustomElementName, buildCustomElementSpec, renderCustomInstance, buildCustomGalleryHtml,
-    buildCustomElementHeaderHtml, buildGalleryHtml, componentTokenIds, tokenIdParts, tokenId, propKind,
-    seedComponentTokens, resolveComponentRef, componentVarLines, buildWiringCss, parseRef, refToVar,
-    findScaleEntry, paletteEntryByName, elementSpec })`, ctx);
+    validateCustomElementName, buildCustomElementSpec, customElementLiveOverrides, renderCustomInstance,
+    buildCustomGalleryHtml, buildCustomElementHeaderHtml, buildGalleryHtml, componentTokenIds, tokenIdParts,
+    tokenId, propKind, seedComponentTokens, resolveComponentRef, componentVarLines, buildWiringCss, parseRef,
+    refToVar, findScaleEntry, paletteEntryByName, elementSpec })`, ctx);
 
 const SOURCES = ['tailwind', 'atlassian'];
 const SEMANTIC_ROLES = new Set([
@@ -156,6 +156,58 @@ ok(g.resolveComponentRef('chip.primary.bg', {}) === 'color.primary', "chip's pri
 ok(g.resolveComponentRef('note.default.bg', {}) === 'color.card', "note's bg matches card's bg");
 ok(g.resolveComponentRef('note.default.bg.hover', {}) === 'color.card', 'a state card never seeded still resolves (falls back to the default)');
 ok(g.resolveComponentRef('garbage.id', {}) === null, 'unknown id -> null');
+
+// --- customElementLiveOverrides: the base's LIVE edits, not just its seed ---
+// buildCustomElementSpec/seedSpec covers the deterministic half of "starts
+// from the base's values" (tested above against an empty override map);
+// this is the other half - an explicit edit already made to the base is
+// copied onto the new element's matching id at creation.
+{
+    const buttonSpec = g.elementSpec('button');
+    const cardSpec = g.elementSpec('card');
+    // no live edits on the base at all -> nothing to copy
+    ok(Object.keys(g.customElementLiveOverrides({}, buttonSpec, chip)).length === 0, 'no base overrides -> empty result');
+    ok(Object.keys(g.customElementLiveOverrides(null, buttonSpec, chip)).length === 0, 'null components -> empty result (never throws)');
+
+    // a default-state override on the variant the chip shares with the base
+    const liveButton = { 'button.primary.bg': 'palette.rose-600', 'button.secondary.bg': 'palette.rose-600' };
+    const chipFromLiveButton = g.customElementLiveOverrides(liveButton, buttonSpec, chip);
+    ok(chipFromLiveButton['chip.primary.bg'] === 'palette.rose-600', "button's live primary.bg override carries onto chip.primary.bg");
+    ok(chipFromLiveButton['chip.secondary.bg'] === 'palette.rose-600', "button's live secondary.bg override carries onto chip.secondary.bg");
+    ok(Object.keys(chipFromLiveButton).length === 2, 'only the overridden ids are copied - nothing else invented');
+
+    // a state-specific override maps to that same state, not to default
+    const hoverOnly = { 'button.primary.bg.hover': 'palette.amber-500' };
+    const chipFromHover = g.customElementLiveOverrides(hoverOnly, buttonSpec, chip);
+    ok(chipFromHover['chip.primary.bg.hover'] === 'palette.amber-500', "a hover-only base override maps to chip's hover id");
+    ok(chipFromHover['chip.primary.bg'] === undefined, 'a hover-only override never leaks onto the default id');
+
+    // a kept extra part (button's radius, not one of the six offered kinds) -
+    // still carries the variant segment, same as any other button id
+    const radiusEdit = { 'button.primary.radius': 'radius.full' };
+    ok(g.customElementLiveOverrides(radiusEdit, buttonSpec, chip)['chip.primary.radius'] === 'radius.full', "a kept part's live edit (radius) carries over too");
+
+    // variant-less base (card): its single edit carries onto the chip's
+    // synthetic "default" variant id, and a kept text part (title) works too
+    const liveCard = { 'card.bg': 'palette.slate-900', 'card.title.color': 'palette.slate-50' };
+    const noteFromLiveCard = g.customElementLiveOverrides(liveCard, cardSpec, note);
+    ok(noteFromLiveCard['note.default.bg'] === 'palette.slate-900', "a variant-less base's live bg override carries onto note.default.bg");
+    ok(noteFromLiveCard['note.default.title.color'] === 'palette.slate-50', "a variant-less base's kept-part live override (title.color) carries over");
+
+    // single-prop base padding (card.padding) fans out to BOTH of the
+    // custom shape's offered padding.x/padding.y - the same merge
+    // buildCustomElementSpec's own seed half already does.
+    const paddingEdit = { 'card.padding': 'space.10' };
+    const noteFromPadding = g.customElementLiveOverrides(paddingEdit, cardSpec, note);
+    ok(noteFromPadding['note.default.padding.x'] === 'space.10' && noteFromPadding['note.default.padding.y'] === 'space.10', "card's single-prop padding override fans out to note's padding.x AND padding.y");
+
+    // a `components` map crowded with every OTHER element's own overrides
+    // never leaks onto the new one - only ids actually computed from the
+    // real base's own matching slots are ever looked up.
+    const crowded = { 'button.primary.bg': 'palette.rose-600', 'input.text.color': 'palette.blue-500', 'card.bg': 'palette.green-500', 'separator.line': 'palette.pink-500' };
+    const chipFromCrowded = g.customElementLiveOverrides(crowded, buttonSpec, chip);
+    ok(Object.keys(chipFromCrowded).length === 1 && chipFromCrowded['chip.primary.bg'] === 'palette.rose-600', "only the base's own overrides are copied - other elements sharing the same map never leak onto the new one");
+}
 
 // --- componentVarLines: no null/undefined across every part kind on both sources
 SOURCES.forEach(source => {
