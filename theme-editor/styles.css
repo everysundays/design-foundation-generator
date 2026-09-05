@@ -677,9 +677,76 @@ body.resizing-sidebar .preview-frame {
   color: var(--ui-text-muted);
 }
 
-.type-custom-family {
-  font-family: ui-monospace, monospace;
+/* --- Font picker (searchable Google Fonts catalogue + system/token rows,
+   scripts.js buildFontPicker) - the Sans/Serif/Mono fields and each type
+   set's Family control. --- */
+
+.font-picker {
+  position: relative;
+}
+
+.font-picker-input {
+  width: 100%;
+}
+
+.font-picker-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.font-picker-list[hidden] {
+  display: none;
+}
+
+.font-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: none;
+  border-radius: var(--ui-radius-sm);
+  font-family: inherit;
   font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ui-text);
+}
+
+.font-picker-row:hover,
+.font-picker-row[data-highlighted] {
+  background: var(--ui-bg-subtle);
+}
+
+.font-picker-row[aria-selected="true"] {
+  font-weight: 600;
+}
+
+.font-picker-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-picker-row-cat {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--ui-text-muted);
 }
 
 /* --- Preview area --- */

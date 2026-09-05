@@ -13,6 +13,7 @@
     <script src="tailwind-palette.js"></script>
     <script src="atlassian-palette.js"></script>
     <script src="foundation.js"></script>
+    <script src="fonts-catalogue.js"></script>
     <script src="fonts.js"></script>
     <script src="components.js"></script>
     <script src="typesets.js"></script>
@@ -85,12 +86,12 @@
                 <div id="typeControlsTemplate" hidden>
                     <div class="field-group">
                         <div class="field-group-label">Font Family</div>
-                        <label class="field-label" for="fontSansSelect">Sans-Serif</label>
-                        <select id="fontSansSelect" class="field-select"></select>
-                        <label class="field-label" for="fontSerifSelect">Serif</label>
-                        <select id="fontSerifSelect" class="field-select"></select>
-                        <label class="field-label" for="fontMonoSelect">Mono</label>
-                        <select id="fontMonoSelect" class="field-select"></select>
+                        <label class="field-label" for="fontSansPicker-input">Sans-Serif</label>
+                        <div id="fontSansPicker" class="font-picker"></div>
+                        <label class="field-label" for="fontSerifPicker-input">Serif</label>
+                        <div id="fontSerifPicker" class="font-picker"></div>
+                        <label class="field-label" for="fontMonoPicker-input">Mono</label>
+                        <div id="fontMonoPicker" class="font-picker"></div>
                     </div>
                     <div class="field-group">
                         <div class="field-group-label">Letter Spacing</div>

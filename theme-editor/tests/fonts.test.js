@@ -1,7 +1,9 @@
 // node tests/fonts.test.js
-// Loads foundation.js and fonts.js into one vm context (plain browser
-// globals) and checks the Google Fonts helpers: face resolution and the
-// @import URL/line the export and the preview <link> both build from.
+// Loads foundation.js, fonts-catalogue.js and fonts.js into one vm context
+// (plain browser globals) and checks the Google Fonts helpers: catalogue
+// lookup/search, face resolution, and the @import URL/line the export and
+// the preview <link> both build from (weights intersected with what each
+// family actually ships).
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -9,10 +11,10 @@ const assert = require('assert');
 
 const root = path.resolve(__dirname, '..');
 const ctx = vm.createContext({ console });
-['foundation.js', 'fonts.js'].forEach(f => {
+['foundation.js', 'fonts-catalogue.js', 'fonts.js'].forEach(f => {
     vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
 });
-const g = vm.runInContext('({ firstFamily, resolveTypeFace, googleFamilies, googleFontsHref, fontImportCss })', ctx);
+const g = vm.runInContext('({ firstFamily, resolveTypeFace, googleFamilies, googleFontsHref, fontImportCss, catalogueEntry, searchCatalogue, familyCssValue })', ctx);
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -98,6 +100,75 @@ const varsMany = familyVars({
     const href = g.googleFontsHref([varsInter, dark], TYPE_SETS);
     ok(href.includes('family=Inter'), `union includes the light-mode face: ${href}`);
     ok(href.includes('family=Roboto'), `union includes the dark-mode face: ${href}`);
+}
+
+// --- catalogueEntry: category + weights straight from GOOGLE_FONTS_CATALOGUE
+{
+    const inter = g.catalogueEntry('Inter');
+    ok(inter.category === 'sans-serif', `Inter's category is sans-serif: ${inter.category}`);
+    ok(inter.weights.includes(100) && inter.weights.includes(900), `Inter's weights span 100-900: ${inter.weights}`);
+    // JSON round-trip: the vm realm's Array isn't `instanceof` this realm's
+    // Array, which deepStrictEqual treats as unequal even with identical
+    // contents (same pattern as tests/dtcg.test.js / tests/typesets.test.js).
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(g.catalogueEntry('Space Grotesk').weights)), [300, 400, 500, 600, 700],
+        'Space Grotesk ships exactly 300/400/500/600/700');
+    ok(g.catalogueEntry('inter').category === 'sans-serif', 'catalogueEntry is case-insensitive');
+    ok(g.catalogueEntry('system-ui') === null, 'system-ui is not a catalogue family');
+    ok(g.catalogueEntry('My Face') === null, 'an unknown name is not a catalogue family');
+}
+
+// --- searchCatalogue: substring, prefix-first, capped, alphabetical --------
+// JSON round-trip right away (see the weights comment above) so every array
+// method used below runs on a plain host-realm array.
+{
+    const sp = JSON.parse(JSON.stringify(g.searchCatalogue('sp'))).map(r => r.family);
+    assert.deepStrictEqual(sp.slice(0, 4), ['Space Grotesk', 'Space Mono', 'Special Elite', 'Special Gothic'],
+        `"sp" narrows to Space Grotesk, Space Mono, Special Elite, Special Gothic ...: ${sp.slice(0, 4)}`);
+    ok(sp.includes('Spline Sans'), '"sp" also matches Spline Sans further down the list');
+    ok(!sp.includes('Inter'), '"sp" excludes Inter');
+    const spUpper = JSON.parse(JSON.stringify(g.searchCatalogue('SP'))).map(r => r.family);
+    assert.deepStrictEqual(spUpper.slice(0, 3), sp.slice(0, 3), 'search is case-insensitive');
+    ok(g.searchCatalogue('nonexistentfamilyname').length === 0, 'no matches -> empty array, not every family');
+    ok(g.searchCatalogue('', 10).length === 10, 'an empty query still returns up to the cap, for the picker\'s default view');
+    ok(g.searchCatalogue('inter', 5).length <= 5, 'results are capped at `limit`');
+}
+
+// --- familyCssValue: quoted + the pool's generic for a catalogue pick, the
+// raw text verbatim for anything the catalogue doesn't know -----------------
+{
+    ok(g.familyCssValue('Nunito', 'sans') === "'Nunito', sans-serif", `familyCssValue('Nunito', 'sans'): ${g.familyCssValue('Nunito', 'sans')}`);
+    ok(g.familyCssValue('Fira Code', 'mono') === "'Fira Code', monospace", 'mono pool gets the monospace generic');
+    ok(g.familyCssValue('My Face, serif', 'serif') === 'My Face, serif', 'a non-catalogue value is returned verbatim, not re-wrapped');
+}
+
+// --- Weight intersection: never a weight the family lacks, ascending,
+// a font token nobody uses yet still gets its default weight ---------------
+{
+    // font-sans alone (no set follows it) still contributes its default 400.
+    const soloSets = [{ key: 'solo', family: 'sans', weight: '400' }];
+    const varsSpaceGrotesk = {
+        'font-sans': 'Space Grotesk, sans-serif', 'font-serif': 'ui-serif, serif', 'font-mono': 'ui-monospace, monospace',
+        'type-solo-family': 'var(--font-sans)', 'type-solo-weight': '800'
+    };
+    const soloHref = g.googleFontsHref(varsSpaceGrotesk, soloSets);
+    ok(soloHref.includes('family=Space+Grotesk:wght@400'), `Space Grotesk requested at 400 (its own token default): ${soloHref}`);
+    ok(!soloHref.includes('800'), `800 (unsupported - Space Grotesk tops out at 700) never appears in the URL: ${soloHref}`);
+
+    // A second set at a weight the family DOES have is kept alongside it.
+    const twoSets = [{ key: 'solo', family: 'sans', weight: '400' }, { key: 'other', family: 'sans', weight: '600' }];
+    const varsTwo = { ...varsSpaceGrotesk, 'type-other-family': 'var(--font-sans)', 'type-other-weight': '600' };
+    const twoHref = g.googleFontsHref(varsTwo, twoSets);
+    ok(twoHref.includes('family=Space+Grotesk:wght@400;600'), `600 (a weight Space Grotesk has) is kept, ascending after 400: ${twoHref}`);
+
+    // A face requested at weights the catalogue lists NONE of still loads -
+    // bare `family=` with no :wght@ at all, rather than being dropped.
+    const varsNoMatch = {
+        'font-sans': 'Inter, sans-serif', 'font-serif': 'ui-serif, serif', 'font-mono': 'ui-monospace, monospace',
+        'type-code-family': "'Space Mono', monospace", 'type-code-weight': '900'
+    };
+    const noMatchHref = g.googleFontsHref(varsNoMatch, [{ key: 'code', family: 'mono', weight: '400' }]);
+    ok(/family=Space\+Mono(&|$)/.test(noMatchHref), `Space Mono (weights 400/700) requested at 900 falls back to a bare family, not dropped: ${noMatchHref}`);
+    ok(!noMatchHref.includes('900'), `the unsupported weight 900 itself never appears in the URL: ${noMatchHref}`);
 }
 
 console.log(`fonts.test.js: ${checks} checks passed`);

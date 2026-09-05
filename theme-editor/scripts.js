@@ -720,30 +720,159 @@ function revealSemanticRow(key) {
 
 
 // --- Sidebar: Typography ---
-const FONT_OPTIONS = {
-    sans: ['Inter', 'Roboto', 'Open Sans', 'Poppins', 'Work Sans', 'system-ui'],
-    serif: ['Source Serif 4', 'Georgia', 'Playfair Display', 'ui-serif'],
-    mono: ['JetBrains Mono', 'Fira Code', 'Courier New', 'ui-monospace']
-};
+// The 5 non-Google faces every family field can pick, alongside the
+// catalogue - each carries its own generic fallback baked into the value it
+// commits, since the right generic for "ui-serif" or "Georgia" is a property
+// of the stack itself, not of which field (Sans/Serif/Mono) happened to be
+// open when it was picked. [36]
+const SYSTEM_STACKS = [
+    { label: 'system-ui', value: 'system-ui' },
+    { label: 'ui-serif', value: 'ui-serif, serif' },
+    { label: 'ui-monospace', value: 'ui-monospace, monospace' },
+    { label: 'Georgia', value: 'Georgia, serif' },
+    { label: 'Courier New', value: 'Courier New, monospace' }
+];
+
+// The three top-level pickers (built once in DOMContentLoaded below) -
+// renderTypographyTab only refreshes their displayed value on every render.
+const fontPickers = { sans: null, serif: null, mono: null };
+
+// A searchable text+listbox combo for one family field: the Sans/Serif/Mono
+// top-level fields (`topRows` = SYSTEM_STACKS, `pool` = the field itself) and
+// each type set's Family control (`topRows` = the three family-token
+// choices, `pool` = the set's own family classification - see
+// buildTypeSetGroup). `onCommit(value)` fires exactly once per pick, per
+// typed-value Enter/blur, or per raw Enter/blur - never per keystroke, so
+// each is its own undo step (the caller's onCommit is expected to call
+// setVar, which pushes undo itself).
+//
+// Built ONCE per mount (see callers) so the open list and whatever the user
+// has typed survive every renderTypographyTab/renderTypeSetGroups rebuild;
+// only the returned `refresh(value)` runs on every render, and - like the
+// v2 Custom-family input it replaces - it never touches the input while the
+// user is inside it (`document.activeElement !== input`).
+function buildFontPicker({ mount, pool, topRows, onCommit }) {
+    const el = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
+
+    const input = el('input', 'field-select font-picker-input', { type: 'text', autocomplete: 'off', spellcheck: false });
+    if (mount.id) input.id = `${mount.id}-input`;
+    const list = el('div', 'font-picker-list', { hidden: true });
+    list.setAttribute('role', 'listbox');
+    mount.append(input, list);
+
+    let committed = '';
+    let highlighted = -1;
+
+    // The row-matching form of the current value: a system/token stack's own
+    // label, else the bare face name (strips quotes/fallback) - a typed raw
+    // value simply has no row, so this is also its own display text.
+    const displayFor = (value) => {
+        const stack = topRows.find(r => r.value === value);
+        return stack ? stack.label : firstFamily(value);
+    };
+
+    const commit = (value) => {
+        committed = value;
+        input.value = displayFor(value);
+        onCommit(value);
+    };
+
+    const closeList = () => {
+        list.hidden = true;
+        list.innerHTML = '';
+        highlighted = -1;
+    };
+
+    // `query` is passed explicitly rather than read from input.value: on
+    // focus the field still shows the committed display text (e.g. "Inter"),
+    // and that text must not immediately filter the list down to itself -
+    // the list opens unfiltered (current family marked selected, per DoD),
+    // filtering starts only once the user actually types.
+    const renderRows = (query) => {
+        const q = query.trim().toLowerCase();
+        const selectedFamily = firstFamily(committed);
+        list.innerHTML = '';
+        const addRow = (label, value, category, selected) => {
+            const row = el('button', 'font-picker-row', { type: 'button' });
+            row.dataset.value = value;
+            row.setAttribute('role', 'option');
+            row.setAttribute('aria-selected', String(selected));
+            row.append(
+                el('span', 'font-picker-row-name', { textContent: label }),
+                el('span', 'font-picker-row-cat', { textContent: category || '' })
+            );
+            // mousedown (not click) fires - and is cancelled - before the
+            // input's blur, so a row pick always wins over blur's own
+            // raw-text commit instead of racing it.
+            row.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                commit(value);
+                closeList();
+            });
+            list.append(row);
+        };
+        topRows.forEach(r => { if (!q || r.label.toLowerCase().includes(q)) addRow(r.label, r.value, '', r.value === committed); });
+        const catalogueRows = searchCatalogue(query);
+        // The opened, not-yet-searched list must show the current pick even
+        // when it sits outside the default cap's alphabetical window (e.g. a
+        // family well past "Z") - pin it to the top rather than leaving
+        // "shows selected" true only for the fonts that happen to sort early.
+        const selectedEntry = !q && selectedFamily && catalogueEntry(selectedFamily);
+        if (selectedEntry && !catalogueRows.some(c => c.family === selectedFamily)) {
+            catalogueRows.unshift({ family: selectedFamily, category: selectedEntry.category });
+        }
+        catalogueRows.forEach(c => addRow(c.family, familyCssValue(c.family, pool), c.category, c.family === selectedFamily));
+        highlighted = -1;
+        list.hidden = false;
+    };
+
+    input.addEventListener('focus', () => { input.select(); renderRows(''); });
+    input.addEventListener('input', () => renderRows(input.value));
+    input.addEventListener('blur', () => {
+        // A row click already committed and closed the list (its mousedown
+        // ran first); a still-open list here means the user typed and left
+        // without picking - commit the raw text if it actually changed.
+        if (list.hidden) return;
+        const raw = input.value.trim();
+        if (raw && raw !== displayFor(committed)) commit(raw);
+        else input.value = displayFor(committed);
+        closeList();
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter' && e.key !== 'Escape') return;
+        e.preventDefault();
+        if (e.key === 'Escape') { input.value = displayFor(committed); closeList(); input.blur(); return; }
+        if (list.hidden) { renderRows(input.value); return; }
+        const rows = [...list.children];
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            if (!rows.length) return;
+            if (rows[highlighted]) rows[highlighted].removeAttribute('data-highlighted');
+            highlighted = e.key === 'ArrowDown' ? Math.min(highlighted + 1, rows.length - 1) : Math.max(highlighted - 1, 0);
+            rows[highlighted].setAttribute('data-highlighted', '');
+            rows[highlighted].scrollIntoView({ block: 'nearest' });
+            return;
+        }
+        // Enter: the highlighted row if arrow keys picked one, else the
+        // typed text verbatim (a raw, non-catalogue value).
+        if (highlighted >= 0 && rows[highlighted]) commit(rows[highlighted].dataset.value);
+        else { const raw = input.value.trim(); if (raw && raw !== displayFor(committed)) commit(raw); }
+        closeList();
+        input.blur();
+    });
+
+    return {
+        refresh(value) {
+            committed = value || '';
+            if (document.activeElement !== input) input.value = displayFor(committed);
+        }
+    };
+}
 
 function renderTypographyTab() {
     const vars = currentVars();
-    const populate = (id, list, currentValue) => {
-        const select = document.getElementById(id);
-        select.innerHTML = '';
-        const values = new Set(list);
-        if (currentValue) values.add(firstFamily(currentValue));
-        [...values].forEach(font => {
-            const opt = document.createElement('option');
-            opt.value = font;
-            opt.textContent = font;
-            select.appendChild(opt);
-        });
-        select.value = currentValue ? firstFamily(currentValue) : list[0];
-    };
-    populate('fontSansSelect', FONT_OPTIONS.sans, vars['font-sans']);
-    populate('fontSerifSelect', FONT_OPTIONS.serif, vars['font-serif']);
-    populate('fontMonoSelect', FONT_OPTIONS.mono, vars['font-mono']);
+    if (fontPickers.sans) fontPickers.sans.refresh(vars['font-sans']);
+    if (fontPickers.serif) fontPickers.serif.refresh(vars['font-serif']);
+    if (fontPickers.mono) fontPickers.mono.refresh(vars['font-mono']);
 
     const tracking = parseFloat(vars['tracking-normal']) || 0;
     document.getElementById('letterSpacingRange').value = tracking;
@@ -752,15 +881,9 @@ function renderTypographyTab() {
     renderTypeSetGroups(vars);
 }
 
-// firstFamily/resolveTypeFace/GOOGLE_FONTS/googleFontsHref/fontImportCss now
-// live in fonts.js (loaded before this file - see index.html).
-
-function typeFamilySelection(value) {
-    const ref = (value || '').match(/^var\(--font-(sans|serif|mono)\)$/);
-    if (ref) return ref[1];
-    const face = firstFamily(value);
-    return Object.values(FONT_OPTIONS).some(list => list.includes(face)) ? face : 'custom';
-}
+// firstFamily/resolveTypeFace/catalogueEntry/searchCatalogue/familyCssValue/
+// googleFontsHref/fontImportCss all live in fonts.js (loaded before this
+// file - see index.html).
 
 // "Sans→Inter · 2xl / 8 · 600" - the one-line readout for a set, shared by
 // the sidebar fold line and the preview pages.
@@ -805,18 +928,18 @@ function buildTypeSetGroup(set) {
 
     const body = el('div', 'color-group-body');
 
-    const familyLabel = el('label', 'field-label', { textContent: 'Font', htmlFor: `typeFamily-${set.key}` });
-    const familySelect = el('select', 'field-select', { id: `typeFamily-${set.key}` });
-    const tokenGroup = Object.assign(document.createElement('optgroup'), { label: 'Theme family tokens' });
-    tokenGroup.append(option('sans', 'Sans (font-sans)'), option('serif', 'Serif (font-serif)'), option('mono', 'Mono (font-mono)'));
-    familySelect.append(tokenGroup);
-    Object.entries(FONT_OPTIONS).forEach(([pool, faces]) => {
-        const group = Object.assign(document.createElement('optgroup'), { label: `${pool[0].toUpperCase()}${pool.slice(1)} faces` });
-        faces.forEach(face => group.append(option(face, face)));
-        familySelect.append(group);
+    const familyLabel = el('label', 'field-label', { textContent: 'Font', htmlFor: `typeFamily-${set.key}-input` });
+    const familyMount = el('div', 'font-picker', { id: `typeFamily-${set.key}` });
+    const familyPicker = buildFontPicker({
+        mount: familyMount,
+        pool: set.family,
+        topRows: [
+            { label: 'Sans (font-sans)', value: 'var(--font-sans)' },
+            { label: 'Serif (font-serif)', value: 'var(--font-serif)' },
+            { label: 'Mono (font-mono)', value: 'var(--font-mono)' }
+        ],
+        onCommit: (value) => setVar(typeVarKey(set.key, 'family'), value)
     });
-    familySelect.append(option('custom', 'Custom…'));
-    const customInput = el('input', 'field-select type-custom-family', { id: `typeCustom-${set.key}`, type: 'text', placeholder: "'My Face', sans-serif", hidden: true });
 
     const weightLabel = el('label', 'field-label', { textContent: 'Weight', htmlFor: `typeWeight-${set.key}` });
     const weightSelect = el('select', 'field-select', { id: `typeWeight-${set.key}` });
@@ -843,29 +966,13 @@ function buildTypeSetGroup(set) {
     const trackingUnit = el('span', 'field-unit', { textContent: 'em' });
     trackingRow.append(trackingRange, trackingNumber, trackingUnit);
 
-    body.append(familyLabel, familySelect, customInput, weightLabel, weightSelect, sizeLabel, sizeRow, leadingLabel, leadingRow, trackingLabel, trackingRow);
+    body.append(familyLabel, familyMount, weightLabel, weightSelect, sizeLabel, sizeRow, leadingLabel, leadingRow, trackingLabel, trackingRow);
     details.append(summary, body);
+    // ensureTypeSetGroups never rebuilds an existing group - renderTypeSetGroups
+    // reaches the picker again through familyMount (by id, like every other
+    // control here) to call refresh() on every render.
+    familyMount._familyPicker = familyPicker;
 
-    familySelect.addEventListener('change', () => {
-        const choice = familySelect.value;
-        customInput.hidden = choice !== 'custom';
-        if (choice === 'custom') {
-            customInput.value = currentVars()[typeVarKey(set.key, 'family')] || '';
-            customInput.focus();
-            return;
-        }
-        if (choice === 'sans' || choice === 'serif' || choice === 'mono') {
-            setVar(typeVarKey(set.key, 'family'), `var(--font-${choice})`);
-            return;
-        }
-        const pool = Object.keys(FONT_OPTIONS).find(p => FONT_OPTIONS[p].includes(choice)) || 'sans';
-        const generic = { sans: 'sans-serif', serif: 'serif', mono: 'monospace' }[pool];
-        const quoted = /\s/.test(choice) ? `'${choice}'` : choice;
-        setVar(typeVarKey(set.key, 'family'), `${quoted}, ${generic}`);
-    });
-    customInput.addEventListener('input', () => {
-        if (customInput.value.trim()) setVar(typeVarKey(set.key, 'family'), customInput.value.trim());
-    });
     weightSelect.addEventListener('change', () => setVar(typeVarKey(set.key, 'weight'), weightSelect.value));
 
     sizeRange.addEventListener('input', () => {
@@ -915,12 +1022,7 @@ function renderTypeSetGroups(vars) {
 
     state.typeSets.forEach(set => {
         const familyValue = vars[typeVarKey(set.key, 'family')] || '';
-        const selection = typeFamilySelection(familyValue);
-        const familySelect = document.getElementById(`typeFamily-${set.key}`);
-        const customInput = document.getElementById(`typeCustom-${set.key}`);
-        familySelect.value = selection;
-        customInput.hidden = selection !== 'custom';
-        if (selection === 'custom' && document.activeElement !== customInput) customInput.value = familyValue;
+        document.getElementById(`typeFamily-${set.key}`)._familyPicker.refresh(familyValue);
 
         document.getElementById(`typeWeight-${set.key}`).value = vars[typeVarKey(set.key, 'weight')] || set.weight;
 
@@ -2272,9 +2374,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Typography inputs (live in #typeControlsTemplate until the Type panel mounts them)
-    document.getElementById('fontSansSelect').addEventListener('change', (e) => setVar('font-sans', e.target.value));
-    document.getElementById('fontSerifSelect').addEventListener('change', (e) => setVar('font-serif', e.target.value));
-    document.getElementById('fontMonoSelect').addEventListener('change', (e) => setVar('font-mono', e.target.value));
+    ['sans', 'serif', 'mono'].forEach(pool => {
+        fontPickers[pool] = buildFontPicker({
+            mount: document.getElementById(`font${pool[0].toUpperCase()}${pool.slice(1)}Picker`),
+            pool,
+            topRows: SYSTEM_STACKS,
+            onCommit: (value) => setVar(`font-${pool}`, value)
+        });
+    });
     const syncLetterSpacing = (val) => {
         document.getElementById('letterSpacingRange').value = val;
         document.getElementById('letterSpacingNumber').value = val;
