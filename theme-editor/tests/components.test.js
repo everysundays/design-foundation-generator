@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -198,6 +198,19 @@ ok(g.componentVarLines({}, 'tailwind').includes('  --progress-indicator: var(--p
 ok(g.componentVarLines({}, 'tailwind').includes('  --progress-radius: var(--radius-full);'), 'progress radius line');
 ok(g.componentVarLines({}, 'tailwind').includes('  --progress-height: var(--space-2);'), 'progress height line');
 
+// --- Skeleton spot checks -----------------------------------------------
+ok(g.propKind('skeleton', 'bg') === 'color', 'skeleton.bg kind');
+ok(g.propKind('skeleton', 'radius') === 'radius', 'skeleton.radius kind');
+ok(g.ELEMENTS.find(el => el.key === 'skeleton').variants === null, 'skeleton has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'skeleton').states) === JSON.stringify(['default']), 'skeleton has only the default state');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['skeleton.bg'] === 'color.muted', `${source}: skeleton bg seed`);
+    ok(seeds['skeleton.radius'] === (source === 'atlassian' ? 'radius.radius.medium' : 'radius.md'), `${source}: skeleton radius seed`);
+});
+ok(g.componentVarLines({}, 'tailwind').includes('  --skeleton-bg: var(--muted);'), 'skeleton bg line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --skeleton-radius: var(--radius-md);'), 'skeleton radius line');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -273,6 +286,9 @@ ok(wiring.includes('--_indicator: var(--progress-indicator);'), 'progress indica
 ok(wiring.includes('--_radius: var(--progress-radius);'), 'progress radius private');
 ok(wiring.includes('--_height: var(--progress-height);'), 'progress height private');
 ok(!wiring.includes('[data-element="progress"]:is('), 'progress has no state rules');
+ok(wiring.includes('[data-element="skeleton"] {\n  --_bg: var(--skeleton-bg);'), 'skeleton default block');
+ok(wiring.includes('--_radius: var(--skeleton-radius);'), 'skeleton radius private');
+ok(!wiring.includes('[data-element="skeleton"]:is('), 'skeleton has no state rules');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -338,12 +354,14 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('dropdown-menu') === 'navigation', 'dropdown-menu categorized as navigation');
     ok(g.categoryOf('combobox') === 'forms', 'combobox categorized as forms');
     ok(g.categoryOf('progress') === 'feedback', 'progress categorized as feedback');
+    ok(g.categoryOf('skeleton') === 'feedback', 'skeleton categorized as feedback');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
 ok(html.indexOf('id="gallery-combobox"') > html.indexOf('id="gallery-switch"'), 'combobox appears after switch in the gallery');
 ok(html.indexOf('id="gallery-toast"') > html.indexOf('id="gallery-tooltip"'), 'toast appears after tooltip in the gallery');
 ok(html.indexOf('id="gallery-progress"') > html.indexOf('id="gallery-toast"'), 'progress appears after toast in the gallery');
+ok(html.indexOf('id="gallery-skeleton"') > html.indexOf('id="gallery-progress"'), 'skeleton appears after progress in the gallery');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -412,6 +430,18 @@ ok(html.indexOf('id="gallery-progress"') > html.indexOf('id="gallery-toast"'), '
     ok(progressHtml.includes('aria-valuenow="25"') && progressHtml.includes('aria-valuenow="50"') && progressHtml.includes('aria-valuenow="75"'), 'aria-valuenow matches each fill');
     ok(!progressHtml.includes('gallery-stage'), 'progress instance carries no nested stage markup');
     ok(!/<h[1-6][ >]/.test(progressHtml), 'progress has no heading copy');
+}
+// --- Skeleton gallery markup -------------------------------------------------
+{
+    const skeletonHtml = g.renderGalleryInstance('skeleton', null, 'default');
+    ok(skeletonHtml.startsWith('<div class="ds-skeleton" data-element="skeleton" data-state="default" data-part="bg">'), 'skeleton root carries data-part="bg"');
+    ok((skeletonHtml.match(/data-part="bg"/g) || []).length === 4, 'skeleton root + three blocks all carry data-part="bg"');
+    ok(skeletonHtml.includes('class="ds-skeleton-block ds-skeleton-avatar"'), 'skeleton avatar block');
+    ok(skeletonHtml.includes('class="ds-skeleton-block ds-skeleton-line"'), 'skeleton full-width line block');
+    ok(skeletonHtml.includes('class="ds-skeleton-block ds-skeleton-line ds-skeleton-line-short"'), 'skeleton short line block');
+    ok(!skeletonHtml.includes('data-variant='), 'skeleton carries no data-variant (no variants)');
+    ok(!skeletonHtml.includes('gallery-stage'), 'skeleton instance carries no nested stage markup');
+    ok(!/<h[1-6][ >]/.test(skeletonHtml), 'skeleton has no heading copy');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

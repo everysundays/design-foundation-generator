@@ -72,7 +72,7 @@ const FORM_STATES = ['default', 'hover', 'focus', 'disabled'];
 const ELEMENT_CATEGORIES = [
     { key: 'actions',    label: 'Actions',    elements: ['button'] },
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
-    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress'] },
+    { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
     { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
@@ -141,7 +141,9 @@ const ELEMENTS = [
     _el('toast', 'Toast', ['default', 'destructive'], ['default'],
         [_bg(), _border(), _radius(), _padding(), _gap(), _shadow(), _icon(), _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')]),
     _el('progress', 'Progress', null, ['default'],
-        [_colorPart('track', 'Track'), _colorPart('indicator', 'Indicator'), _radius(), _spacePart('height', 'Height')])
+        [_colorPart('track', 'Track'), _colorPart('indicator', 'Indicator'), _radius(), _spacePart('height', 'Height')]),
+    _el('skeleton', 'Skeleton', null, ['default'],
+        [_bg(), _radius()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -383,6 +385,9 @@ const SEED_SPEC = {
     },
     progress: {
         base: { track: 'color.secondary', indicator: 'color.primary', radius: 'radius.full', height: 'space.2' }
+    },
+    skeleton: {
+        base: { bg: 'color.muted', radius: 'radius.md' }
     }
 };
 
@@ -828,7 +833,17 @@ const GALLERY_RENDERERS = {
         galleryIcon('x', 'ds-toast-close', 'close') +
         '</div>',
     progress: (variant, state) =>
-        `<div class="gallery-stack">` + [25, 50, 75].map(v => renderProgress(state, v)).join('') + '</div>'
+        `<div class="gallery-stack">` + [25, 50, 75].map(v => renderProgress(state, v)).join('') + '</div>',
+    // Single root (the "bg" part) holding three blocks that all paint from
+    // the same --_bg/--_radius privates: a structurally-round (hardcoded 50%,
+    // not the radius token) avatar-sized block, and two lines whose corners
+    // DO follow --_radius. Every block carries its own data-part="bg" so
+    // hover/click outlines the block under the pointer, not the whole group.
+    skeleton: (variant, state) =>
+        `<div ${rootAttrs('skeleton', null, state, 'bg')}>` +
+        `<span class="ds-skeleton-block ds-skeleton-avatar" data-part="bg"></span>` +
+        `<span class="ds-skeleton-block ds-skeleton-line" data-part="bg"></span>` +
+        `<span class="ds-skeleton-block ds-skeleton-line ds-skeleton-line-short" data-part="bg"></span></div>`
 };
 
 function renderGalleryInstance(elementKey, variant, state) {
