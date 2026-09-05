@@ -80,7 +80,8 @@
 }
 
 .ds-card-title,
-.ds-alert-title {
+.ds-alert-title,
+.ds-dialog-title {
     margin: 0;
     color: var(--_title-color);
     font-family: var(--_title-family);
@@ -91,7 +92,8 @@
 }
 
 .ds-card-description,
-.ds-alert-description {
+.ds-alert-description,
+.ds-dialog-description {
     margin: 0;
     color: var(--_description-color);
     font-family: var(--_description-family);
@@ -541,4 +543,41 @@
     margin: 0;
     border: 0;
     background: var(--_line);
+}
+
+/* --- Dialog --------------------------------------------------------------- */
+
+.ds-dialog {
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--_overlay) 50%, transparent);
+}
+
+.ds-dialog-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    inline-size: 100%;
+    padding: var(--_padding);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+}
+
+.ds-dialog-close {
+    position: absolute;
+    inset-block-start: var(--_padding);
+    inset-inline-end: var(--_padding);
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_close);
+    font-size: var(--_title-size);
+}
+
+.ds-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--_gap);
 }

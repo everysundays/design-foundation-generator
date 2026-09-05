@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -117,6 +117,19 @@ ok(g.seedComponentTokens('atlassian', { radiusRem: 0.5 })['popover.radius'] === 
 ok(g.seedComponentTokens('atlassian', {})['badge.default.radius'] === 'radius.radius.full', 'atlassian full radius remapped');
 ok(g.seedComponentTokens('atlassian', {})['button.primary.padding.x'].startsWith('space.space.'), 'atlassian space remapped');
 
+// --- Dialog spot checks ---------------------------------------------------
+ok(g.propKind('dialog', 'overlay') === 'color', 'dialog.overlay kind');
+ok(g.propKind('dialog', 'close') === 'color', 'dialog.close kind');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['dialog.overlay'] === 'palette.black', `${source}: dialog overlay seed`);
+    ok(seeds['dialog.bg'] === 'color.background', `${source}: dialog bg seed`);
+    ok(seeds['dialog.close'] === 'color.muted-foreground', `${source}: dialog close seed`);
+    assertRefValid(seeds['dialog.shadow'], 'shadow', source, `${source} dialog shadow seed`);
+});
+ok(g.seedComponentTokens('tailwind', {})['dialog.shadow'] === 'shadow.lg', 'tailwind dialog shadow');
+ok(g.seedComponentTokens('atlassian', {})['dialog.shadow'] === 'shadow.elevation.shadow.overflow', 'atlassian dialog shadow remap');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -139,6 +152,7 @@ SOURCES.forEach(source => {
     // every line references a var that refToVar could produce for a valid ref
     css.split('\n').forEach(line => ok(/^  --[a-z0-9-]+: var\(--[a-z0-9-]+\);$/.test(line), `${source}: well-formed line "${line}"`));
 });
+ok(g.componentVarLines({}, 'tailwind').includes('  --dialog-title-type-family: var(--type-subheading-family);'), 'dialog title type expands');
 ok(g.componentVarLines({}, 'atlassian').includes('  --button-primary-padding-x: var(--space-'), 'atlassian space var');
 ok(!g.componentVarLines({}, 'atlassian').includes('--space-space-'), 'atlassian group stripped by refToVar');
 {
@@ -165,6 +179,9 @@ ok(wiring.includes('--_width: var(--separator-width);'), 'separator width privat
 ok(wiring.includes('[data-element="table-row"]:is(:active:not([data-state]), [data-state="active"], [aria-selected="true"], [aria-pressed="true"]) {'), 'active selector verbatim');
 ok(wiring.includes('[data-element="input"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {'), 'disabled selector verbatim');
 ok(!wiring.includes('[data-element="card"]:is('), 'card has no state rules');
+ok(wiring.includes('--_overlay: var(--dialog-overlay);'), 'dialog overlay private');
+ok(wiring.includes('--_close: var(--dialog-close);'), 'dialog close private');
+ok(!wiring.includes('[data-element="dialog"]:is('), 'dialog has no state rules');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -226,6 +243,22 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(!html.includes('id="cat-other"'), 'every element is categorised (no Other group)');
     ok(g.categoryOf('nope') === 'other', 'unknown element -> other');
     ok(g.categoryOf('button') === 'actions' && g.categoryOf('avatar') === 'data', 'spot checks');
+    ok(g.categoryOf('dialog') === 'surfaces', 'dialog categorized as surfaces');
+}
+ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
+
+// --- Dialog gallery markup --------------------------------------------------
+{
+    const dialogHtml = g.renderGalleryInstance('dialog', null, 'default');
+    ok(dialogHtml.startsWith('<div class="ds-dialog" data-element="dialog" data-state="default" data-part="overlay">'), 'dialog root carries data-part="overlay"');
+    ok(dialogHtml.includes('data-part="bg"'), 'dialog panel part');
+    ok(dialogHtml.includes('data-part="close"'), 'dialog close part');
+    ok(dialogHtml.includes('data-part="title"'), 'dialog title part');
+    ok(dialogHtml.includes('data-part="description"'), 'dialog description part');
+    ok((dialogHtml.match(/data-element="button"/g) || []).length === 2, 'dialog nests exactly two buttons');
+    ok(dialogHtml.includes('data-variant="outline"'), 'dialog cancel is outline');
+    ok(dialogHtml.includes('data-variant="primary"'), 'dialog continue is primary');
+    ok(!dialogHtml.includes('<dialog'), 'no native <dialog> element');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');

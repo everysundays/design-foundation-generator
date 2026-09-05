@@ -73,7 +73,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'actions',    label: 'Actions',    elements: ['button'] },
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip'] },
-    { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator'] },
+    { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
     { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
@@ -130,7 +130,10 @@ const ELEMENTS = [
     _el('list-item', 'List item', null, ['default', 'hover', 'active', 'disabled'],
         [_bg(), _text(), _textPart('meta', 'Meta'), _icon(), _paddingXY(), _gap(), _radius()]),
     _el('separator', 'Separator', null, ['default'],
-        [_colorPart('line', 'Line'), _part('width', 'Width', [['width', 'borderWidth']])])
+        [_colorPart('line', 'Line'), _part('width', 'Width', [['width', 'borderWidth']])]),
+    _el('dialog', 'Dialog', null, ['default'],
+        [_colorPart('overlay', 'Overlay'), _bg(), _border(), _radius(), _padding(), _gap(), _shadow(),
+         _textPart('title', 'Title'), _textPart('description', 'Description'), _colorPart('close', 'Close icon')])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -334,6 +337,16 @@ const SEED_SPEC = {
     },
     separator: {
         base: { line: 'color.border', width: 'border.width.1' }
+    },
+    dialog: {
+        base: {
+            overlay: 'palette.black', bg: 'color.background',
+            'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            radius: THEME_RADIUS_SEED, padding: 'space.6', gap: 'space.4', shadow: 'shadow.lg',
+            'title.color': 'color.foreground', 'title.type': 'type.subheading',
+            'description.color': 'color.muted-foreground', 'description.type': 'type.caption',
+            close: 'color.muted-foreground'
+        }
     }
 };
 
@@ -605,7 +618,8 @@ const GALLERY_ICONS = {
     chevron: '<path d="M4 6l4 4 4-4"/>',
     info: '<circle cx="8" cy="8" r="6.25"/><path d="M8 7v4M8 5v.5"/>',
     alert: '<path d="M8 2.5l6 11H2l6-11z"/><path d="M8 6.5v3M8 11.5v.5"/>',
-    user: '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0 1 10.5 0"/>'
+    user: '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0 1 10.5 0"/>',
+    x: '<path d="M4 4l8 8M12 4l-8 8"/>'
 };
 
 function galleryIcon(name, cls, part) {
@@ -728,7 +742,15 @@ const GALLERY_RENDERERS = {
         `<span class="ds-list-item-text" data-part="text">Profile</span>` +
         `<span class="ds-list-item-meta" data-part="meta">⇧⌘P</span></div>`,
     separator: (variant, state) =>
-        `<div class="gallery-group"><hr ${rootAttrs('separator', null, state, 'line')}></div>`
+        `<div class="gallery-group"><hr ${rootAttrs('separator', null, state, 'line')}></div>`,
+    dialog: (variant, state) =>
+        `<div ${rootAttrs('dialog', null, state, 'overlay')}>` +
+        `<div class="ds-dialog-panel" role="dialog" aria-modal="true" data-part="bg">` +
+        galleryIcon('x', 'ds-dialog-close', 'close') +
+        `<h3 class="ds-dialog-title" data-part="title">Delete project?</h3>` +
+        `<p class="ds-dialog-description" data-part="description">This action cannot be undone. This will permanently delete the project and remove your data from our servers.</p>` +
+        `<div class="ds-dialog-actions">${renderButton('outline', 'default', 'Cancel')}${renderButton('primary', 'default', 'Continue')}</div>` +
+        '</div></div>'
 };
 
 function renderGalleryInstance(elementKey, variant, state) {
