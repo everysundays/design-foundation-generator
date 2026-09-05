@@ -24,7 +24,9 @@ const g = vm.runInContext(`({ FOUNDATION, customScaleFor, setCustomScaleFor, emp
     cloneCustomScale, scaleEntries, refToVar, remEntry, pxEntry, findScaleEntry, nearestScaleEntry,
     scaleEntryForRem, pairedLeadingRem, parseRef, cssIdent, removedScaleFor, setRemovedScaleFor,
     emptyRemovedScale, cloneRemovedScale, baseScaleEntry, removeScaleEntry, remapRef,
-    scaleEntryUsers, isScaleEntryInUse, componentTokenIds, seedComponentTokens })`, ctx);
+    scaleEntryUsers, isScaleEntryInUse, componentTokenIds, seedComponentTokens,
+    nearestRemainingScaleEntry, rewriteComponentRefs, retargetRemovedRefs, resetSeedCache,
+    resolveComponentRef, scaleRef })`, ctx);
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -417,6 +419,196 @@ function ok(cond, msg) { checks++; assert.ok(cond, msg); }
 
     g.setRemovedScaleFor('tailwind', g.emptyRemovedScale());
     g.setRemovedScaleFor('atlassian', g.emptyRemovedScale());
+}
+
+// --- Deleting a step that IS in use ("Delete a Foundation step that is in
+// use") ------------------------------------------------------------------
+// A step no longer refuses outright (that was "Delete a step from a
+// Foundation scale") - it retargets every component-part token onto the
+// nearest remaining step first. Two building blocks: nearestRemainingScaleEntry
+// (foundation.js, below) picks the target; retargetRemovedRefs/
+// rewriteComponentRefs (components.js) do the moving.
+function resetFoundationTestState() {
+    ['tailwind', 'atlassian'].forEach(s => {
+        g.setCustomScaleFor(s, g.emptyCustomScale());
+        g.setRemovedScaleFor(s, g.emptyRemovedScale());
+    });
+    g.resetSeedCache();
+}
+
+// --- nearestRemainingScaleEntry ---------------------------------------------
+{
+    resetFoundationTestState();
+
+    // Length (rem) steps: nearest by |rem diff|, ties -> first in list order
+    // (nearestScaleEntry's own rule) - the DoD's own worked examples.
+    ok(g.nearestRemainingScaleEntry('tailwind', 'space', '4').name === '3.5',
+        "tailwind space '4' (1rem) -> '3.5' (0.875rem, dist 0.125) over '5' (1.25rem, dist 0.25) - the DoD's own example");
+    ok(g.nearestRemainingScaleEntry('tailwind', 'radius', 'lg').name === 'md',
+        "tailwind radius 'lg' (0.5rem) -> 'md' (0.375rem, dist 0.125) over 'xl' (0.75rem, dist 0.25), even though Default's own --radius is 0.625rem");
+    ok(g.nearestRemainingScaleEntry('atlassian', 'space', 'space.200').name === 'space.150',
+        'atlassian space.200 (16px) ties space.150 and space.250 (both 4px away) - the EARLIER entry (space.150) wins');
+    ok(g.nearestRemainingScaleEntry('atlassian', 'radius', 'radius.large').name === 'radius.medium',
+        'atlassian radius.large (8px) -> radius.medium (6px, dist 2px) over radius.xlarge (12px, dist 4px)');
+
+    // Non-length kinds: shadow by index position, borderStyle by name.
+    ok(g.nearestRemainingScaleEntry('tailwind', 'shadow', 'xs').name === '2xs',
+        "shadow has no length to snap to - 'xs' (index 2 of none/2xs/xs/sm/…) -> the PREVIOUS index, '2xs'");
+    ok(g.nearestRemainingScaleEntry('tailwind', 'borderStyle', 'solid').name === 'dashed',
+        "borderStyle has no meaningful order - deleting 'solid' ITSELF lands on the first REMAINING entry, 'dashed'");
+
+    // A rem-null step (radius "full"): the LARGEST remaining rem entry, not a
+    // nearest-by-distance pick (there's no distance to measure from).
+    ok(g.nearestRemainingScaleEntry('tailwind', 'radius', 'full').name === '4xl',
+        "radius 'full' (rem null) -> the largest remaining rem entry, '4xl' (2rem)");
+
+    // No candidates at all: refuse (null) rather than delete into an empty
+    // scale. borderStyle only has 4 built-in steps and no custom slot yet.
+    g.removeScaleEntry('tailwind', 'borderStyle', 'dashed');
+    g.removeScaleEntry('tailwind', 'borderStyle', 'dotted');
+    g.removeScaleEntry('tailwind', 'borderStyle', 'none');
+    ok(g.scaleEntries('tailwind', 'borderStyle').length === 1, "borderStyle now has exactly one entry left ('solid')");
+    ok(g.nearestRemainingScaleEntry('tailwind', 'borderStyle', 'solid') === null,
+        'deleting the LAST entry of a scale has nowhere to move to - null, not a made-up target');
+
+    // Idempotent / call-order independent: the SAME answer whether `name` is
+    // still present in the scale or has already been marked removed - the
+    // in-use delete flow computes this BEFORE removeScaleEntry runs, but a
+    // node test (or a retry) must get the identical answer calling it after.
+    resetFoundationTestState();
+    const beforeRemoval = g.nearestRemainingScaleEntry('tailwind', 'space', '4');
+    g.removeScaleEntry('tailwind', 'space', '4');
+    const afterRemoval = g.nearestRemainingScaleEntry('tailwind', 'space', '4');
+    ok(beforeRemoval.name === afterRemoval.name, 'nearestRemainingScaleEntry gives the SAME answer before and after the step is actually removed');
+
+    // And it never lands ON a step that's already gone: with '3.5' removed,
+    // deleting '4' must skip it (tie between '3' and '5' - earlier, '3', wins).
+    resetFoundationTestState();
+    g.removeScaleEntry('tailwind', 'space', '3.5');
+    const skipsRemoved = g.nearestRemainingScaleEntry('tailwind', 'space', '4');
+    ok(skipsRemoved.name === '3', "with '3.5' already removed, deleting '4' lands on '3' (a tie with '5' - earlier wins), never on the already-removed '3.5'");
+
+    resetFoundationTestState();
+}
+
+// --- retargetRemovedRefs / rewriteComponentRefs -----------------------------
+// "shows how many tokens land there and, on confirm, moves them to the
+// nearest remaining step": every id that resolved to the deleted step -
+// SEEDED default and EXPLICIT state override alike, the exact gap the count
+// badge (default-state ids only) would miss - resolves somewhere else
+// afterward. The DoD's own contract, checked generically for both sources:
+// no resolveComponentRef result over componentTokenIds() names the removed
+// step.
+{
+    resetFoundationTestState();
+
+    // Tailwind space.4, from a completely EMPTY components map (every id
+    // resolves purely through seeding) - the DoD's own worked example.
+    const out = g.retargetRemovedRefs({}, 'tailwind', 'space', '4');
+    g.componentTokenIds().forEach(id => {
+        ok(g.resolveComponentRef(id, out, 'tailwind') !== 'space.4', `${id} no longer resolves to the removed space.4 (tailwind)`);
+    });
+    const movedTo35 = Object.keys(out).filter(id => out[id] === 'space.3.5');
+    ok(movedTo35.length === 14, `exactly the 14 former users of space.4 are now explicit on space.3.5 (got ${movedTo35.length})`);
+    ok(Object.keys(out).length === 14, 'no OTHER key was added - retargetRemovedRefs only ever writes ids that actually resolved to the removed ref');
+
+    // Tailwind radius.lg, from an already fully-SEEDED map - the DoD's
+    // "button, input and card radius" example; 16 ids share radius.lg on
+    // Default (all 6 button variants, input, select, textarea, card, both
+    // alert variants, tabs-list, both tab states, popover).
+    const seeds = g.seedComponentTokens('tailwind', { radiusRem: 0.625 });
+    const out2 = g.retargetRemovedRefs(seeds, 'tailwind', 'radius', 'lg');
+    g.componentTokenIds().forEach(id => {
+        ok(g.resolveComponentRef(id, out2, 'tailwind') !== 'radius.lg', `${id} no longer resolves to the removed radius.lg (tailwind)`);
+    });
+    const wasLg = Object.keys(seeds).filter(id => seeds[id] === 'radius.lg');
+    ok(wasLg.length === 16, `sanity: 16 seeded ids named radius.lg before the retarget (got ${wasLg.length})`);
+    ok(wasLg.every(id => out2[id] === 'radius.md'), 'every one of those 16 now names radius.md, the nearest remaining radius step');
+    ok(Object.keys(seeds).every(id => seeds[id] === 'radius.lg' || out2[id] === seeds[id]), 'every id that was NOT on radius.lg is left completely untouched');
+    ok(Object.keys(out2).length === Object.keys(seeds).length, 'no key was added or removed - only rewritten');
+
+    // Atlassian - "for both sources": space.200 and radius.large, same shape.
+    resetFoundationTestState();
+    const outA = g.retargetRemovedRefs({}, 'atlassian', 'space', 'space.200');
+    g.componentTokenIds().forEach(id => {
+        ok(g.resolveComponentRef(id, outA, 'atlassian') !== 'space.space.200', `${id} no longer resolves to the removed space.200 (atlassian)`);
+    });
+    ok(Object.keys(outA).filter(id => outA[id] === 'space.space.150').length === 14, 'atlassian: the 14 former users of space.200 are now on space.150 (a tie with space.250 - earlier wins)');
+    ok(Object.keys(outA).length === 14, 'atlassian: no other key was added either');
+
+    const seedsA = g.seedComponentTokens('atlassian', { radiusRem: 0.625 });
+    const outA2 = g.retargetRemovedRefs(seedsA, 'atlassian', 'radius', 'radius.large');
+    g.componentTokenIds().forEach(id => {
+        ok(g.resolveComponentRef(id, outA2, 'atlassian') !== 'radius.radius.large', `${id} no longer resolves to the removed radius.large (atlassian)`);
+    });
+    const wasLarge = Object.keys(seedsA).filter(id => seedsA[id] === 'radius.radius.large');
+    ok(wasLarge.length === 16 && wasLarge.every(id => outA2[id] === 'radius.radius.medium'), 'atlassian: all 16 former radius.large users now name radius.medium');
+    ok(Object.keys(outA2).length === Object.keys(seedsA).length, 'atlassian: no key added or removed either');
+
+    // An EXPLICIT non-default-state override (a seeded hover/focus/disabled
+    // delta, or any future per-state assignment) moves too.
+    resetFoundationTestState();
+    const withOverride = { 'button.primary.padding.x.hover': 'space.6' };
+    const outOverride = g.retargetRemovedRefs(withOverride, 'tailwind', 'space', '6');
+    ok(outOverride['button.primary.padding.x.hover'] !== 'space.6', 'an explicit state-override entry is retargeted too, not just default-state ids');
+    ok(outOverride['button.primary.padding.x.hover'] === g.scaleRef('space', g.nearestRemainingScaleEntry('tailwind', 'space', '6').name),
+        'and lands on exactly the nearest remaining step, same as a default-state id would');
+
+    // An unrelated explicit ref (a different kind entirely, e.g. a semantic
+    // color role) is never touched by a scale retarget.
+    const withColor = { 'button.primary.bg': 'color.primary' };
+    const outColor = g.retargetRemovedRefs(withColor, 'tailwind', 'space', '4');
+    ok(outColor['button.primary.bg'] === 'color.primary', 'an unrelated explicit ref (a color role) is untouched by a SPACE retarget');
+
+    // Nowhere left to move to: retargetRemovedRefs refuses (returns
+    // `components` UNCHANGED) rather than moving tokens onto a made-up
+    // target - mirrors nearestRemainingScaleEntry returning null.
+    resetFoundationTestState();
+    g.removeScaleEntry('tailwind', 'borderStyle', 'dashed');
+    g.removeScaleEntry('tailwind', 'borderStyle', 'dotted');
+    g.removeScaleEntry('tailwind', 'borderStyle', 'none');
+    const soleStyle = { x: 'border.style.solid' };
+    const outNoTarget = g.retargetRemovedRefs(soleStyle, 'tailwind', 'borderStyle', 'solid');
+    ok(JSON.stringify(outNoTarget) === JSON.stringify(soleStyle), "retargetRemovedRefs returns `components` UNCHANGED when deleting the scale's last entry would leave nothing to move to");
+
+    resetFoundationTestState();
+}
+
+// --- rewriteComponentRefs on its own (the rename later cards reuse) --------
+// "Rename a semantic token"/"Delete a semantic token" reuse this same
+// rewrite for an arbitrary ref pair, not just a foundation scale step -
+// checked directly here so its contract doesn't drift once those cards land.
+{
+    resetFoundationTestState();
+    const seeds = g.seedComponentTokens('tailwind', { radiusRem: 0.5 });
+    ok(seeds['button.primary.bg'] === 'color.primary', 'sanity: the seed for button.primary.bg is color.primary');
+    const rewritten = g.rewriteComponentRefs(seeds, 'tailwind', 'color.primary', 'color.brand');
+    ok(rewritten['button.primary.bg'] === 'color.brand', 'rewriteComponentRefs works for an arbitrary ref pair, not just a scale step');
+    ok(Object.keys(rewritten).filter(id => rewritten[id] === 'color.primary').length === 0, 'no id still names the FROM ref anywhere in the result');
+    ok(Object.keys(rewritten).length === Object.keys(seeds).length, 'no key added or removed, only rewritten');
+    resetFoundationTestState();
+}
+
+// --- resetSeedCache ----------------------------------------------------------
+// components.js's seedsFor caches its result per source|radiusRem and is
+// never invalidated by removeScaleEntry itself - without a reset, a FUTURE
+// resolveComponentRef call for an id with NO explicit entry at all (a
+// tokens.json import carrying no components section, or a saved system with
+// none) would resurrect the very step that was just deleted.
+{
+    resetFoundationTestState();
+
+    ok(g.resolveComponentRef('button.primary.radius', {}, 'tailwind') === 'radius.lg',
+        'sanity: before any deletion, an id with no explicit entry seeds to radius.lg (the fallback theme radius, 0.5rem)');
+    g.removeScaleEntry('tailwind', 'radius', 'lg');
+    ok(g.resolveComponentRef('button.primary.radius', {}, 'tailwind') === 'radius.lg',
+        'demonstrates the bug resetSeedCache fixes: WITHOUT a reset, the stale seed cache still hands back the just-removed radius.lg');
+    g.resetSeedCache();
+    const reseeded = g.resolveComponentRef('button.primary.radius', {}, 'tailwind');
+    ok(reseeded !== 'radius.lg', 'resetSeedCache forces a fresh seed - an id with no explicit entry no longer resurrects the removed step');
+    ok(reseeded === 'radius.md', 'the fresh seed lands on the same nearest-remaining step a retarget would (radius.md)');
+
+    resetFoundationTestState();
 }
 
 console.log(`foundation.test.js: ${checks} checks passed`);

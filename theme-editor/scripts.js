@@ -175,7 +175,14 @@ let state = {
     activeTab: 'colors',
     // kind -> prop key, for parts with several props of one kind (padding x/y).
     activeProp: {},
-    selection: null           // { element, variant, part, state } | null
+    selection: null,          // { element, variant, part, state } | null
+    // The scale step a delete is asking to confirm (deleteScaleEntry, above,
+    // sets this instead of refusing when the step is in use) - { kind, name }
+    // | null. UI-only, like `selection`/`activeTab`: never part of
+    // undoSnapshot/buildSystemSnapshot, so it isn't touched by Undo/Reset/
+    // Load. panelCtx's pendingDeleteInfo() re-derives the ids/target it
+    // implies fresh on every render, so it never goes stale.
+    pendingDelete: null
 };
 
 // Authoritative palette-token link for every semantic color, keyed by mode
@@ -497,25 +504,54 @@ function addCustomScaleEntry(kind, rawName, rawValue, rawLeading) {
 
 // Deletes a step from the active source's Space/Radius/Border width/Border
 // style/Shadow scale (see panels.js panelEntryHtml's delete control and
-// foundation.js removeScaleEntry, the pure state mutation this wraps).
-// Refused - nothing changes - when any component-part token resolves to it
-// (components.js scaleEntryUsers: every default-state id plus explicit state
-// overrides, so a step only referenced through a seeded hover/focus/disabled
-// delta still counts). This refusal is deliberately a single swappable
-// function: a later card replaces it with an inline confirm that retargets
-// those ids to the nearest remaining step instead of blocking the delete.
-// Returns an error string listing what uses it, or null on success.
+// foundation.js removeScaleEntry, the pure state mutation this wraps). A
+// step no component-part token resolves to (components.js scaleEntryUsers:
+// every default-state id plus explicit state overrides, so a step only
+// referenced through a seeded hover/focus/disabled delta still counts) is
+// removed immediately, one undo step. A step IN USE never refuses - this
+// opens the inline confirm (state.pendingDelete, read by panelCtx's
+// pendingDeleteInfo/panels.js buildScaleDeleteConfirmHtml) asking whether to
+// move those tokens onto the nearest remaining step first; see
+// deleteScaleStepInUse, below, for what actually happens on confirm. A
+// renderPanel() alone is enough here - nothing about the design system has
+// changed yet, just what the panel shows. Silently does nothing (no control
+// to offer) when deleting `name` would leave the scale with nothing left to
+// move onto - foundation.js nearestRemainingScaleEntry returning null.
 function deleteScaleEntry(kind, name) {
     const users = typeof scaleEntryUsers === 'function' ? scaleEntryUsers(state.components, activePaletteSource, kind, name) : [];
     if (users.length) {
-        const shown = users.slice(0, 6);
-        const rest = users.length - shown.length;
-        return `"${name}" is used by ${shown.join(', ')}${rest > 0 ? ` (+${rest})` : ''} - re-point them first.`;
+        const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(activePaletteSource, kind, name) : null;
+        if (!target) return;
+        state.pendingDelete = { kind, name };
+        renderPanel();
+        return;
     }
     pushUndo();
     removeScaleEntry(activePaletteSource, kind, name);
     renderAll();
-    return null;
+}
+
+// Confirms a pending in-use delete (state.pendingDelete, opened by
+// deleteScaleEntry above): moves every component-part token off the step
+// (components.js retargetRemovedRefs, onto foundation.js
+// nearestRemainingScaleEntry's pick) THEN removes the step itself
+// (foundation.js removeScaleEntry) - ONE pushUndo covers both, so Undo
+// restores the step and every ref it moved together. resetSeedCache() so a
+// later seed fallback (a tokens.json import with no saved components, a
+// system with none saved at all) can't resolve back onto the just-deleted
+// name via components.js's stale _seedCache. Re-derives the target itself
+// rather than trusting whatever panelCtx last computed, so a delete that
+// somehow became stale between opening the confirm and clicking it can't
+// corrupt state; no-ops (dismisses the confirm) in that case.
+function deleteScaleStepInUse(kind, name) {
+    const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(activePaletteSource, kind, name) : null;
+    if (!target) { state.pendingDelete = null; renderPanel(); return; }
+    pushUndo();
+    state.components = retargetRemovedRefs(state.components, activePaletteSource, kind, name);
+    removeScaleEntry(activePaletteSource, kind, name);
+    if (typeof resetSeedCache === 'function') resetSeedCache();
+    state.pendingDelete = null;
+    renderAll();
 }
 
 function updateUndoRedoButtons() {
@@ -1573,6 +1609,21 @@ function computeMarks() {
     return marks;
 }
 
+// What state.pendingDelete (set by deleteScaleEntry when a delete is
+// refused-turned-confirm) implies right now: { kind, name, ids, target } or
+// null. Recomputed fresh on every render, like computeMarks() above, so it
+// never goes stale even if state.components changes while the confirm sits
+// open - panels.js buildScaleDeleteConfirmHtml only ever reads this, never
+// state.pendingDelete directly (its module contract is "a pure function of
+// ctx").
+function pendingDeleteInfo() {
+    const pd = state.pendingDelete;
+    if (!pd) return null;
+    const ids = typeof scaleEntryUsers === 'function' ? scaleEntryUsers(state.components, activePaletteSource, pd.kind, pd.name) : [];
+    const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(activePaletteSource, pd.kind, pd.name) : null;
+    return { kind: pd.kind, name: pd.name, ids, target };
+}
+
 function panelCtx() {
     return {
         source: activePaletteSource,
@@ -1591,6 +1642,7 @@ function panelCtx() {
         })(),
         activeProps: state.activeProp,
         marks: computeMarks(),
+        pendingDelete: pendingDeleteInfo(),
         typeSets: TYPE_SETS,
         typeSetSummary,
         elementLabel
@@ -1668,16 +1720,18 @@ function onPanelClick(e) {
     if (delBtn && delBtn.closest('#panelBody')) {
         const parsed = parseRef(delBtn.dataset.deleteRef);
         if (!parsed) return;
-        // Captured before deleteScaleEntry runs: on success it re-renders the
-        // panel itself (a fresh, error-free one), so this reference is only
-        // ever written to on a refusal, where nothing else touches the DOM.
-        const panel = delBtn.closest('.fp-panel-scale');
-        const errorEl = panel && panel.querySelector('[data-scale-error]');
-        const err = deleteScaleEntry(parsed.kind, parsed.name);
-        if (errorEl) {
-            errorEl.textContent = err || '';
-            errorEl.hidden = !err;
-        }
+        deleteScaleEntry(parsed.kind, parsed.name);
+        return;
+    }
+    const cancelBtn = e.target.closest('[data-delete-cancel]');
+    if (cancelBtn && cancelBtn.closest('#panelBody')) {
+        state.pendingDelete = null;
+        renderPanel();
+        return;
+    }
+    const confirmDeleteBtn = e.target.closest('[data-delete-confirm]');
+    if (confirmDeleteBtn && confirmDeleteBtn.closest('#panelBody')) {
+        if (state.pendingDelete) deleteScaleStepInUse(state.pendingDelete.kind, state.pendingDelete.name);
         return;
     }
     const target = e.target.closest('[data-ref]');

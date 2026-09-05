@@ -621,6 +621,61 @@ function isScaleEntryInUse(components, source, kind, name) {
     return scaleEntryUsers(components, source, kind, name).length > 0;
 }
 
+// Rewrites every component-part token id currently resolving to `fromRef`
+// (source `sourceKey`) so it resolves to `toRef` instead - what deleting an
+// in-use foundation step moves its tokens onto (see retargetRemovedRefs,
+// below). Writes an EXPLICIT entry for every affected id, including one that
+// only ever resolved through a SEED default (nothing in `components` at
+// all): resolveComponentRef checks an explicit entry before falling back to
+// a seed, so this is the only way to guarantee `fromRef` is gone - the seed
+// itself never changes, and its cache (components.js's _seedCache) is never
+// invalidated by a scale edit (see resetSeedCache, below) so leaving an id
+// on the seed fallback would risk it resolving back to `fromRef` later.
+// Mirrors componentUsage's two passes: every default-state id
+// (componentTokenIds, resolved through seeding/explicit overrides) plus
+// every explicit non-default-state override already set directly on
+// `components`.
+function rewriteComponentRefs(components, sourceKey, fromRef, toRef) {
+    const comps = components || {};
+    const out = { ...comps };
+    componentTokenIds().forEach(id => {
+        if (resolveComponentRef(id, comps, sourceKey) === fromRef) out[id] = toRef;
+    });
+    Object.keys(comps).forEach(id => {
+        const parts = tokenIdParts(id);
+        if (parts && parts.state !== 'default' && comps[id] === fromRef) out[id] = toRef;
+    });
+    return out;
+}
+
+// Moves every component-part token off a foundation step about to be
+// deleted (`sourceKey`/`kind`/`name`) onto the nearest remaining step
+// (foundation.js nearestRemainingScaleEntry) - what scripts.js
+// deleteScaleStepInUse calls before actually removing the step itself.
+// Correct and idempotent whether the step has already been removed or not
+// (nearestRemainingScaleEntry's own contract). Returns `components`
+// UNCHANGED when there's nowhere to move to (deleting `name` would leave
+// the scale empty) - the caller must refuse the delete outright in that
+// case rather than move tokens onto a step that doesn't exist.
+function retargetRemovedRefs(components, sourceKey, kind, name) {
+    const target = typeof nearestRemainingScaleEntry === 'function' ? nearestRemainingScaleEntry(sourceKey, kind, name) : null;
+    if (!target) return components || {};
+    return rewriteComponentRefs(components, sourceKey, scaleRef(kind, name), scaleRef(kind, target.name));
+}
+
+// Empties the seed cache (see seedsFor/_seedCache) so a resolveComponentRef
+// call made AFTER this point can't keep resolving an id to a step that's
+// just been deleted or renamed via a stale, pre-edit seed map - e.g. a later
+// tokens.json import with no saved components section at all relies purely
+// on the seed fallback. retargetRemovedRefs itself doesn't need this (it
+// writes explicit entries, which resolveComponentRef always checks first),
+// but every OTHER id that only ever touches the seed does. Call from the
+// removal path (scripts.js deleteScaleStepInUse) after the scale itself has
+// changed.
+function resetSeedCache() {
+    Object.keys(_seedCache).forEach(key => delete _seedCache[key]);
+}
+
 // --- Gallery -----------------------------------------------------------------
 
 const _SVG_ATTRS = 'viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';

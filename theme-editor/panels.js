@@ -167,6 +167,45 @@ function panelSampleHtml(kind, entry) {
     }
 }
 
+// The token ids a pending delete will move (ctx.pendingDelete.ids, from
+// scripts.js pendingDeleteInfo), as "Element › Variant › Part [· state]" via
+// ctx.elementLabel - the same breadcrumb the panel's own selection uses.
+// Falls back to the raw id when the ELEMENTS spec doesn't recognise it
+// (components.js not loaded, or a stray id) rather than showing nothing.
+function pendingDeleteIdLabel(ctx, id) {
+    const parts = typeof tokenIdParts === 'function' ? tokenIdParts(id) : null;
+    if (!parts || typeof ctx.elementLabel !== 'function') return id;
+    const label = ctx.elementLabel(parts.element, parts.variant, parts.part);
+    return parts.state && parts.state !== 'default' ? `${label} · ${parts.state}` : label;
+}
+
+// Inline confirm shown under the entry a delete would remove, when it's in
+// use (ctx.pendingDelete, set by scripts.js deleteScaleEntry when
+// components.js scaleEntryUsers finds users; cleared by the
+// [data-delete-cancel]/[data-delete-confirm] branches of onPanelClick).
+// Replaces the plain refusal from "Delete a step from a Foundation scale":
+// an in-use step never just refuses, it asks whether to move those tokens
+// onto the nearest remaining step (foundation.js nearestRemainingScaleEntry,
+// already resolved into `pending.target` by pendingDeleteInfo) first. The
+// id list is capped like panelTip's "used by:" line - it can run longer than
+// the entry's own count badge, which only ever counts default-state ids.
+function buildScaleDeleteConfirmHtml(ctx, pending) {
+    const ids = pending.ids || [];
+    const shown = ids.slice(0, 6);
+    const rest = ids.length - shown.length;
+    const list = shown.map(id => `<li>${panelEsc(pendingDeleteIdLabel(ctx, id))}</li>`).join('') +
+        (rest > 0 ? `<li>+${rest} more</li>` : '');
+    const targetName = pending.target ? pending.target.name : null;
+    return `<div class="fp-delete-confirm">
+  <p class="fp-delete-confirm-text">${ids.length} token${ids.length === 1 ? '' : 's'} use "${panelEsc(pending.name)}" - move to "${panelEsc(targetName)}"?</p>
+  <ul class="fp-delete-confirm-list">${list}</ul>
+  <div class="fp-delete-confirm-actions">
+    <button type="button" class="fp-delete-confirm-btn" data-delete-confirm>Move</button>
+    <button type="button" class="fp-delete-cancel-btn" data-delete-cancel>Cancel</button>
+  </div>
+</div>`;
+}
+
 // A delete control is a SIBLING of the entry button, never nested inside it
 // (a <button> inside a <button> is invalid HTML and the parser would hoist
 // it out, breaking the delegated click) - see scripts.js onPanelClick's
@@ -180,6 +219,7 @@ function panelEntryHtml(ctx, kind, entry) {
     const tip = panelTip(entry.name, value === entry.name ? '' : value, mark);
     const readout = (entry.rem !== null && entry.rem !== undefined && kind !== 'borderStyle')
         ? `${entry.px}px` : (kind === 'borderStyle' ? '' : entry.value);
+    const pending = ctx.pendingDelete && ctx.pendingDelete.kind === kind && ctx.pendingDelete.name === entry.name ? ctx.pendingDelete : null;
     return `<div class="fp-entry-row">
   <button type="button" class="fp-entry" ${panelMarkAttrs(ref, tip, mark)}>
     ${panelSampleHtml(kind, entry)}
@@ -188,7 +228,8 @@ function panelEntryHtml(ctx, kind, entry) {
     ${panelBadgeHtml(mark)}
   </button>
   <button type="button" class="fp-entry-delete" data-delete-ref="${panelEsc(ref)}" aria-label="Delete ${panelEsc(entry.name)}">&times;</button>
-</div>`;
+</div>
+${pending ? buildScaleDeleteConfirmHtml(ctx, pending) : ''}`;
 }
 
 // A kind's "value" field takes a different shape per kind - shown as the
@@ -228,7 +269,6 @@ ${buildPropChipsHtml(ctx, kind)}
 <div class="fp-entries">
 ${entries.map(e => panelEntryHtml(ctx, kind, e)).join('\n')}
 </div>
-<span class="fp-scale-error" data-scale-error hidden></span>
 ${opts.allowAdd ? buildScaleAddRowHtml(kind) : ''}
 </div>`;
 }

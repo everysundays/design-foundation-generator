@@ -254,13 +254,77 @@
   outline-offset: 1px;
 }
 
-/* Refusal message for a delete on an in-use step (foundation.js
-   deleteScaleEntry) - one per kind, filled in by scripts.js onPanelClick's
-   [data-delete-ref] branch. Same treatment as .fp-add-error below: no
-   `display` of its own, so the `hidden` attribute keeps working. */
-.fp-scale-error {
+/* Inline confirm for deleting an IN-USE step (see panels.js
+   buildScaleDeleteConfirmHtml / scripts.js deleteScaleEntry+
+   deleteScaleStepInUse) - sits directly under the entry row it belongs to.
+   Replaces card 3's plain refusal message: an in-use step never just
+   refuses, it asks whether to move its tokens onto the nearest remaining
+   step first. The warning-coloured left edge is the only cue it needs to
+   read as "this needs a decision", distinct from an ordinary row. */
+.fp-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 4px;
+  padding: 8px;
+  border: 1px solid var(--ui-border);
+  border-left: 3px solid var(--ui-warning);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-subtle);
+}
+
+.fp-delete-confirm-text {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ui-text);
+}
+
+.fp-delete-confirm-list {
+  margin: 0;
+  padding-left: 16px;
+  max-height: 90px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
   font-size: 10px;
-  color: var(--ui-warning, #b45309);
+  color: var(--ui-text-muted);
+}
+
+.fp-delete-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.fp-delete-confirm-btn,
+.fp-delete-cancel-btn {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fp-delete-confirm-btn {
+  border-color: var(--ui-danger);
+  background: var(--ui-danger);
+  color: #ffffff;
+}
+
+.fp-delete-confirm-btn:hover {
+  opacity: 0.9;
+}
+
+.fp-delete-cancel-btn {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.fp-delete-cancel-btn:hover {
+  background: var(--ui-bg-subtle);
+  border-color: var(--ui-accent);
 }
 
 .fp-entry {

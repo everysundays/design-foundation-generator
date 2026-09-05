@@ -269,6 +269,65 @@ function removeScaleEntry(sourceKey, kind, name) {
     return true;
 }
 
+// Same as scaleEntries, but never filters `keepName` out of the base list
+// even when it's recorded in removedScale - reconstructs "the scale as if
+// `keepName` were still present" whether it actually still is or was just
+// removed. Lets nearestRemainingScaleEntry (below) work identically no
+// matter when it runs relative to the removal itself - the DELETE-AN-
+// IN-USE-STEP flow computes the retarget target BEFORE removeScaleEntry
+// runs (name still present), while a node test may call it AFTER
+// (idempotence) - both must agree. A deliberate near-duplicate of
+// scaleEntries rather than a shared refactor, so this card's diff stays
+// additive against the already-landed, already-tested function.
+function scaleEntriesKeeping(sourceKey, kind, keepName) {
+    const removedNames = (REMOVED_SCALE[sourceKey] && REMOVED_SCALE[sourceKey][kind]) || [];
+    const wholeBase = foundationOf(sourceKey)[kind] || [];
+    const base = wholeBase.filter(e => e.name === keepName || !removedNames.includes(e.name));
+    const custom = (CUSTOM_SCALE[sourceKey] && CUSTOM_SCALE[sourceKey][kind]) || [];
+    if (!custom.length) return base;
+    if (!SORTED_KINDS.has(kind)) return [...base, ...custom];
+    const remOf = (e) => (e.rem === null || e.rem === undefined ? Infinity : e.rem);
+    return [...base, ...custom].sort((a, b) => remOf(a) - remOf(b));
+}
+
+// The step nearest `name` (source `sourceKey`, scale `kind`) among the OTHER
+// remaining entries - what deleting an IN-USE step retargets its
+// component-part tokens to (see scripts.js deleteScaleStepInUse and
+// components.js retargetRemovedRefs, which calls this). Per-kind rule:
+//   - a length (rem) step: nearest by |rem diff| among the remaining rem
+//     candidates, ties -> first in list order (nearestScaleEntry's own
+//     rule); `name` itself has no rem (radius "full") -> the LARGEST
+//     remaining rem entry; no remaining candidate has a rem either (every
+//     other step left is itself rem-null) -> the first rem-null entry.
+//   - shadow (ordered by position, nothing to measure a length against):
+//     the candidate at the previous index of the full list, else the next
+//     one (index 0) - a same-source cousin of remapRef's cross-source
+//     index-position rule.
+//   - borderStyle (no length, no meaningful order): "solid" if it remains,
+//     else the first remaining entry.
+// Returns null only when `name` is the scale's last entry - deleting it
+// would leave nothing to move to, and the caller must refuse outright
+// rather than delete into an empty scale.
+function nearestRemainingScaleEntry(sourceKey, kind, name) {
+    const full = scaleEntriesKeeping(sourceKey, kind, name);
+    const candidates = full.filter(e => e.name !== name);
+    if (!candidates.length) return null;
+    if (kind === 'borderStyle') return candidates.find(e => e.name === 'solid') || candidates[0];
+    if (kind === 'shadow') {
+        const i = full.findIndex(e => e.name === name);
+        const prev = i - 1;
+        return prev >= 0 ? candidates[prev] : candidates[0];
+    }
+    const removed = full.find(e => e.name === name);
+    const rem = removed && Number.isFinite(removed.rem) ? removed.rem : null;
+    const withRem = candidates.filter(e => Number.isFinite(e.rem));
+    if (rem === null) {
+        return withRem.length ? withRem.reduce((best, e) => (e.rem > best.rem ? e : best)) : candidates[0];
+    }
+    if (!withRem.length) return candidates.find(e => e.rem === null) || candidates[0];
+    return withRem.reduce((best, e) => (Math.abs(e.rem - rem) < Math.abs(best.rem - rem) ? e : best));
+}
+
 function scaleRef(kind, name) {
     return `${KIND_PREFIX[kind]}.${name}`;
 }
