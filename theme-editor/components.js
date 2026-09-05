@@ -74,7 +74,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog'] },
-    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
 const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
@@ -143,7 +143,9 @@ const ELEMENTS = [
     _el('progress', 'Progress', null, ['default'],
         [_colorPart('track', 'Track'), _colorPart('indicator', 'Indicator'), _radius(), _spacePart('height', 'Height')]),
     _el('skeleton', 'Skeleton', null, ['default'],
-        [_bg(), _radius()])
+        [_bg(), _radius()]),
+    _el('breadcrumb', 'Breadcrumb', null, ['default', 'hover'],
+        [_textPart('link', 'Link'), _textPart('current', 'Current'), _colorPart('separator', 'Separator'), _gap()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -388,6 +390,16 @@ const SEED_SPEC = {
     },
     skeleton: {
         base: { bg: 'color.muted', radius: 'radius.md' }
+    },
+    breadcrumb: {
+        base: {
+            'link.color': 'color.muted-foreground', 'link.type': 'type.body',
+            'current.color': 'color.foreground', 'current.type': 'type.body',
+            separator: 'color.muted-foreground', gap: 'space.1.5'
+        },
+        states: {
+            '*.hover': { 'link.color': 'color.foreground' }
+        }
     }
 };
 
@@ -661,7 +673,8 @@ const GALLERY_ICONS = {
     alert: '<path d="M8 2.5l6 11H2l6-11z"/><path d="M8 6.5v3M8 11.5v.5"/>',
     user: '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0 1 10.5 0"/>',
     x: '<path d="M4 4l8 8M12 4l-8 8"/>',
-    chevrons: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>'
+    chevrons: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>',
+    'chevron-right': '<path d="M6 4l4 4-4 4"/>'
 };
 
 function galleryIcon(name, cls, part) {
@@ -843,7 +856,17 @@ const GALLERY_RENDERERS = {
         `<div ${rootAttrs('skeleton', null, state, 'bg')}>` +
         `<span class="ds-skeleton-block ds-skeleton-avatar" data-part="bg"></span>` +
         `<span class="ds-skeleton-block ds-skeleton-line" data-part="bg"></span>` +
-        `<span class="ds-skeleton-block ds-skeleton-line ds-skeleton-line-short" data-part="bg"></span></div>`
+        `<span class="ds-skeleton-block ds-skeleton-line ds-skeleton-line-short" data-part="bg"></span></div>`,
+    // Flat children (no ol/li): the root carries the "gap" part since it
+    // paints nothing of its own; each crumb is a sibling anchor/icon/span so
+    // every selector below stays a single class, per the file header.
+    breadcrumb: (variant, state) =>
+        `<nav aria-label="Breadcrumb" ${rootAttrs('breadcrumb', null, state, 'gap')}>` +
+        `<a class="ds-breadcrumb-link" data-part="link" href="#">Home</a>` +
+        galleryIcon('chevron-right', 'ds-breadcrumb-separator', 'separator') +
+        `<a class="ds-breadcrumb-link" data-part="link" href="#">Library</a>` +
+        galleryIcon('chevron-right', 'ds-breadcrumb-separator', 'separator') +
+        `<span class="ds-breadcrumb-current" data-part="current" aria-current="page">Data</span></nav>`
 };
 
 function renderGalleryInstance(elementKey, variant, state) {

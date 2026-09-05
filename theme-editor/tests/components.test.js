@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -111,6 +111,7 @@ SOURCES.forEach(source => {
     ok(seeds['toast.destructive.border.color'] === 'color.destructive', `${source}: toast destructive border`);
     ok(seeds['toast.destructive.icon'] === 'color.destructive', `${source}: toast destructive icon`);
     ok(seeds['toast.destructive.title.color'] === 'color.destructive', `${source}: toast destructive title`);
+    ok(seeds['breadcrumb.link.color.hover'] === 'color.foreground', `${source}: breadcrumb link hover`);
 });
 // theme radius seeding
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0.5 })['button.primary.radius'] === 'radius.lg', 'radius 0.5rem -> lg');
@@ -211,6 +212,29 @@ SOURCES.forEach(source => {
 ok(g.componentVarLines({}, 'tailwind').includes('  --skeleton-bg: var(--muted);'), 'skeleton bg line');
 ok(g.componentVarLines({}, 'tailwind').includes('  --skeleton-radius: var(--radius-md);'), 'skeleton radius line');
 
+// --- Breadcrumb spot checks -----------------------------------------------
+ok(g.propKind('breadcrumb', 'separator') === 'color', 'breadcrumb.separator kind');
+ok(g.propKind('breadcrumb', 'gap') === 'space', 'breadcrumb.gap kind');
+ok(g.propKind('breadcrumb', 'link', 'color') === 'color', 'breadcrumb link color kind');
+ok(g.propKind('breadcrumb', 'link', 'type') === 'type', 'breadcrumb link type kind');
+ok(g.ELEMENTS.find(el => el.key === 'breadcrumb').variants === null, 'breadcrumb has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'breadcrumb').states) === JSON.stringify(['default', 'hover']), 'breadcrumb has default/hover states only');
+SOURCES.forEach(source => {
+    const seeds = g.seedComponentTokens(source, { radiusRem: 0.625 });
+    ok(seeds['breadcrumb.link.color'] === 'color.muted-foreground', `${source}: breadcrumb link seed`);
+    ok(seeds['breadcrumb.current.color'] === 'color.foreground', `${source}: breadcrumb current seed`);
+    ok(seeds['breadcrumb.separator'] === 'color.muted-foreground', `${source}: breadcrumb separator seed`);
+    ok(seeds['breadcrumb.current.color.hover'] === undefined, `${source}: breadcrumb current has no seeded hover delta`);
+    assertRefValid(seeds['breadcrumb.gap'], 'space', source, `${source} breadcrumb gap seed`);
+});
+ok(g.resolveComponentRef('breadcrumb.current.color.hover', {}) === 'color.foreground', 'breadcrumb current hover inherits its default');
+ok(g.resolveComponentRef('breadcrumb.separator.hover', {}) === 'color.muted-foreground', 'breadcrumb separator hover inherits its default');
+ok(g.componentVarLines({}, 'tailwind').includes('  --breadcrumb-link-color: var(--muted-foreground);'), 'breadcrumb link color line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --breadcrumb-link-color-hover: var(--foreground);'), 'breadcrumb link hover line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --breadcrumb-current-type-family: var(--type-body-family);'), 'breadcrumb current type expands');
+ok(JSON.stringify(g.tokenIdParts('breadcrumb.link.color.hover')) === JSON.stringify({ element: 'breadcrumb', variant: null, part: 'link', prop: 'color', state: 'hover' }), 'breadcrumb link hover id parses');
+ok(g.tokenIdParts('breadcrumb.gap.focus') === null, 'breadcrumb has no focus state');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -289,6 +313,11 @@ ok(!wiring.includes('[data-element="progress"]:is('), 'progress has no state rul
 ok(wiring.includes('[data-element="skeleton"] {\n  --_bg: var(--skeleton-bg);'), 'skeleton default block');
 ok(wiring.includes('--_radius: var(--skeleton-radius);'), 'skeleton radius private');
 ok(!wiring.includes('[data-element="skeleton"]:is('), 'skeleton has no state rules');
+ok(wiring.includes('[data-element="breadcrumb"] {\n  --_link-color: var(--breadcrumb-link-color);'), 'breadcrumb default block');
+ok(wiring.includes('[data-element="breadcrumb"]:is(:hover:not([data-state]), [data-state="hover"]) {\n  --_link-color: var(--breadcrumb-link-color-hover);'), 'breadcrumb hover block');
+ok(wiring.includes('--_separator: var(--breadcrumb-separator);'), 'breadcrumb separator private');
+ok(wiring.includes('--_gap: var(--breadcrumb-gap);'), 'breadcrumb gap private');
+ok(!wiring.includes('[data-element="breadcrumb"]:is(:focus'), 'breadcrumb has no focus/active/disabled state rules');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -355,6 +384,7 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('combobox') === 'forms', 'combobox categorized as forms');
     ok(g.categoryOf('progress') === 'feedback', 'progress categorized as feedback');
     ok(g.categoryOf('skeleton') === 'feedback', 'skeleton categorized as feedback');
+    ok(g.categoryOf('breadcrumb') === 'navigation', 'breadcrumb categorized as navigation');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
@@ -362,6 +392,7 @@ ok(html.indexOf('id="gallery-combobox"') > html.indexOf('id="gallery-switch"'), 
 ok(html.indexOf('id="gallery-toast"') > html.indexOf('id="gallery-tooltip"'), 'toast appears after tooltip in the gallery');
 ok(html.indexOf('id="gallery-progress"') > html.indexOf('id="gallery-toast"'), 'progress appears after toast in the gallery');
 ok(html.indexOf('id="gallery-skeleton"') > html.indexOf('id="gallery-progress"'), 'skeleton appears after progress in the gallery');
+ok(html.indexOf('id="gallery-breadcrumb"') > html.indexOf('id="gallery-dropdown-menu"'), 'breadcrumb appears after dropdown-menu (end of the navigation group)');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -442,6 +473,20 @@ ok(html.indexOf('id="gallery-skeleton"') > html.indexOf('id="gallery-progress"')
     ok(!skeletonHtml.includes('data-variant='), 'skeleton carries no data-variant (no variants)');
     ok(!skeletonHtml.includes('gallery-stage'), 'skeleton instance carries no nested stage markup');
     ok(!/<h[1-6][ >]/.test(skeletonHtml), 'skeleton has no heading copy');
+}
+// --- Breadcrumb gallery markup ------------------------------------------------
+{
+    const crumbHtml = g.renderGalleryInstance('breadcrumb', null, 'default');
+    ok(crumbHtml.startsWith('<nav aria-label="Breadcrumb" class="ds-breadcrumb" data-element="breadcrumb" data-state="default" data-part="gap">'), 'breadcrumb root carries data-part="gap" and role via <nav>');
+    ok((crumbHtml.match(/data-part="link"/g) || []).length === 2, 'two link parts');
+    ok((crumbHtml.match(/data-part="separator"/g) || []).length === 2, 'two separator parts');
+    ok((crumbHtml.match(/data-part="current"/g) || []).length === 1, 'one current part');
+    ok(crumbHtml.includes('aria-current="page"'), 'current crumb carries aria-current');
+    ok(!crumbHtml.includes('data-variant='), 'breadcrumb carries no data-variant (no variants)');
+    ok(!crumbHtml.includes('data-state="hover"'), 'gallery specimen is not shown in the hover state');
+    ok(!crumbHtml.includes('gallery-stage'), 'breadcrumb instance carries no nested stage markup');
+    ok(!/<h[1-6][ >]/.test(crumbHtml), 'breadcrumb has no heading copy');
+    ok(!crumbHtml.includes('<img') && !crumbHtml.includes('http') && !/ src=/.test(crumbHtml), 'breadcrumb has no external assets');
 }
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');
