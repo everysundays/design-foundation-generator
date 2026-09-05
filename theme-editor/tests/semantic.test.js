@@ -139,9 +139,9 @@ eq(new Set(g.SEMANTIC_COLOR_ROLES), new Set(g.DTCG_COLOR_ROLES), 'SEMANTIC_COLOR
 }
 
 // --- Non-color semantic scale tokens (card 9: "Semantic space tokens") -----
-// Parameterised over every kind in SEMANTIC_SCALE_KINDS; only `space` is
-// filled in here - cards 10-13 add their own case object (radius/
-// borderWidth/borderStyle/shadow) without touching the loop below.
+// Parameterised over every kind in SEMANTIC_SCALE_KINDS; space/radius/
+// borderWidth/borderStyle are filled in (cards 9-11) - card 12 adds its own
+// shadow case object without touching the loop below.
 ok(JSON.stringify(g.SEMANTIC_SCALE_KINDS) === JSON.stringify(['space', 'radius', 'borderWidth', 'borderStyle', 'shadow']),
     'SEMANTIC_SCALE_KINDS lists the five non-color scale kinds, space first');
 
@@ -165,8 +165,35 @@ const SCALE_TOKEN_CASES = {
         stepCollisionName: 'lg',              // an existing Tailwind step, verbatim
         crossSourceCollisionName: 'small',    // not a Tailwind step; matches Atlassian's "radius.small" by var
         crossSourceCollisionStepName: 'radius.small'
+    },
+    // card 11: "Semantic border tokens". Atlassian's borderWidth entries
+    // bake their own group name into the step name itself (foundation.js's
+    // pxEntry('border.width', 1) etc.) - prefixedVar's "id === prefix" rule
+    // collapses that bare step to "--border-width-default", so a token
+    // literally named "default" collides with it (the DoD's own example,
+    // alongside "outline" for the border.width.outline step).
+    borderWidth: {
+        name: 'control',
+        stepName: '1',                          // Tailwind border.width.1 = 1px
+        atlassianStepName: 'border.width',      // the Atlassian entry at the same 1px (the bare, "default" step)
+        stepCollisionName: '2',                 // an existing Tailwind step, verbatim
+        crossSourceCollisionName: 'default',    // not a Tailwind step; matches Atlassian's bare "border.width" step by var
+        crossSourceCollisionStepName: 'border.width'
+    },
+    // borderStyle: Tailwind and Atlassian ship the EXACT same four step names
+    // (solid/dashed/dotted/none - foundation.js's two borderStyle arrays are
+    // identical), so there is no Atlassian-ONLY step for a name to collide
+    // with by var alone - any such name is already a same-source (Tailwind)
+    // collision, caught by stepCollisionName above. crossSourceCollisionName
+    // is intentionally omitted; the loop below skips that sub-check when it
+    // is undefined.
+    borderStyle: {
+        name: 'divider',
+        stepName: 'dashed',
+        atlassianStepName: 'dashed',   // remapRef never touches borderStyle refs ("style keeps its value" - card 11's DoD), and both foundations define "dashed" anyway
+        stepCollisionName: 'solid'     // an existing step name, verbatim (both foundations)
     }
-    // borderWidth: { … }, borderStyle: { … }, shadow: { … }  (cards 11-13)
+    // shadow: { … }  (card 12)
 };
 
 Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
@@ -191,9 +218,14 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
         ok(stepHit && stepHit.what === 'step' && stepHit.source === 'tailwind' && stepHit.name === c.stepCollisionName,
             `${kind}: varCollision refuses a name equal to an existing Tailwind step ("${c.stepCollisionName}")`);
 
-        const crossHit = g.varCollision(kind, c.crossSourceCollisionName, []);
-        ok(crossHit && crossHit.what === 'step' && crossHit.source === 'atlassian' && crossHit.name === c.crossSourceCollisionStepName,
-            `${kind}: varCollision refuses a name equal to an Atlassian-only step ("${c.crossSourceCollisionName}" -> "${c.crossSourceCollisionStepName}"), checked regardless of which source is active`);
+        // Omitted for a kind whose foundations ship identical step names
+        // (borderStyle - card 11) - there is no Atlassian-ONLY var to
+        // collide with, so this sub-check has nothing to assert.
+        if (c.crossSourceCollisionName !== undefined) {
+            const crossHit = g.varCollision(kind, c.crossSourceCollisionName, []);
+            ok(crossHit && crossHit.what === 'step' && crossHit.source === 'atlassian' && crossHit.name === c.crossSourceCollisionStepName,
+                `${kind}: varCollision refuses a name equal to an Atlassian-only step ("${c.crossSourceCollisionName}" -> "${c.crossSourceCollisionStepName}"), checked regardless of which source is active`);
+        }
 
         const tokenHit = g.varCollision(kind, c.name, [token]);
         ok(tokenHit && tokenHit.what === 'token' && tokenHit.name === c.name, `${kind}: varCollision refuses a name equal to an existing token`);

@@ -644,4 +644,78 @@ test('atlassian source: a radius token\'s own component ref is source-independen
     assert.strictEqual(parsed.components['card.radius'], 'radius.control');
 });
 
+// --- Non-color semantic tokens: border width/style (card 11: "Semantic
+// border tokens") - two kinds at once (unlike space/radius above), so this
+// also confirms the machinery keeps two DIFFERENT KIND_PREFIX groups
+// ("border.width"/"border.style") apart under one shared "border" parent
+// node in global.semantic.
+
+test('buildTokensJson: border width/style tokens export as real aliases under global.semantic, and component refs translate to {semantic.<ref>}', () => {
+    const base = tailwindCtx();
+    const semanticTokens = [
+        ...ROLES.map(name => ({ kind: 'color', name })),
+        { kind: 'borderWidth', name: 'control', ref: 'border.width.1' },
+        { kind: 'borderStyle', name: 'divider', ref: 'border.style.dashed' }
+    ];
+    const ctxWithToken = {
+        ...base,
+        components: { ...base.components, 'input.border.width': 'border.width.control', 'input.border.style': 'border.style.divider' },
+        semanticTokens
+    };
+    const f = buildTokensJson(ctxWithToken);
+
+    assert.deepStrictEqual(f.global.semantic.border.width.control, { $type: 'strokeWidth', $value: '{border.width.1}' });
+    assert.deepStrictEqual(f.global.semantic.border.style.divider, { $type: 'strokeStyle', $value: '{border.style.dashed}' });
+    assert.deepStrictEqual(f.component.component.input.border.width, { $type: 'strokeWidth', $value: '{semantic.border.width.control}' });
+    assert.deepStrictEqual(f.component.component.input.border.style, { $type: 'strokeStyle', $value: '{semantic.border.style.divider}' });
+    assert.deepStrictEqual(f.global.$extensions['theme-editor'].semantic, { tokens: semanticTokens.map(({ kind, name }) => ({ kind, name })) });
+
+    const n = assertAllRefsResolve(f, 'tailwind + border tokens');
+    assert(n > 60, `expected plenty of references, saw ${n}`);
+
+    const { parsed, rebuilt } = roundTrip(f, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, f, 'round-trip with border tokens is deep-equal');
+    assert.deepStrictEqual(
+        parsed.semanticTokens.find(t => t.kind === 'borderWidth'),
+        { kind: 'borderWidth', name: 'control', ref: 'border.width.1' },
+        'round-trip keeps the width token, with its resolved target ref restored from global.semantic'
+    );
+    assert.deepStrictEqual(
+        parsed.semanticTokens.find(t => t.kind === 'borderStyle'),
+        { kind: 'borderStyle', name: 'divider', ref: 'border.style.dashed' },
+        'round-trip keeps the style token, with its resolved target ref restored from global.semantic'
+    );
+    assert.strictEqual(parsed.components['input.border.width'], 'border.width.control', 'the width component leaf survives the {semantic….} round-trip, not dropped');
+    assert.strictEqual(parsed.components['input.border.style'], 'border.style.divider', 'the style component leaf survives the {semantic….} round-trip, not dropped');
+});
+
+test('atlassian source: border tokens\' own component refs are source-independent - only global.semantic\'s target changes', () => {
+    const abase = atlassianCtx();
+    // Atlassian's own borderWidth step names already bake in "border.width"
+    // (foundation.js), so the target ref is the doubled-looking
+    // "border.width.border.width" - same shape as the pre-existing literal
+    // 'input.border.width': 'border.width.border.width' in atlassianCtx().
+    const widthToken = { kind: 'borderWidth', name: 'control', ref: 'border.width.border.width' };
+    const styleToken = { kind: 'borderStyle', name: 'divider', ref: 'border.style.dashed' };
+    const semanticTokens = [...ROLES.map(name => ({ kind: 'color', name })), widthToken, styleToken];
+    const actxWithToken = {
+        ...abase,
+        components: { ...abase.components, 'input.border.width': 'border.width.control', 'input.border.style': 'border.style.divider' },
+        semanticTokens
+    };
+    const af = buildTokensJson(actxWithToken);
+    assert.deepStrictEqual(af.global.semantic.border.width.control, { $type: 'strokeWidth', $value: '{border.width.border.width}' });
+    assert.deepStrictEqual(af.global.semantic.border.style.divider, { $type: 'strokeStyle', $value: '{border.style.dashed}' });
+    assert.deepStrictEqual(af.component.component.input.border.width, { $type: 'strokeWidth', $value: '{semantic.border.width.control}' });
+    assert.deepStrictEqual(af.component.component.input.border.style, { $type: 'strokeStyle', $value: '{semantic.border.style.divider}' });
+    assertAllRefsResolve(af, 'atlassian + border tokens');
+
+    const { parsed, rebuilt } = roundTrip(af, TYPE_SETS);
+    assert.deepStrictEqual(rebuilt, af, 'round-trip with border tokens (atlassian) is deep-equal');
+    assert.deepStrictEqual(parsed.semanticTokens.find(t => t.kind === 'borderWidth'), widthToken);
+    assert.deepStrictEqual(parsed.semanticTokens.find(t => t.kind === 'borderStyle'), styleToken);
+    assert.strictEqual(parsed.components['input.border.width'], 'border.width.control');
+    assert.strictEqual(parsed.components['input.border.style'], 'border.style.divider');
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

@@ -411,16 +411,38 @@ function buildSemanticScaleAddRowHtml(ctx, kind) {
 </div>`;
 }
 
+// A kind's token rows + add row only, no wrapping section/heading - shared
+// by buildSemanticScaleSectionHtml (one heading per kind: space, radius) and
+// buildSemanticBorderSectionHtml (card 11: one "Border" section holding both
+// border-width and border-style, mirroring buildBorderPanelHtml's own
+// Width/Style split on the Border tab).
+function buildSemanticScaleTokensHtml(ctx, kind) {
+    const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === kind);
+    return `${tokens.map(t => buildSemanticTokenSummaryRowHtml(ctx, kind, t)).join('\n')}
+${buildSemanticScaleAddRowHtml(ctx, kind)}`;
+}
+
 // A kind's Summary-tab section: its existing tokens (if any) + the add row -
 // always rendered, even with zero tokens, so "Add token" stays reachable on
-// an empty system. Space and radius (cards 9/10) call it now; border-width/
-// border-style/shadow (later cards) add one call each, unchanged.
+// an empty system. Space and radius (cards 9/10) call it now; shadow (a
+// later card) adds its own call, unchanged. Border width/style (card 11)
+// share one "Border" section instead - see buildSemanticBorderSectionHtml.
 function buildSemanticScaleSectionHtml(ctx, kind) {
-    const tokens = (ctx.semanticTokens || []).filter(t => t && t.kind === kind);
     return `<div class="fp-section" data-kind="${panelEsc(kind)}">
 <h3 class="fp-section-title">${panelEsc(PANEL_KIND_LABELS[kind] || kind)}</h3>
-${tokens.map(t => buildSemanticTokenSummaryRowHtml(ctx, kind, t)).join('\n')}
-${buildSemanticScaleAddRowHtml(ctx, kind)}
+${buildSemanticScaleTokensHtml(ctx, kind)}
+</div>`;
+}
+
+// Card 11 ("Semantic border tokens"): one Summary-tab "Border" section
+// holding both the width and style token lists + add rows, mirroring
+// buildBorderPanelHtml's own Width/Style split on the Border tab (rather
+// than two separate top-level sections the way space/radius get one each).
+function buildSemanticBorderSectionHtml(ctx) {
+    return `<div class="fp-section" data-kind="border">
+<h3 class="fp-section-title">Border</h3>
+<div class="fp-section"><h3 class="fp-section-title">Width</h3>${buildSemanticScaleTokensHtml(ctx, 'borderWidth')}</div>
+<div class="fp-section"><h3 class="fp-section-title">Style</h3>${buildSemanticScaleTokensHtml(ctx, 'borderStyle')}</div>
 </div>`;
 }
 
@@ -446,5 +468,6 @@ ${sections}${empty}
 </div>
 ${buildSemanticScaleSectionHtml(ctx, 'space')}
 ${buildSemanticScaleSectionHtml(ctx, 'radius')}
+${buildSemanticBorderSectionHtml(ctx)}
 </div>`;
 }
