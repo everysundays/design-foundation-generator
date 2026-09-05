@@ -331,6 +331,71 @@ ok(g.buildCustomGalleryHtml().includes('New custom element'), 'the control names
     ok(g.buildCustomElementHeaderHtml(undefined) === '', 'no ctx prints nothing');
 }
 
+// --- persistence round trip (card 19): spec list + components -> snapshot -
+// stringify/parse (the exact hop buildSystemSnapshot()/localStorage/
+// systems/<name>.json all go through) -> load -> same allElements()/
+// componentTokenIds(), and every custom id still resolves (never var(null)).
+// Regression this guards against: seedsFor()'s _seedCache is keyed by
+// source+radius only, so a seed map computed BEFORE a custom element is
+// registered (e.g. at page start, or from whatever system was live a moment
+// before a new one loads) must never survive past the setCustomElements()
+// call that follows it - loadTheme()/applyLoaded() always register a
+// system's OWN custom elements before its components map is used for
+// anything, and setCustomElements() itself busts the cache.
+{
+    // Poison the cache the way a page start (or a load with NO custom
+    // elements) would: read a stock id with the registry EMPTY, so
+    // _seedCache["tailwind|..."] gets computed and stored with no
+    // "chip."/"note." keys in it at all.
+    g.setCustomElements([]);
+    const buttonHover = g.resolveComponentRef('button.primary.bg.hover', {});
+    ok(buttonHover, 'sanity: button has a seeded hover to compare against');
+
+    // Register two elements from different bases (the DoD's own example) -
+    // exactly what loadTheme() does before touching state.components.
+    g.setCustomElements([chip, note]);
+    ok(g.resolveComponentRef('chip.primary.bg.hover', {}) === buttonHover, "chip's hover resolves correctly right after registering (the pre-registration cache never survives the register call)");
+
+    const rtComponents = { ...g.seedComponentTokens('tailwind', { radiusRem: 0.5 }), 'chip.primary.bg': 'palette.amber-500' };
+    const before = {
+        keys: g.allElements().map(e => e.key),
+        ids: g.componentTokenIds(),
+        chipHover: g.resolveComponentRef('chip.primary.bg.hover', rtComponents),
+        noteBg: g.resolveComponentRef('note.default.bg', rtComponents)
+    };
+    ok(before.keys.slice(-2).join(',') === 'chip,note', 'registry order is creation order (chip before note)');
+
+    // The exact hop a save/reload puts this through.
+    const saved = JSON.parse(JSON.stringify({ customElements: g.customElementsSnapshot(), components: rtComponents }));
+
+    // "Loading another design system replaces the list" - go through an
+    // empty registry in between, so nothing survives by coincidence.
+    g.setCustomElements([]);
+    ok(g.allElements().length === g.ELEMENTS.length, 'loading a different system with no customs empties the registry');
+    ok(g.componentTokenIds().every(id => !id.startsWith('chip.') && !id.startsWith('note.')), 'no chip./note. ids remain while the registry is empty');
+
+    // "Load" the saved system.
+    g.setCustomElements(saved.customElements);
+
+    assert.deepStrictEqual(g.allElements().map(e => e.key), before.keys, 'allElements() after the round trip matches before it, same order');
+    assert.deepStrictEqual(g.componentTokenIds(), before.ids, 'componentTokenIds() after the round trip matches before it');
+    ok(g.resolveComponentRef('chip.primary.bg.hover', saved.components) === before.chipHover, "chip's hover resolves to the same value after the round trip");
+    ok(g.resolveComponentRef('note.default.bg', saved.components) === before.noteBg, "note's bg resolves to the same value after the round trip, independent of chip's override");
+    ok(saved.components['chip.primary.bg'] === 'palette.amber-500', "chip's explicit override survives the JSON hop untouched");
+
+    ['tailwind', 'atlassian'].forEach(source => {
+        const css = g.componentVarLines(saved.components, source);
+        ok(!/var\(null\)|var\(undefined\)/.test(css), `${source}: no var(null)/var(undefined) anywhere after the round trip`);
+    });
+
+    // Compat: a system with no customElements field (an old browser save)
+    // must load as ELEMENTS only - "missing => []", never "keep current".
+    g.setCustomElements(undefined);
+    ok(JSON.stringify(g.allElements().map(e => e.key)) === JSON.stringify(STOCK_KEYS), 'a system with no customElements field loads as ELEMENTS only');
+
+    g.setCustomElements([chip, note, tag, check]); // restore the file's shared registry
+}
+
 console.log(`custom-elements.test.js: ${checks} checks passed`);
 
 // tests/components.test.js must still pass, completely unchanged by this

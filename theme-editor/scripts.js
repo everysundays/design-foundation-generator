@@ -145,7 +145,7 @@ function colorDistanceSq(hexA, hexB) {
 
 // --- State ---
 let allThemes = [DEFAULT_THEME, ...(typeof tweakcnThemes !== 'undefined' ? tweakcnThemes : [])];
-let customSystems = {};   // name -> { source, palette, vars, tokenLinks, components }
+let customSystems = {};   // name -> { source, palette, vars, tokenLinks, components, customScale, customElements }
 let customThemes = {};    // legacy v1 saves: name -> { light, dark }
 
 let activePaletteSource = 'tailwind';
@@ -348,7 +348,7 @@ function seedComponentsFor(vars) {
     return typeof seedComponentTokens === 'function' ? seedComponentTokens(activePaletteSource, { radiusRem }) : {};
 }
 
-function applyLoaded({ name, vars, links, families, components, customScale }) {
+function applyLoaded({ name, vars, links, families, components, customScale, customElements }) {
     state.themeName = name;
     state.vars = { light: { ...vars.light }, dark: { ...vars.dark } };
     state.loadedVars = { light: { ...vars.light }, dark: { ...vars.dark } };
@@ -362,11 +362,13 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
     // saved system) before calling applyLoaded.
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
     state.loadedCustomScale = cloneCustomScale(state.customScale);
-    // No saved system carries custom elements yet (that's the save/load
-    // card) - every load/import/reset-source starts the registry empty so a
-    // PREVIOUS system's custom elements never leak into this one.
-    state.customElements = [];
-    state.loadedCustomElements = [];
+    // Missing => [], never "keep current" - a preset/legacy load or an older
+    // saved system (no customElements field) must actually clear the
+    // registry, not carry over whatever custom elements were live before
+    // this call. loadedCustomElements is a deep clone (specs are objects) so
+    // a later in-place edit of a live spec never corrupts the loaded copy.
+    state.customElements = customElements || [];
+    state.loadedCustomElements = JSON.parse(JSON.stringify(state.customElements));
     applyCustomElementsChange();
     undoStack = [];
     redoStack = [];
@@ -380,11 +382,18 @@ function loadTheme(name) {
         if (saved.source && saved.source !== activePaletteSource) setPaletteSourceUi(saved.source);
         const vars = { light: withFallbacks({ ...saved.vars.light }), dark: withFallbacks({ ...saved.vars.dark }) };
         const links = saved.tokenLinks || { light: {}, dark: {} };
+        // Register this system's OWN custom elements (missing => []) BEFORE
+        // seeding, so the full-seed baseline below reflects THIS registry -
+        // never a stale custom element still registered from whatever was
+        // live a moment ago (which would otherwise bake a dead
+        // "<oldKey>.*" default into state.components).
+        if (typeof setCustomElements === 'function') setCustomElements(saved.customElements || []);
         applyLoaded({
             name, vars, links,
             families: saved.palette && saved.palette.families,
             components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
-            customScale: saved.customScale
+            customScale: saved.customScale,
+            customElements: saved.customElements || []
         });
         return;
     }
@@ -401,6 +410,9 @@ function loadTheme(name) {
     };
     snapTypeToScale(flat.light);
     snapTypeToScale(flat.dark);
+    // A preset or legacy v1 save always drops the custom-element registry -
+    // clear it before seeding too (same reasoning as the saved branch above).
+    if (typeof setCustomElements === 'function') setCustomElements([]);
     applyLoaded({ name, vars: flat, links, families: null, components: seedComponentsFor(flat.light) });
 }
 
@@ -1176,7 +1188,8 @@ function buildSystemSnapshot() {
         vars: { light: { ...state.vars.light }, dark: { ...state.vars.dark } },
         tokenLinks: { light: { ...tokenLinks.light }, dark: { ...tokenLinks.dark } },
         components: { ...state.components },
-        customScale: cloneCustomScale(state.customScale)
+        customScale: cloneCustomScale(state.customScale),
+        customElements: typeof customElementsSnapshot === 'function' ? customElementsSnapshot() : [...state.customElements]
     };
 }
 
@@ -1982,11 +1995,16 @@ function applyTokensImport(parsed) {
         Object.assign(links[mode], snapVarsToPalette(vars[mode], activePaletteSource, missing));
         snapTypeToScale(vars[mode]);
     });
+    // parseTokensJson doesn't return customElements yet (a later card) - for
+    // now parsed.customElements is always undefined, so this only clears
+    // whatever was registered before the import, same as a preset load.
+    if (typeof setCustomElements === 'function') setCustomElements(parsed.customElements || []);
     applyLoaded({
         name: parsed.name || 'Imported system',
         vars, links,
         families: parsed.families,
-        components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) }
+        components: { ...seedComponentsFor(vars.light), ...(parsed.components || {}) },
+        customElements: parsed.customElements || []
     });
 }
 
@@ -2234,7 +2252,10 @@ document.addEventListener('DOMContentLoaded', () => {
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
-        state.customElements = [...state.loadedCustomElements];
+        // Deep clone, not a shallow array copy - the specs are objects, and
+        // state.loadedCustomElements must never share a spec reference with
+        // the live registry that a later edit could mutate in place.
+        state.customElements = JSON.parse(JSON.stringify(state.loadedCustomElements));
         applyCustomElementsChange();
         renderAll();
     });

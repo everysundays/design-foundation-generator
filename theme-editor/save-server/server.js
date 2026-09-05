@@ -7,7 +7,7 @@
 //
 // One endpoint: POST /api/systems/:name, body = the same shape scripts.js's
 // buildSystemSnapshot() produces ({source, palette, vars, tokenLinks,
-// components, customScale}).
+// components, customScale, customElements}).
 
 const http = require('http');
 const fs = require('fs');
