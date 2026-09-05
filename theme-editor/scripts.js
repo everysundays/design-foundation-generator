@@ -15,7 +15,8 @@
 // Sibling modules (plain globals, see index.html load order): foundation.js
 // (FOUNDATION scales + ref helpers), components.js (ELEMENTS spec, seeding,
 // wiring CSS, gallery), panels.js (sidebar panel HTML), dtcg.js (tokens.json
-// export/import).
+// export/import), systems.js (normalizeSystem - defaults a saved system's
+// shape for the load path below).
 
 // Local Docker save-server (theme-editor/save-server/) - writes a saved
 // system to theme-editor/systems/<name>.json. Independent of localStorage.
@@ -145,7 +146,7 @@ function colorDistanceSq(hexA, hexB) {
 
 // --- State ---
 let allThemes = [DEFAULT_THEME, ...(typeof tweakcnThemes !== 'undefined' ? tweakcnThemes : [])];
-let customSystems = {};   // name -> { source, palette, vars, tokenLinks, components }
+let customSystems = {};   // name -> normalizeSystem() shape (systems.js): { source, palette, vars, tokenLinks, components, customScale }
 let customThemes = {};    // legacy v1 saves: name -> { light, dark }
 
 let activePaletteSource = 'tailwind';
@@ -307,18 +308,19 @@ function undoSnapshot() {
 }
 
 function restoreSnapshot(json) {
-    const snap = JSON.parse(json);
+    const snap = normalizeSystem(JSON.parse(json));
+    if (!snap) return;
     // A Tailwind<->Atlassian switch remaps every ref, so a snapshot taken
     // under the other source only makes sense with that source active.
-    if (snap.source && snap.source !== activePaletteSource && typeof setPaletteSourceUi === 'function') {
+    if (snap.source !== activePaletteSource && typeof setPaletteSourceUi === 'function') {
         activePaletteSource = snap.source;
         setPaletteSourceUi(snap.source);
     }
     state.vars = snap.vars;
     tokenLinks = snap.tokenLinks;
-    state.components = snap.components || state.components;
-    state.palette = snap.palette || state.palette;
-    state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
+    state.components = snap.components;
+    state.palette = snap.palette;
+    state.customScale = setCustomScaleFor(activePaletteSource, snap.customScale);
 }
 
 function pushUndo() {
@@ -361,15 +363,14 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
 }
 
 function loadTheme(name) {
-    const saved = customSystems[name];
-    if (saved && saved.vars) {
-        if (saved.source && saved.source !== activePaletteSource) setPaletteSourceUi(saved.source);
+    const saved = normalizeSystem(customSystems[name]);
+    if (saved) {
+        if (saved.source !== activePaletteSource) setPaletteSourceUi(saved.source);
         const vars = { light: withFallbacks({ ...saved.vars.light }), dark: withFallbacks({ ...saved.vars.dark }) };
-        const links = saved.tokenLinks || { light: {}, dark: {} };
         applyLoaded({
-            name, vars, links,
-            families: saved.palette && saved.palette.families,
-            components: { ...seedComponentsFor(vars.light), ...(saved.components || {}) },
+            name, vars, links: saved.tokenLinks,
+            families: saved.palette.families,
+            components: { ...seedComponentsFor(vars.light), ...saved.components },
             customScale: saved.customScale
         });
         return;
@@ -1173,7 +1174,19 @@ function saveCustomSystems() {
 function loadCustomSystemsFromStorage() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) customSystems = JSON.parse(raw) || {};
+        if (raw) {
+            const parsed = JSON.parse(raw) || {};
+            customSystems = {};
+            // A system saved by an earlier version of the app can be missing
+            // any field but `vars`; normalizeSystem defaults the rest and
+            // returns null for an entry with none at all, which is dropped
+            // here (and so purged from localStorage on the next Save).
+            Object.entries(parsed).forEach(([name, entry]) => {
+                const normalized = normalizeSystem(entry);
+                if (normalized) customSystems[name] = normalized;
+                else console.warn(`Saved system "${name}" has no vars - skipped`);
+            });
+        }
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (legacy) customThemes = JSON.parse(legacy) || {};
     } catch (e) { console.warn('Could not load saved systems:', e); }
