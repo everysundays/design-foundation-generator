@@ -680,23 +680,14 @@ function renderTypographyTab() {
     renderTypeSetGroups(vars);
 }
 
-const GOOGLE_FONTS = new Set(['Inter', 'Roboto', 'Open Sans', 'Poppins', 'Work Sans', 'Source Serif 4', 'Playfair Display', 'JetBrains Mono', 'Fira Code']);
-
-function firstFamily(value) {
-    return (value || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
-}
+// firstFamily/resolveTypeFace/GOOGLE_FONTS/googleFontsHref/fontImportCss now
+// live in fonts.js (loaded before this file - see index.html).
 
 function typeFamilySelection(value) {
     const ref = (value || '').match(/^var\(--font-(sans|serif|mono)\)$/);
     if (ref) return ref[1];
     const face = firstFamily(value);
     return Object.values(FONT_OPTIONS).some(list => list.includes(face)) ? face : 'custom';
-}
-
-function resolveTypeFace(vars, setKey) {
-    const value = vars[typeVarKey(setKey, 'family')] || '';
-    const ref = value.match(/^var\(--font-(sans|serif|mono)\)$/);
-    return firstFamily(ref ? vars[`font-${ref[1]}`] : value);
 }
 
 // "Sans→Inter · 2xl / 8 · 600" - the one-line readout for a set, shared by
@@ -866,14 +857,6 @@ function renderTypeSetGroups(vars) {
     });
 }
 
-function googleFontsHref(vars) {
-    const faces = new Set(['font-sans', 'font-serif', 'font-mono'].map(k => firstFamily(vars[k])));
-    TYPE_SETS.forEach(set => faces.add(resolveTypeFace(vars, set.key)));
-    const wanted = [...faces].filter(f => GOOGLE_FONTS.has(f)).sort();
-    if (!wanted.length) return '';
-    return `https://fonts.googleapis.com/css2?${wanted.map(f => `family=${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;500;600;700`).join('&')}&display=swap`;
-}
-
 // Preview-only companions to the --type-* vars: per-set badge color/abbr and
 // the resolved summary string, painted by the pages with `content: var(...)`.
 function typeMetaCss(vars) {
@@ -886,7 +869,7 @@ function typeMetaCss(vars) {
 
 function syncPreviewTypeHead(doc, vars) {
     const link = doc.getElementById('google-fonts');
-    const href = googleFontsHref(vars);
+    const href = googleFontsHref(vars, TYPE_SETS);
     if (link && link.getAttribute('href') !== href) {
         if (href) link.setAttribute('href', href);
         else link.removeAttribute('href');
@@ -1250,7 +1233,7 @@ function safeBuild(fnName, ...args) {
 }
 
 function buildPreviewDocument(vars, links) {
-    const href = googleFontsHref(vars);
+    const href = googleFontsHref(vars, TYPE_SETS);
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -1745,7 +1728,10 @@ async function fetchComponentsCss() {
 async function buildDesignSystemCss() {
     const componentsCss = await fetchComponentsCss();
     const wiring = typeof buildWiringCss === 'function' ? buildWiringCss() : '/* components.js not loaded */';
+    // Union of light+dark vars: a face picked while the editor sits in dark
+    // mode must still appear in the @import (setVar only writes state.mode).
     return `/* ${state.themeName} - design system (${foundationOf(activePaletteSource).label} scales) */\n` +
+        fontImportCss([state.vars.light, state.vars.dark], TYPE_SETS) +
         `@layer tokens, components, states;\n\n` +
         `@layer tokens {\n:root {\n${cssVarBlockFor(state.vars.light, tokenLinks.light)}\n}\n\n.dark {\n${cssVarBlockFor(state.vars.dark, tokenLinks.dark)}\n}\n}\n\n` +
         `${wiring}\n\n@layer components {\n${componentsCss}\n}\n`;
