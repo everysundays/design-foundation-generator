@@ -300,4 +300,55 @@ test('twThemeVar: null for kinds with no v4 namespace, "_" spelling for fraction
     assert.strictEqual(twThemeVar('space.0.5'), '--spacing-0_5');
 });
 
+// --- card 46: verified against a real `npx @tailwindcss/cli@4.3.3` build ---
+//
+// Recipe (re-run after any tailwind.js change): a scratch dir outside the
+// repo holding tailwind.css (this system's Export > tailwind.css tab,
+// copied verbatim - here, Feynman: Tailwind foundation, custom Space step
+// "18" = 4.5rem), input.css:
+//   @import "tailwindcss";
+//   @import "./tailwind.css";
+//   @source "./index.html";
+// and an index.html with a real button/card built from the utilities that
+// name Feynman's component-token refs (bg-primary text-primary-foreground
+// px-4 py-2 rounded-lg shadow-xs font-sans text-sm leading-5 font-medium for
+// the button; border border-border bg-card p-6 gap-4 shadow-sm rounded-lg
+// plus text-lg/leading-7, text-xs/leading-4, text-base/leading-6 for the
+// card's title/description/body) and probes for p-4, p-0.5, p-18, p-13
+// (must be absent), rounded-lg, shadow-md, font-sans, text-xl, leading-6,
+// dark:bg-secondary. Build: `npx @tailwindcss/cli@4.3.3 -i input.css -o
+// out.css` (tailwindcss@4.3.3 installed alongside it - the CLI needs
+// "tailwindcss" resolvable via node_modules, @tailwindcss/cli alone is not
+// enough). Full input.css/index.html/tailwind.css and the getComputedStyle
+// diff are on the card.
+//
+// Outcome: no wrong values - every discriminating utility (bg-primary,
+// font-sans, p-18, p-0.5, the absence of p-13, the .dark block, shadow-md)
+// built with Feynman's exact exported values, and getComputedStyle on the
+// scratch button/card matched the theme-editor preview's own gallery
+// button/card exactly (background-color, color, padding, gap, border-width/
+// style/color, border-radius, font-family/size/line-height/weight) in both
+// light and dark mode. One naming fact confirmed empirically rather than
+// merely asserted by our own code: Tailwind 4.3.3's real key resolver does
+// accept the "_" spelling (--spacing-0_5) for p-0.5 - the fractional-step
+// probe below is that pin. One presentation nuance, not an exporter defect:
+// Tailwind's compiled `.shadow-md`/`.shadow-sm`/`.shadow-xs` utilities wrap
+// our literal box-shadow value behind `var(--tw-shadow-color, <ours>)` and
+// prepend four fixed, fully-transparent zero-offset placeholder layers (for
+// its ring/inset-shadow stacking system) - box-shadow computed-style
+// equality holds once those inert layers are stripped; nothing to change in
+// tailwind.js.
+test('card 46 regression pins: DoD-named utilities leading-6 and text-xl--line-height, fractional p-0.5 key, and a custom step spelled without a dot', () => {
+    const themeLines = extractBlock(tw, '@theme inline {');
+    assert(themeLines.includes('  --leading-6: 1.5rem;'), 'leading-6 (DoD line 1) must be pinned verbatim');
+    assert(themeLines.includes('  --text-xl--line-height: 1.75rem;'), 'text-xl (DoD line 1) leading pairing must be pinned verbatim');
+    assert.strictEqual(twThemeVar('space.0.5'), '--spacing-0_5', 'DoD line 2: the real Tailwind 4.3.3 CLI resolves p-0.5 through exactly this "_" spelling, confirmed by the scratch build');
+
+    setCustomScaleFor('tailwind', { ...emptyCustomScale(), space: [remEntry('18', 4.5)] });
+    const withCustom = buildTailwindCss(tailwindCtx());
+    const customLines = extractBlock(withCustom, '@theme inline {');
+    assert(customLines.includes('  --spacing-18: 4.5rem;'), 'a custom step named without a dot (Feynman\'s real "18") must key as --spacing-18, not --spacing-18-0 or similar');
+    setCustomScaleFor('tailwind', emptyCustomScale());
+});
+
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);
