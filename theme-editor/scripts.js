@@ -306,8 +306,15 @@ function isLinkInPalette(link) {
 }
 
 // --- Load / undo ---
+// selection travels with every snapshot (an add/remove's pushUndo captures
+// whatever was selected right before it ran, e.g. the FROM variant of an
+// add) so a Redo lands back on exactly what was showing right before the
+// matching Undo, not just wherever Undo's own fallback happened to leave
+// the picker - reconcileSelection is a validity net on top of this, not a
+// substitute for it (Reset/applyLoaded never go through restoreSnapshot at
+// all, so they still rely on reconcileSelection alone).
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, customElements: state.customElements });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, customElements: state.customElements, selection: state.selection });
 }
 
 function restoreSnapshot(json) {
@@ -326,6 +333,10 @@ function restoreSnapshot(json) {
     // Missing => [], never `|| state.customElements` - a snapshot from before
     // a creation must actually clear the registry, not keep today's.
     state.customElements = snap.customElements || [];
+    // undefined (a snapshot predating this field) leaves the live selection
+    // for reconcileSelection to validate instead; an explicit null (nothing
+    // selected) is a real value and must overwrite, so this is not `|| ...`.
+    if (snap.selection !== undefined) state.selection = snap.selection;
     applyCustomElementsChange();
 }
 
@@ -1737,12 +1748,15 @@ function clearSelection() {
 
 // Called at the top of renderAll(), so every mutation path (undo/redo,
 // Reset, create/add/remove) lands on a selection that actually matches the
-// current spec. state.selection is never part of an undo snapshot (only the
-// token/spec data is - see undoSnapshot), so an Undo/Reset that changes a
-// custom element's shape would otherwise leave it naming a variant/part that
-// no longer exists (e.g. Undo right after adding a variant) - the strip
-// would show no pressed pick and the stage would render unwired. Mirrors
-// selectElement's own fallbacks (variants[0] / parts[0] / 'default').
+// current spec. undoSnapshot/restoreSnapshot carry state.selection through
+// Undo/Redo, but Reset and applyLoaded/loadTheme never go through
+// restoreSnapshot at all (and a hand-built snapshot predating that field
+// would leave state.selection as whatever it was) - this is the net that
+// still catches all of those: a Reset/load that changes a custom element's
+// shape would otherwise leave it naming a variant/part that no longer
+// exists, and the strip would show no pressed pick and the stage would
+// render unwired. Mirrors selectElement's own fallbacks (variants[0] /
+// parts[0] / 'default').
 function reconcileSelection() {
     const sel = state.selection;
     if (!sel) return;
