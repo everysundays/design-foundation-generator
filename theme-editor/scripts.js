@@ -165,6 +165,10 @@ let state = {
     // (see foundation.js's CUSTOM_SCALE) - points at that source's slot.
     customScale: emptyCustomScale(),
     loadedCustomScale: emptyCustomScale(),
+    // Plain, JSON-safe custom-element specs (components.js CUSTOM_ELEMENTS'
+    // ground truth) - mirrored into components.js by applyCustomElementsChange.
+    customElements: [],
+    loadedCustomElements: [],
     // Which sidebar tab is showing (summary | colors | space | radius |
     // border | shadow | type) - the tab decides which prop KIND a click assigns.
     activeTab: 'colors',
@@ -303,7 +307,7 @@ function isLinkInPalette(link) {
 
 // --- Load / undo ---
 function undoSnapshot() {
-    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale });
+    return JSON.stringify({ source: activePaletteSource, vars: state.vars, tokenLinks, components: state.components, palette: state.palette, customScale: state.customScale, customElements: state.customElements });
 }
 
 function restoreSnapshot(json) {
@@ -319,6 +323,10 @@ function restoreSnapshot(json) {
     state.components = snap.components || state.components;
     state.palette = snap.palette || state.palette;
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(snap.customScale));
+    // Missing => [], never `|| state.customElements` - a snapshot from before
+    // a creation must actually clear the registry, not keep today's.
+    state.customElements = snap.customElements || [];
+    applyCustomElementsChange();
 }
 
 function pushUndo() {
@@ -354,6 +362,12 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
     // saved system) before calling applyLoaded.
     state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(customScale));
     state.loadedCustomScale = cloneCustomScale(state.customScale);
+    // No saved system carries custom elements yet (that's the save/load
+    // card) - every load/import/reset-source starts the registry empty so a
+    // PREVIOUS system's custom elements never leak into this one.
+    state.customElements = [];
+    state.loadedCustomElements = [];
+    applyCustomElementsChange();
     undoStack = [];
     redoStack = [];
     updateUndoRedoButtons();
@@ -1269,7 +1283,7 @@ ${typeMetaCss(vars)}
 }</style>
 </head>
 <body data-route="elements" data-inspect-state="${state.selection ? state.selection.state : 'default'}">
-<section data-page="elements"><div class="page gallery-page">${safeBuild('buildGalleryHtml')}</div></section>
+<section data-page="elements"><div class="page gallery-page">${safeBuild('buildGalleryHtml')}${safeBuild('buildCustomGalleryHtml')}</div></section>
 <script src="preview/frame.js"><\/script>
 </body>
 </html>`;
@@ -1331,6 +1345,24 @@ function renderPreview() {
         return;
     }
     iframe.srcdoc = buildPreviewDocument(vars, links);
+}
+
+// The one place state.customElements changes are reconciled: mirrors it into
+// components.js's registry (setCustomElements - also busts _seedCache) and,
+// unlike renderPreview (which only ever patches #theme-vars), rewrites the
+// iframe's #wiring text and the whole Custom section in place. No full
+// srcdoc rebuild - selection can be re-applied synchronously, with no
+// ds:ready round trip. Every future add/remove/rename/delete of a custom
+// element's shape goes through this same function.
+function applyCustomElementsChange() {
+    if (typeof setCustomElements === 'function') setCustomElements(state.customElements);
+    const doc = previewDocument();
+    if (!doc) return; // no document yet - the next renderPreview() does a full build, which already reads the registry above
+    const wiringEl = doc.getElementById('wiring');
+    if (wiringEl) wiringEl.textContent = safeBuild('buildWiringCss');
+    const section = doc.getElementById('cat-custom');
+    if (section) section.outerHTML = safeBuild('buildCustomGalleryHtml');
+    applySelectionHighlight(doc);
 }
 
 function scrollGalleryTo(cat) {
@@ -1579,7 +1611,7 @@ function renderPanel() {
     else if (tab === 'shadow') html = safeBuild('buildScalePanelHtml', 'shadow', ctx, { allowAdd: true });
     else if (tab === 'type') html = safeBuild('buildTypePanelHtml', ctx);
     else html = safeBuild('buildSummaryPanelHtml', ctx);
-    body.innerHTML = safeBuild('buildSelectionStripHtml', ctx) + html;
+    body.innerHTML = safeBuild('buildSelectionStripHtml', ctx) + safeBuild('buildCustomElementHeaderHtml', ctx) + html;
     if (tab === 'type') {
         mountTypeControls();
         renderTypographyTab();
@@ -1651,6 +1683,57 @@ function clearSelection() {
     if (doc) applySelectionHighlight(doc);
 }
 
+// --- Custom elements: creation ---
+// The form itself is a parent-side modal (#customElementModal) - frame.js's
+// keydown guard preventDefaults every keystroke in an input/textarea/select
+// inside the gallery, so a name field can't live in the iframe. The gallery's
+// "New custom element" control only posts ds:action=new-custom-element (see
+// the message listener below); this file owns the actual form.
+
+function populateCustomElementBaseSelect() {
+    const select = document.getElementById('customElementBaseSelect');
+    select.innerHTML = ELEMENTS.map(el => `<option value="${el.key}">${el.label}</option>`).join('');
+}
+
+// Ticks/unticks the six checkboxes to match the base's own parts - "pick a
+// base, ticks prefill from it" (untick/re-tick before Create is still this
+// card's job; changing an ALREADY-created element's parts is a later card's).
+function populateCustomElementParts(baseKey) {
+    const baseSpec = elementSpec(baseKey);
+    const offered = new Set(baseSpec ? baseSpec.parts.map(p => p.key) : []);
+    document.querySelectorAll('#customElementPartsRow input[type="checkbox"]').forEach(cb => {
+        cb.checked = offered.has(cb.value);
+    });
+}
+
+function openCustomElementModal() {
+    populateCustomElementBaseSelect();
+    const select = document.getElementById('customElementBaseSelect');
+    populateCustomElementParts(select.value);
+    document.getElementById('customElementNameInput').value = '';
+    document.getElementById('customElementError').textContent = '';
+    document.getElementById('customElementModal').hidden = false;
+}
+
+// Validates, builds the spec (components.js), registers it and selects its
+// first part with Colors open - one pushUndo, so Undo removes the creation
+// outright. Returns an inline-refusal string on failure, else null.
+function createCustomElement({ base, parts, name }) {
+    const err = validateCustomElementName(name, allElements().map(e => e.key));
+    if (err) return err;
+    const baseSpec = elementSpec(base);
+    if (!baseSpec) return 'Pick a base element.';
+    const key = String(name).trim().toLowerCase();
+    const label = String(name).trim();
+    const spec = buildCustomElementSpec({ key, label, base: baseSpec.key, parts: parts || [] });
+    pushUndo();
+    state.customElements = [...state.customElements, spec];
+    applyCustomElementsChange();
+    state.activeTab = 'colors';
+    document.querySelectorAll('.sidebar-tab').forEach(b => b.classList.toggle('active', b.dataset.sidebarTab === 'colors'));
+    selectElement(spec.key, spec.variants ? spec.variants[0] : null, spec.parts[0].key, 'default');
+    return null;
+}
 
 // --- Palette source switch ---
 function setPaletteSourceUi(sourceKey) {
@@ -1906,8 +1989,10 @@ function applyCssImport(text) {
     pushUndo();
     Object.entries(perMode).forEach(([mode, decls]) => {
         decls.forEach(([key, value]) => {
-            // Component var lines from our own export are derived, not source.
-            if (typeof ELEMENTS !== 'undefined' && ELEMENTS.some(e => key.startsWith(`${e.key}-`))) return;
+            // Component var lines from our own export are derived, not source
+            // (allElements(), so a custom element's own --<key>-* lines are
+            // skipped here too, exactly like a stock element's).
+            if (typeof allElements === 'function' && allElements().some(e => key.startsWith(`${e.key}-`))) return;
             state.vars[mode][key] = value;
         });
         snapTypeToScale(state.vars[mode]);
@@ -2069,6 +2154,8 @@ document.addEventListener('DOMContentLoaded', () => {
             selectElement(msg.element, msg.variant || null, msg.part, msg.state || 'default');
         } else if (msg.type === 'ds:clear') {
             clearSelection();
+        } else if (msg.type === 'ds:action' && msg.action === 'new-custom-element') {
+            openCustomElementModal();
         }
     });
 
@@ -2130,6 +2217,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.components = { ...state.loadedComponents };
         state.palette = { families: [...state.loadedPalette.families] };
         state.customScale = setCustomScaleFor(activePaletteSource, cloneCustomScale(state.loadedCustomScale));
+        state.customElements = [...state.loadedCustomElements];
+        applyCustomElementsChange();
         renderAll();
     });
 
@@ -2200,6 +2289,26 @@ document.addEventListener('DOMContentLoaded', () => {
         state.themeName = name;
         renderThemePickerButton();
         document.getElementById('saveModal').hidden = true;
+    });
+
+    // Custom element creation modal (opened via the gallery's ds:action -
+    // see the message listener above). Backdrop-click-to-close is handled by
+    // the generic `.modal` listener at the bottom of this block.
+    document.getElementById('closeCustomElementModal').addEventListener('click', () => {
+        document.getElementById('customElementModal').hidden = true;
+    });
+    document.getElementById('customElementBaseSelect').addEventListener('change', (e) => {
+        populateCustomElementParts(e.target.value);
+    });
+    document.getElementById('confirmCustomElementButton').addEventListener('click', () => {
+        const base = document.getElementById('customElementBaseSelect').value;
+        const name = document.getElementById('customElementNameInput').value;
+        const parts = [...document.querySelectorAll('#customElementPartsRow input:checked')].map(cb => cb.value);
+        const errorEl = document.getElementById('customElementError');
+        const err = createCustomElement({ base, parts, name });
+        if (err) { errorEl.textContent = err; return; }
+        errorEl.textContent = '';
+        document.getElementById('customElementModal').hidden = true;
     });
 
     // Save to repo - POSTs the same shape to the local save-server (see

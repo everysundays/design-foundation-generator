@@ -486,6 +486,35 @@
   font-weight: 600;
 }
 
+/* --- Custom-element header, prepended (below the strip) when the selection
+   is a custom element - read-only, so no interactive styling at all. --- */
+
+.fp-custom-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.fp-custom-header-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.fp-custom-header-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ui-text);
+}
+
+.fp-custom-header-base,
+.fp-custom-header-parts {
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+
 /* --- Type sets --- */
 
 .fp-type-sets {

@@ -107,6 +107,27 @@ function buildSelectionStripHtml(ctx) {
     return `<div class="fp-strip">${variantRow}${stateRow}</div>`;
 }
 
+// --- Custom-element header ---
+
+// The other builder that isn't a tab: renderPanel prepends this right after
+// buildSelectionStripHtml, ahead of the tab's own HTML, whenever the
+// selection is a custom element. Read-only in this card - name, base and
+// part list only, no controls; the spec itself changes only through
+// scripts.js's applyCustomElementsChange (the one entry point future cards
+// use to re-seed tokens and rebuild the preview after add/remove/rename).
+function buildCustomElementHeaderHtml(ctx) {
+    const sel = ctx && ctx.selection;
+    if (!sel || typeof elementSpec !== 'function') return '';
+    const spec = elementSpec(sel.element);
+    if (!spec || !spec.custom) return '';
+    const baseSpec = elementSpec(spec.base);
+    const partNames = spec.parts.map(p => p.label).join(', ');
+    return `<div class="fp-custom-header">
+  <div class="fp-custom-header-row"><span class="fp-custom-header-name">${panelEsc(spec.label)}</span><span class="fp-custom-header-base">from ${panelEsc(baseSpec ? baseSpec.label : spec.base)}</span></div>
+  <div class="fp-custom-header-parts">${panelEsc(partNames)}</div>
+</div>`;
+}
+
 // --- Colors ---
 
 // Light text on a dark step, dark text on a light one (YIQ luma, the usual

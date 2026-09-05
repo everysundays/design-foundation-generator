@@ -121,6 +121,27 @@ body {
   min-inline-size: 0;
 }
 
+/* --- Custom section (components.js buildCustomGalleryHtml) - the "New
+   custom element" control that opens the parent's creation modal. Chrome
+   only (gallery-elements already lays specimens + this out as a wrapping
+   row); everything colored/sized still reads a var, same as the rest of
+   this file. */
+.gallery-new-custom {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--pg-space-2) var(--pg-space-4);
+  border: var(--pg-border-width) dashed var(--border);
+  border-radius: var(--pg-radius-md);
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.gallery-new-custom:hover {
+  color: var(--foreground);
+  border-color: var(--foreground);
+}
+
 /* --- Selection affordances (preview/frame.js sets data-hover / data-selected).
    Outline, not border/box-shadow, so component styling is untouched. --- */
 [data-part] { cursor: pointer; }

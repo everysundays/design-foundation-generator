@@ -340,7 +340,7 @@ const SEED_SPEC = {
 // --- Spec lookups ------------------------------------------------------------
 
 function elementSpec(element) {
-    return typeof element === 'string' ? ELEMENTS.find(e => e.key === element) || null : element;
+    return typeof element === 'string' ? allElements().find(e => e.key === element) || null : element;
 }
 
 function partSpec(element, part) {
@@ -412,9 +412,11 @@ function idToVar(id) {
     return `--${id.replace(/\./g, '-')}`;
 }
 
-// Iterates every (element, variant, part, prop) of the spec in order.
+// Iterates every (element, variant, part, prop) of the spec in order -
+// allElements(), so a registered custom element's ids/seeds/CSS are covered
+// by every consumer below with no separate custom-only pass.
 function forEachTokenSlot(fn) {
-    ELEMENTS.forEach(el => {
+    allElements().forEach(el => {
         elementVariants(el).forEach(variant => {
             el.parts.forEach(part => {
                 part.props.forEach(prop => fn(el, variant, part, prop));
@@ -445,8 +447,10 @@ function seedRef(raw, sourceKey, ctx) {
 function seedComponentTokens(sourceKey, ctx) {
     const source = sourceKey || 'tailwind';
     const out = {};
-    ELEMENTS.forEach(el => {
-        const spec = SEED_SPEC[el.key] || {};
+    allElements().forEach(el => {
+        // A custom element's own seed table (buildCustomElementSpec) - never
+        // in SEED_SPEC, which stays the stock-only const.
+        const spec = SEED_SPEC[el.key] || el.seedSpec || {};
         elementVariants(el).forEach(variant => {
             const defaults = Object.assign({}, spec.base || {}, (spec.variants && variant && spec.variants[variant]) || {});
             el.parts.forEach(part => {
@@ -514,7 +518,7 @@ function resolveComponentRef(id, components, sourceKey) {
 function componentVarLines(components, sourceKey) {
     const source = activeSourceKey(sourceKey);
     const lines = [];
-    ELEMENTS.forEach(el => {
+    allElements().forEach(el => {
         elementVariants(el).forEach(variant => {
             el.states.forEach(state => {
                 el.parts.forEach(part => {
@@ -545,7 +549,7 @@ function elementSelector(el, variant) {
 function buildWiringCss() {
     const componentRules = [];
     const stateRules = [];
-    ELEMENTS.forEach(el => {
+    allElements().forEach(el => {
         elementVariants(el).forEach(variant => {
             const selector = elementSelector(el, variant);
             el.states.forEach(state => {
@@ -733,7 +737,9 @@ const GALLERY_RENDERERS = {
 
 function renderGalleryInstance(elementKey, variant, state) {
     const render = GALLERY_RENDERERS[elementKey];
-    return render ? render(variant, state) : '';
+    if (render) return render(variant, state);
+    const spec = elementSpec(elementKey);
+    return spec && spec.custom ? renderCustomInstance(spec, variant, state) : '';
 }
 
 // The Elements page body: one section per element holding ONE instance (the
@@ -744,8 +750,13 @@ function renderGalleryInstance(elementKey, variant, state) {
 // a trailing "Other" for strays - the wrapper only exists as a scroll target
 // for the parent's category nav; nothing is printed for it.
 function buildGalleryHtml() {
+    // allElements(), like every other iterator above - but a custom
+    // element's own category ('custom', see buildCustomElementSpec) never
+    // matches one of these keys, so it silently sits out of every group here
+    // and only ever renders via buildCustomGalleryHtml's own #cat-custom
+    // section. Custom elements never join the stock "All" order.
     const groups = ELEMENT_CATEGORIES.concat(OTHER_CATEGORY)
-        .map(cat => ({ cat, els: ELEMENTS.filter(el => el.category === cat.key) }))
+        .map(cat => ({ cat, els: allElements().filter(el => el.category === cat.key) }))
         .filter(g => g.els.length);
     return groups.map(({ cat, els }) =>
         `<section class="gallery-category" id="cat-${cat.key}" data-gallery-category="${cat.key}">\n` +
@@ -762,4 +773,269 @@ function buildGallerySection(el) {
         `<div class="gallery-stage" data-gallery-element="${el.key}" data-variant="${variant || ''}" data-state="default">` +
         renderGalleryInstance(el.key, variant, 'default') +
         `</div>\n</section>`;
+}
+
+// --- Custom elements ---------------------------------------------------------
+//
+// A custom element is built from stock PARTS: the six generic kinds below
+// (identical shape to the factories above, so their private var names -
+// --_bg, --_border-color, --_text-family, … - are exactly what
+// preview/components.css's shared .ds-custom rules already read, with no
+// per-element CSS needed) plus every part the base carries OUTSIDE those six
+// keys, kept verbatim (title, description, box, mark, header, cell, radius,
+// gap, ring, size, …). Variants and the seed table are derived from the base
+// once, at creation (buildCustomElementSpec); from then on the custom
+// element's own tokens are entirely independent of the base's.
+//
+// Registry: CUSTOM_ELEMENTS (ordered) + allElements() = ELEMENTS.concat(it) -
+// every iterator above reads allElements(), while ELEMENTS itself stays the
+// untouched stock const (so components.test.js, which never registers a
+// custom element, is byte-for-byte unaffected). setCustomElements() is the
+// only way the array's CONTENTS change - it also busts _seedCache, since
+// seedsFor()'s cache would otherwise keep answering with yesterday's
+// registry. scripts.js keeps state.customElements (plain, JSON-safe specs -
+// the undo/redo ground truth) and mirrors it in here via setCustomElements;
+// applyCustomElementsChange() (scripts.js) is the one place that happens
+// together with the matching preview/DOM patch.
+
+const CUSTOM_ELEMENTS = [];
+
+function allElements() {
+    return ELEMENTS.concat(CUSTOM_ELEMENTS);
+}
+
+function setCustomElements(list) {
+    CUSTOM_ELEMENTS.length = 0;
+    (list || []).forEach(spec => CUSTOM_ELEMENTS.push(spec));
+    Object.keys(_seedCache).forEach(key => delete _seedCache[key]);
+}
+
+// Deep-cloned, JSON-safe specs - for a caller (save/export) that must not
+// hold a live reference into CUSTOM_ELEMENTS.
+function customElementsSnapshot() {
+    return CUSTOM_ELEMENTS.map(spec => JSON.parse(JSON.stringify(spec)));
+}
+
+// The six kinds offered when creating a custom element - literally the same
+// factories the ELEMENTS spec above uses, so a ticked kind's private var
+// names always match an existing components.css rule.
+const CUSTOM_PART_KINDS = ['bg', 'border', 'text', 'icon', 'padding', 'shadow'];
+const CUSTOM_PART_FACTORY = { bg: _bg, border: _border, text: _text, icon: _icon, padding: _paddingXY, shadow: _shadow };
+
+// Fixed fallback seed (a Tailwind ref, remapped like every other seed) for a
+// ticked kind the base has no matching part for at all.
+const CUSTOM_PART_DEFAULTS = {
+    bg: { bg: 'color.background' },
+    border: { 'border.color': 'color.border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid' },
+    text: { 'text.color': 'color.foreground', 'text.type': 'type.body' },
+    icon: { icon: 'color.foreground' },
+    padding: { 'padding.x': 'space.4', 'padding.y': 'space.2' },
+    shadow: { shadow: 'shadow.xs' }
+};
+
+// A custom element's key must never collide with a stock/custom key, a
+// semantic role name, or a var-namespace prefix - scripts.js's applyCssImport
+// skips any CSS line whose key starts with "<elementKey>-", so e.g. an
+// element named "sidebar" or "space" would swallow --sidebar-foreground /
+// --space-4 on the next CSS import. (Same 33 roles as dtcg.js's
+// DTCG_COLOR_ROLES / scripts.js's LINKABLE_COLOR_KEYS - duplicated here
+// because components.js loads before both.)
+const RESERVED_ELEMENT_NAMESPACES = ['type', 'space', 'radius', 'border', 'shadow', 'palette', 'font', 'tracking', 'sidebar', 'chart'];
+const RESERVED_SEMANTIC_ROLE_NAMES = [
+    'primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'accent', 'accent-foreground',
+    'background', 'foreground', 'muted', 'muted-foreground', 'destructive', 'destructive-foreground',
+    'chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5', 'card', 'card-foreground', 'popover', 'popover-foreground',
+    'border', 'input', 'ring', 'sidebar', 'sidebar-foreground', 'sidebar-primary', 'sidebar-primary-foreground',
+    'sidebar-accent', 'sidebar-accent-foreground', 'sidebar-border', 'sidebar-ring', 'shadow-color'
+];
+
+// null on success, else an inline refusal message. `existingKeys` is every
+// stock + already-registered custom key (allElements().map(e => e.key)).
+function validateCustomElementName(name, existingKeys) {
+    const trimmed = String(name === undefined || name === null ? '' : name).trim();
+    if (!trimmed) return 'Enter a name.';
+    const key = trimmed.toLowerCase();
+    if (!/^[a-z][a-z0-9-]*$/.test(key)) {
+        return `"${trimmed}" must start with a letter and use only lowercase letters, digits and hyphens.`;
+    }
+    const stateSuffix = ['hover', 'focus', 'active', 'disabled'].find(s => key.endsWith(`-${s}`));
+    if (stateSuffix) return `"${trimmed}" can't end in "-${stateSuffix}" - that reads as a state.`;
+    if ((existingKeys || []).includes(key) || RESERVED_ELEMENT_NAMESPACES.includes(key) || RESERVED_SEMANTIC_ROLE_NAMES.includes(key)) {
+        return `"${trimmed}" is already taken.`;
+    }
+    return null;
+}
+
+// The slot key ('bg' for a single-prop part, 'border.color' for a multi-prop
+// one) exactly as SEED_SPEC / seedComponentTokens key their defaults.
+function _customSlotKey(part, prop) {
+    return part.props.length === 1 ? part.key : `${part.key}.${prop.key}`;
+}
+
+// Where a (part, prop) slot of the CUSTOM shape reads its base value from -
+// the base's OWN slot key when it has a same-key part with that prop; a
+// single-prop base "padding" (card, alert, tabs-list, popover) seeds BOTH of
+// the custom's offered padding.x/padding.y from that one slot (the base's own
+// single padding part is then never kept as a separate extra part, since
+// 'padding' is one of the six offered keys either way); null when the base
+// has nothing to inherit (the ticked kind then falls to CUSTOM_PART_DEFAULTS).
+function _customBaseSlotKey(baseSpec, part, prop) {
+    const baseSamePart = baseSpec.parts.find(p => p.key === part.key);
+    if (baseSamePart && baseSamePart.props.some(p => p.key === prop.key)) return _customSlotKey(baseSamePart, prop);
+    if (part.key === 'padding') {
+        const basePadding = baseSpec.parts.find(p => p.key === 'padding');
+        if (basePadding) return basePadding.key;
+    }
+    return null;
+}
+
+// Builds the seed table (SEED_SPEC[base]'s own shape: { base, variants,
+// states }) a custom element's own seedComponentTokens pass reads - see
+// seedComponentTokens's `SEED_SPEC[el.key] || el.seedSpec`. Copies the base's
+// seed verbatim wherever a slot matches (so a later edit to the base's OWN
+// SEED_SPEC entry is picked up automatically); a ticked kind absent from the
+// base falls to CUSTOM_PART_DEFAULTS so every slot always resolves.
+function _buildCustomSeedSpec(baseSpec, parts) {
+    const baseSeed = SEED_SPEC[baseSpec.key] || {};
+    const seedSpec = { base: {}, variants: {}, states: {} };
+    parts.forEach(part => {
+        part.props.forEach(prop => {
+            const key = _customSlotKey(part, prop);
+            const srcKey = _customBaseSlotKey(baseSpec, part, prop);
+            let found = false;
+            if (srcKey) {
+                if (baseSeed.base && baseSeed.base[srcKey] !== undefined) {
+                    seedSpec.base[key] = baseSeed.base[srcKey];
+                    found = true;
+                }
+                Object.keys(baseSeed.variants || {}).forEach(v => {
+                    if (baseSeed.variants[v][srcKey] === undefined) return;
+                    seedSpec.variants[v] = seedSpec.variants[v] || {};
+                    seedSpec.variants[v][key] = baseSeed.variants[v][srcKey];
+                    found = true;
+                });
+                Object.keys(baseSeed.states || {}).forEach(stateKey => {
+                    if (baseSeed.states[stateKey][srcKey] === undefined) return;
+                    seedSpec.states[stateKey] = seedSpec.states[stateKey] || {};
+                    seedSpec.states[stateKey][key] = baseSeed.states[stateKey][srcKey];
+                });
+            }
+            if (!found) {
+                const fallback = (CUSTOM_PART_DEFAULTS[part.key] || {})[key];
+                if (fallback !== undefined) seedSpec.base[key] = fallback;
+            }
+        });
+    });
+    return seedSpec;
+}
+
+// `parts`: which of CUSTOM_PART_KINDS are ticked. Every other base part
+// (title, description, box, mark, header, cell, radius, gap, ring, size, …)
+// is kept as-is. Variants/states are always an explicit array (never null,
+// even for a variant-less base) so tokenId always includes a variant segment
+// - a card-based custom element's ids are chip.default.bg, never chip.bg -
+// and always carries all five states regardless of what the base has.
+// Returns null when `base` isn't a real (stock) element.
+function buildCustomElementSpec({ key, label, base, parts }) {
+    const baseSpec = elementSpec(base);
+    if (!baseSpec) return null;
+    const ticked = CUSTOM_PART_KINDS.filter(k => (parts || []).includes(k));
+    const offeredParts = ticked.map(k => CUSTOM_PART_FACTORY[k]());
+    const keptParts = baseSpec.parts.filter(p => !CUSTOM_PART_KINDS.includes(p.key));
+    const allParts = offeredParts.concat(keptParts);
+    const variants = baseSpec.variants ? [...baseSpec.variants] : ['default'];
+    return {
+        key, label, category: 'custom', custom: true, base: baseSpec.key,
+        variants, states: [...COMPONENT_STATES],
+        parts: allParts,
+        seedSpec: _buildCustomSeedSpec(baseSpec, allParts)
+    };
+}
+
+// --- Custom elements: generic specimen ---------------------------------------
+//
+// Root paints bg/border/padding/shadow (whichever are ticked) through the
+// SAME shared private vars the six factories always use, via the .ds-custom
+// rule in preview/components.css - no per-element CSS needed there. A kept
+// extra part (radius, gap, ring, title, box, header, …) has no such fixed
+// rule to lean on - its private var names carry ITS OWN key, and there is no
+// telling ahead of time which keys a future stock element might contribute -
+// so it paints itself through an inline style built from the very same
+// privateVarNames() the wiring sheet used to define it: always a var()
+// reference into that part's own private(s), never a literal color/length.
+
+const CUSTOM_PART_PROP_CSS = { color: 'background', radius: 'border-radius', space: 'inline-size', borderWidth: 'border-width', borderStyle: 'border-style', shadow: 'box-shadow' };
+const CUSTOM_TYPE_FIELD_CSS = { '-family': 'font-family', '-weight': 'font-weight', '-size': 'font-size', '-leading': 'line-height', '-tracking': 'letter-spacing' };
+
+function _customPartHasType(part) {
+    return part.props.some(p => p.kind === 'type');
+}
+
+// A kept part WITH a type prop reads as inline text (title/description/
+// header/label/…): the type prop's five fields, plus any color-kind prop as
+// the text's own color (last one wins if a part has two, e.g. table's
+// header - matching its real header/foreground pairing).
+function _customTextStyle(part) {
+    const decls = [];
+    part.props.forEach(prop => {
+        if (prop.kind === 'type') {
+            privateVarNames(part, prop).forEach(({ name, suffix }) => {
+                const cssProp = CUSTOM_TYPE_FIELD_CSS[suffix];
+                if (cssProp) decls.push(`${cssProp}: var(${name})`);
+            });
+        } else if (prop.kind === 'color') {
+            decls.push(`color: var(${privateVarNames(part, prop)[0].name})`);
+        }
+    });
+    return decls.join('; ');
+}
+
+// A kept part with no type prop reads as a small swatch box: every prop
+// paints the box property its KIND maps to (CUSTOM_PART_PROP_CSS); a
+// borderWidth prop also gets a fixed (non-token) solid/currentColor pairing
+// so the width is actually visible.
+function _customBoxStyle(part) {
+    const decls = ['display: inline-block', 'inline-size: 1.5em', 'block-size: 1.5em', 'vertical-align: middle'];
+    part.props.forEach(prop => {
+        const cssProp = CUSTOM_PART_PROP_CSS[prop.kind];
+        if (!cssProp) return;
+        decls.push(`${cssProp}: var(${privateVarNames(part, prop)[0].name})`);
+        if (prop.kind === 'borderWidth') decls.push('border-style: solid', 'border-color: currentColor');
+    });
+    return decls.join('; ');
+}
+
+function _customPartChildHtml(part) {
+    if (_customPartHasType(part)) return `<span data-part="${part.key}" style="${_customTextStyle(part)}">${part.label}</span>`;
+    return `<span data-part="${part.key}" style="${_customBoxStyle(part)}"></span>`;
+}
+
+function renderCustomInstance(spec, variant, state) {
+    const has = (k) => spec.parts.some(p => p.key === k);
+    const rootPart = has('bg') ? 'bg' : spec.parts[0].key;
+    let inner = '';
+    if (has('icon')) inner += galleryIcon('plus', 'ds-custom-icon', 'icon');
+    if (has('text')) inner += `<span class="ds-custom-text" data-part="text">${spec.label}</span>`;
+    spec.parts.filter(p => !CUSTOM_PART_KINDS.includes(p.key)).forEach(part => { inner += _customPartChildHtml(part); });
+    return `<span ${rootAttrs(spec.key, variant, state, rootPart, { cls: 'ds-custom' })}>${inner}</span>`;
+}
+
+// The Custom section: the "New custom element" control (a plain ds:action
+// trigger - preview/frame.js posts it to the parent, which owns the actual
+// creation form) plus one stage per registered custom element. Mirrors
+// buildGalleryHtml/buildGallerySection's shape (a #cat-custom category with
+// one #gallery-<key> section each) so scrollGalleryTo/syncGalleryStages work
+// on it with no changes.
+function buildCustomGalleryHtml() {
+    const specimens = CUSTOM_ELEMENTS.map(spec => {
+        const variant = elementVariants(spec)[0];
+        return `<section class="gallery-section" id="gallery-${spec.key}" data-gallery-element="${spec.key}">\n` +
+            `<div class="gallery-stage" data-gallery-element="${spec.key}" data-variant="${variant || ''}" data-state="default">` +
+            renderCustomInstance(spec, variant, 'default') +
+            `</div>\n</section>`;
+    }).join('\n');
+    return `<section class="gallery-category" id="cat-custom" data-gallery-category="custom">\n` +
+        `<div class="gallery-elements">\n` +
+        `<button type="button" class="gallery-new-custom" data-action="new-custom-element">New custom element</button>\n` +
+        specimens + '\n</div>\n</section>';
 }

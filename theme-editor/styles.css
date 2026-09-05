@@ -1005,6 +1005,22 @@ body.resizing-sidebar .preview-frame {
   display: none;
 }
 
+/* --- v3: custom-element creation modal (#customElementModal) --- */
+
+.custom-element-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.custom-element-parts label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ui-text);
+}
+
 /* --- v2: "Start from" prefix on the theme picker --- */
 
 .theme-picker-prefix {

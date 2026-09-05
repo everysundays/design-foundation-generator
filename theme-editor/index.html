@@ -187,6 +187,30 @@
         </div>
     </div>
 
+    <div id="customElementModal" class="modal" hidden>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>New custom element</h2>
+                <button id="closeCustomElementModal" class="toolbar-icon-button"><i class="fas fa-xmark"></i></button>
+            </div>
+            <label class="field-label" for="customElementBaseSelect">Base element</label>
+            <select id="customElementBaseSelect" class="field-select"></select>
+            <div id="customElementPartsRow" class="custom-element-parts">
+                <label><input type="checkbox" value="bg"> Background</label>
+                <label><input type="checkbox" value="border"> Border</label>
+                <label><input type="checkbox" value="text"> Text</label>
+                <label><input type="checkbox" value="icon"> Icon</label>
+                <label><input type="checkbox" value="padding"> Padding</label>
+                <label><input type="checkbox" value="shadow"> Shadow</label>
+            </div>
+            <input type="text" id="customElementNameInput" class="theme-search-input" placeholder="Name">
+            <div class="modal-actions">
+                <button id="confirmCustomElementButton" class="toolbar-button">Create</button>
+            </div>
+            <p id="customElementError" class="import-error"></p>
+        </div>
+    </div>
+
     <script src="scripts.js"></script>
 </body>
 </html>

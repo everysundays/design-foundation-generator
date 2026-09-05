@@ -58,7 +58,8 @@
 .ds-avatar,
 .ds-tooltip,
 .ds-popover,
-.ds-list-item {
+.ds-list-item,
+.ds-custom {
     color: var(--_text-color);
     font-family: var(--_text-family);
     font-weight: var(--_text-weight);
@@ -541,4 +542,35 @@
     margin: 0;
     border: 0;
     background: var(--_line);
+}
+
+/* --- Custom elements ----------------------------------------------------
+ * One shared root for EVERY custom element (components.js renderCustomInstance):
+ * the six offered kinds (bg/border/text/icon/padding/shadow, above and here)
+ * always use these same private names, whichever base they came from. A kept
+ * extra part (radius, gap, ring, title, box, header, …) has no fixed rule to
+ * read from - it paints itself inline (see components.js's
+ * _customTextStyle/_customBoxStyle), always through a var() into its own
+ * wiring-defined private, never a literal.
+ */
+
+.ds-custom {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--_gap);
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+    box-shadow: var(--_shadow);
+}
+
+.ds-custom-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
+}
+
+.ds-custom-text {
+    color: var(--_text-color);
 }
