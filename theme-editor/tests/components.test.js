@@ -52,7 +52,7 @@ function assertRefValid(ref, kind, source, where) {
 
 // --- ELEMENTS shape --------------------------------------------------------
 const EXPECTED_KEYS = ['button', 'input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'badge', 'card', 'alert',
-    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item', 'accordion', 'accordion-item'];
+    'tabs-list', 'tab', 'table', 'table-row', 'avatar', 'tooltip', 'popover', 'list-item', 'separator', 'dialog', 'dropdown-menu', 'combobox', 'toast', 'progress', 'skeleton', 'breadcrumb', 'pagination', 'pagination-item', 'accordion', 'accordion-item', 'side-menu', 'side-menu-item'];
 ok(JSON.stringify(g.ELEMENTS.map(e => e.key)) === JSON.stringify(EXPECTED_KEYS), 'element keys/order');
 g.ELEMENTS.forEach(el => {
     ok(el.states[0] === 'default', `${el.key}: first state is default`);
@@ -119,6 +119,22 @@ SOURCES.forEach(source => {
     assertRefValid(seeds['accordion-item.closed.bg.hover'], 'color', source, `${source} accordion-item closed hover bg seed`);
     ok(seeds['accordion-item.open.ring.color.focus'] === 'color.ring' && seeds['accordion-item.closed.ring.color.focus'] === 'color.ring', `${source}: accordion-item focus ring (both variants)`);
     assertRefValid(seeds['accordion-item.open.ring.color.focus'], 'color', source, `${source} accordion-item focus ring seed`);
+    ok(seeds['side-menu.bg'] === 'color.sidebar', `${source}: side-menu bg seed`);
+    ok(seeds['side-menu.border.color'] === 'color.sidebar-border', `${source}: side-menu border seed`);
+    ok(seeds['side-menu.title.color'] === 'color.sidebar-foreground', `${source}: side-menu title color seed`);
+    ok(seeds['side-menu-item.inactive.bg'] === 'palette.transparent', `${source}: side-menu-item inactive bg seed`);
+    ok(seeds['side-menu-item.inactive.text.color'] === 'color.sidebar-foreground', `${source}: side-menu-item inactive text seed`);
+    ok(seeds['side-menu-item.inactive.icon'] === 'color.sidebar-foreground', `${source}: side-menu-item inactive icon seed`);
+    ok(seeds['side-menu-item.active.bg'] === 'color.sidebar-accent', `${source}: side-menu-item active bg seed`);
+    ok(seeds['side-menu-item.active.text.color'] === 'color.sidebar-accent-foreground', `${source}: side-menu-item active text seed`);
+    ok(seeds['side-menu-item.active.icon'] === 'color.sidebar-primary', `${source}: side-menu-item active icon seed`);
+    ok(seeds['side-menu-item.inactive.ring.color'] === 'color.sidebar-ring' && seeds['side-menu-item.active.ring.color'] === 'color.sidebar-ring', `${source}: side-menu-item focus ring seed (both variants, default state)`);
+    ok(seeds['side-menu-item.inactive.bg.hover'] === 'color.sidebar-accent', `${source}: side-menu-item inactive hover bg`);
+    ok(seeds['side-menu-item.inactive.ring.color.focus'] === 'color.sidebar-ring', `${source}: side-menu-item inactive focus ring`);
+    ok(seeds['side-menu-item.active.ring.color.focus'] === 'color.sidebar-ring', `${source}: side-menu-item active focus ring (applies to every variant)`);
+    ok(seeds['side-menu-item.inactive.bg.disabled'] === 'color.muted', `${source}: side-menu-item inactive disabled bg`);
+    assertRefValid(seeds['side-menu.padding'], 'space', source, `${source} side-menu padding seed`);
+    assertRefValid(seeds['side-menu-item.inactive.radius'], 'radius', source, `${source} side-menu-item radius seed`);
 });
 // theme radius seeding
 ok(g.seedComponentTokens('tailwind', { radiusRem: 0.5 })['button.primary.radius'] === 'radius.lg', 'radius 0.5rem -> lg');
@@ -317,6 +333,34 @@ ok(g.componentVarLines({}, 'tailwind').includes('  --accordion-item-open-content
 ok(JSON.stringify(g.tokenIdParts('accordion-item.closed.bg.hover')) === JSON.stringify({ element: 'accordion-item', variant: 'closed', part: 'bg', prop: null, state: 'hover' }), 'accordion-item hover id parses');
 ok(g.tokenIdParts('accordion.gap.hover') === null, 'accordion host has no hover state');
 
+// --- Side menu spot checks ---------------------------------------------------
+ok(g.propKind('side-menu', 'bg') === 'color', 'side-menu.bg kind');
+ok(g.propKind('side-menu', 'border', 'color') === 'color', 'side-menu border color kind');
+ok(g.propKind('side-menu', 'padding') === 'space', 'side-menu.padding kind (single-prop)');
+ok(g.propKind('side-menu', 'gap') === 'space', 'side-menu.gap kind');
+ok(g.propKind('side-menu', 'title', 'color') === 'color', 'side-menu title color kind');
+ok(g.propKind('side-menu', 'title', 'type') === 'type', 'side-menu title type kind');
+ok(g.propKind('side-menu-item', 'bg') === 'color', 'side-menu-item.bg kind');
+ok(g.propKind('side-menu-item', 'text', 'color') === 'color', 'side-menu-item text color kind');
+ok(g.propKind('side-menu-item', 'text', 'type') === 'type', 'side-menu-item text type kind');
+ok(g.propKind('side-menu-item', 'icon') === 'color', 'side-menu-item.icon kind');
+ok(g.propKind('side-menu-item', 'radius') === 'radius', 'side-menu-item.radius kind');
+ok(g.propKind('side-menu-item', 'padding', 'x') === 'space', 'side-menu-item padding.x kind');
+ok(g.propKind('side-menu-item', 'ring', 'color') === 'color', 'side-menu-item ring color kind');
+ok(g.ELEMENTS.find(el => el.key === 'side-menu').variants === null, 'side-menu has no variants');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'side-menu').states) === JSON.stringify(['default']), 'side-menu has only the default state');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'side-menu-item').variants) === JSON.stringify(['inactive', 'active']), 'side-menu-item variants (inactive first)');
+ok(JSON.stringify(g.ELEMENTS.find(el => el.key === 'side-menu-item').states) === JSON.stringify(['default', 'hover', 'focus', 'disabled']), 'side-menu-item states (no active - active is a variant)');
+ok(g.resolveComponentRef('side-menu-item.active.bg.hover', {}) === 'color.sidebar-accent', 'side-menu-item active hover inherits its own default (already sidebar-accent)');
+ok(g.componentVarLines({}, 'tailwind').includes('  --side-menu-bg: var(--sidebar);'), 'side-menu bg line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --side-menu-border-color: var(--sidebar-border);'), 'side-menu border line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --side-menu-title-type-family: var(--type-caption-family);'), 'side-menu title type expands');
+ok(g.componentVarLines({}, 'tailwind').includes('  --side-menu-item-inactive-bg-hover: var(--sidebar-accent);'), 'side-menu-item inactive hover line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --side-menu-item-inactive-ring-color-focus: var(--sidebar-ring);'), 'side-menu-item inactive focus ring line');
+ok(g.componentVarLines({}, 'tailwind').includes('  --side-menu-item-active-icon: var(--sidebar-primary);'), 'side-menu-item active icon line');
+ok(JSON.stringify(g.tokenIdParts('side-menu-item.inactive.bg.hover')) === JSON.stringify({ element: 'side-menu-item', variant: 'inactive', part: 'bg', prop: null, state: 'hover' }), 'side-menu-item hover id parses');
+ok(g.tokenIdParts('side-menu.bg.hover') === null, 'side-menu host has no hover state');
+
 // --- resolveComponentRef -------------------------------------------------
 ok(g.resolveComponentRef('button.primary.bg', {}) === 'color.primary', 'seed fallback');
 ok(g.resolveComponentRef('button.primary.bg.hover', {}) === 'color.primary', 'state inherits default seed');
@@ -426,6 +470,23 @@ ok(wiring.includes('--_padding-x: var(--accordion-item-open-padding-x);'), 'acco
 ok(wiring.includes('--_content-color: var(--accordion-item-closed-content-color);'), 'accordion-item content color private');
 ok(wiring.includes('--_ring-color: var(--accordion-item-open-ring-color-focus);'), 'accordion-item focus ring private');
 ok(!wiring.includes('[data-element="accordion-item"][data-variant="open"]:is(:active'), 'accordion-item has no active state (open/closed are variants)');
+ok(wiring.includes('[data-element="side-menu"] {\n  --_bg: var(--side-menu-bg);'), 'side-menu default block');
+ok(wiring.includes('--_border-color: var(--side-menu-border-color);'), 'side-menu border private');
+ok(wiring.includes('--_padding: var(--side-menu-padding);'), 'side-menu single-prop padding private');
+ok(wiring.includes('--_title-color: var(--side-menu-title-color);'), 'side-menu title color private');
+ok(wiring.includes('--_title-family: var(--side-menu-title-type-family);'), 'side-menu title type private');
+ok(!wiring.includes('[data-element="side-menu"]:is('), 'side-menu has no state rules');
+ok(wiring.includes('[data-element="side-menu-item"][data-variant="inactive"] {\n  --_bg: var(--side-menu-item-inactive-bg);'), 'side-menu-item inactive default block');
+ok(wiring.includes('[data-element="side-menu-item"][data-variant="active"] {\n  --_bg: var(--side-menu-item-active-bg);'), 'side-menu-item active default block');
+ok(wiring.includes('[data-element="side-menu-item"][data-variant="inactive"]:is(:hover:not([data-state]), [data-state="hover"]) {\n  --_bg: var(--side-menu-item-inactive-bg-hover);'), 'side-menu-item inactive hover block');
+ok(wiring.includes('[data-element="side-menu-item"][data-variant="inactive"]:is(:focus-visible:not([data-state]), :focus-within:not([data-state]), [data-state="focus"]) {\n  --_bg: var(--side-menu-item-inactive-bg-focus);'), 'side-menu-item inactive focus block');
+ok(wiring.includes('[data-element="side-menu-item"][data-variant="inactive"]:is(:disabled, [data-state="disabled"], [aria-disabled="true"]) {\n  --_bg: var(--side-menu-item-inactive-bg-disabled);'), 'side-menu-item inactive disabled block');
+ok(!wiring.includes('[data-element="side-menu-item"][data-variant="inactive"]:is(:active'), 'side-menu-item has no active STATE rule (active is a variant)');
+ok(wiring.includes('--_ring-color: var(--side-menu-item-inactive-ring-color-focus);'), 'side-menu-item focus ring private');
+ok(wiring.includes('--_icon: var(--side-menu-item-active-icon);'), 'side-menu-item icon private');
+ok(wiring.includes('--_radius: var(--side-menu-item-inactive-radius);'), 'side-menu-item radius private');
+ok(wiring.includes('--_padding-x: var(--side-menu-item-inactive-padding-x);'), 'side-menu-item padding-x private');
+ok(wiring.includes('--_ring-width: var(--side-menu-item-inactive-ring-width);'), 'side-menu-item ring width private');
 
 // --- components.css reads only privates the wiring defines ---------------
 {
@@ -495,6 +556,7 @@ ok(!html.includes('gallery-title') && !html.includes('gallery-category-title'), 
     ok(g.categoryOf('breadcrumb') === 'navigation', 'breadcrumb categorized as navigation');
     ok(g.categoryOf('pagination') === 'navigation' && g.categoryOf('pagination-item') === 'navigation', 'pagination categorized as navigation');
     ok(g.categoryOf('accordion') === 'surfaces' && g.categoryOf('accordion-item') === 'surfaces', 'accordion categorized as surfaces');
+    ok(g.categoryOf('side-menu') === 'navigation' && g.categoryOf('side-menu-item') === 'navigation', 'side-menu categorized as navigation');
 }
 ok(html.indexOf('id="gallery-dialog"') > html.indexOf('id="gallery-separator"'), 'dialog appears after separator in the gallery');
 ok(html.indexOf('id="gallery-dropdown-menu"') > html.indexOf('id="gallery-list-item"'), 'dropdown-menu appears after list-item in the gallery');
@@ -507,6 +569,8 @@ ok(html.indexOf('id="gallery-pagination"') > html.indexOf('id="gallery-breadcrum
 ok(html.indexOf('id="gallery-pagination-item"') > html.indexOf('id="gallery-pagination"'), 'pagination-item appears after pagination (end of the navigation group)');
 ok(html.indexOf('id="gallery-accordion"') > html.indexOf('id="gallery-dialog"'), 'accordion appears after dialog (end of the surfaces group)');
 ok(html.indexOf('id="gallery-accordion-item"') > html.indexOf('id="gallery-accordion"'), 'accordion-item appears after accordion');
+ok(html.indexOf('id="gallery-side-menu"') > html.indexOf('id="gallery-pagination-item"'), 'side-menu appears after pagination-item (end of the navigation group)');
+ok(html.indexOf('id="gallery-side-menu-item"') > html.indexOf('id="gallery-side-menu"'), 'side-menu-item appears after side-menu');
 
 // --- Dialog gallery markup --------------------------------------------------
 {
@@ -657,6 +721,31 @@ ok(html.indexOf('id="gallery-accordion-item"') > html.indexOf('id="gallery-accor
     ok(!closedHtml.includes('data-part="content"'), 'closed item renders no content part');
     ok(!closedHtml.includes('data-variant="open"'), 'closed instance carries no open instance');
 }
+// --- Side menu gallery markup -------------------------------------------------
+{
+    const menuHtml = g.renderGalleryInstance('side-menu', null, 'default');
+    ok(menuHtml.startsWith('<nav class="ds-side-menu" data-element="side-menu" data-state="default" data-part="bg">'), 'side-menu root carries data-part="bg" and is a <nav>');
+    ok(menuHtml.includes('data-part="title"'), 'side-menu has a paintable/clickable title part');
+    ok(!/<h[1-6][ >]/.test(menuHtml), 'side-menu title is not a heading element');
+    ok((menuHtml.match(/data-element="side-menu-item"/g) || []).length === 5, 'side-menu hosts exactly five side-menu-item instances');
+    ok((menuHtml.match(/data-variant="active"/g) || []).length === 1, 'exactly one active item');
+    ok((menuHtml.match(/data-variant="inactive"/g) || []).length === 4, 'four inactive items');
+    ok((menuHtml.match(/data-state="default"/g) || []).length === 6, 'host + all five items are in their default state');
+    ok(!menuHtml.includes('data-state="hover"') && !menuHtml.includes('data-state="disabled"'), 'gallery specimen is not shown in hover/disabled');
+    ok(!menuHtml.includes('gallery-stage'), 'side-menu instance carries no nested stage markup');
+    ok(!menuHtml.includes('id="gallery-side-menu-item"'), 'nested items are not full gallery sections');
+    ok(!menuHtml.includes('<img') && !menuHtml.includes('http') && !/ src=/.test(menuHtml), 'side-menu has no external assets');
+}
+{
+    const itemHtml = g.renderGalleryInstance('side-menu-item', 'inactive', 'default');
+    ok((itemHtml.match(/data-element="side-menu-item"/g) || []).length === 1, 'side-menu-item stage shows exactly one item');
+    ok(itemHtml.includes('data-variant="inactive"'), 'side-menu-item stage shows the inactive variant alone');
+    ok(!itemHtml.includes('data-variant="active"'), 'side-menu-item stage carries no active instance');
+    ok(itemHtml.includes('data-part="text"'), 'side-menu-item text part is paintable/clickable');
+    ok(itemHtml.includes('data-part="icon"'), 'side-menu-item icon part is paintable/clickable');
+    ok(itemHtml.includes('data-element="side-menu"'), 'side-menu-item is hosted inside a side-menu');
+    ok(!itemHtml.includes('gallery-stage'), 'side-menu-item instance carries no nested stage markup');
+}
 ok(html.includes('class="gallery-elements"'), 'element sections wrapped per category');
 ok(!html.includes('gallery-matrix') && !html.includes('gallery-cell'), 'no variant x state matrix');
 ok(g.renderGalleryInstance('button', 'primary', 'disabled').includes('data-state="disabled" data-part="bg" aria-disabled="true"'), 'disabled via aria, not the attribute');
@@ -676,6 +765,11 @@ ok(!/ src=/.test(html), 'no src attributes');
     ok(usage['color.primary'].includes('button.primary.bg'), 'usage lists default ids');
     ok(usage['color.accent'].includes('button.primary.bg.hover'), 'usage lists explicit state entries');
     ok(!Object.values(usage).flat().includes('button.outline.bg.hover'), 'usage skips seeded (non-explicit) states');
+    const sidebarUsage = g.componentUsage({});
+    ok(sidebarUsage['color.sidebar'].includes('side-menu.bg'), 'sidebar role usage lists side-menu.bg');
+    ok(sidebarUsage['color.sidebar-border'].includes('side-menu.border.color'), 'sidebar-border role usage lists side-menu.border.color');
+    ok(sidebarUsage['color.sidebar-accent'].includes('side-menu-item.active.bg'), 'sidebar-accent role usage lists side-menu-item.active.bg');
+    ok(sidebarUsage['color.sidebar-primary'].includes('side-menu-item.active.icon'), 'sidebar-primary role usage lists side-menu-item.active.icon');
     const remapped = g.remapComponentTokens({ 'card.padding': 'space.6', 'card.radius': 'radius.full', 'card.bg': 'color.card' }, 'tailwind', 'atlassian');
     ok(remapped['card.padding'] === 'space.space.300', 'space.6 (24px) -> space.300');
     ok(remapped['card.radius'] === 'radius.radius.full', 'full -> full');

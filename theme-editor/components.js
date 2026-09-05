@@ -74,7 +74,7 @@ const ELEMENT_CATEGORIES = [
     { key: 'forms',      label: 'Forms',      elements: ['input', 'select', 'textarea', 'checkbox', 'radio', 'switch', 'combobox'] },
     { key: 'feedback',   label: 'Feedback',   elements: ['alert', 'badge', 'tooltip', 'toast', 'progress', 'skeleton'] },
     { key: 'surfaces',   label: 'Surfaces',   elements: ['card', 'popover', 'separator', 'dialog', 'accordion', 'accordion-item'] },
-    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item'] },
+    { key: 'navigation', label: 'Navigation', elements: ['tabs-list', 'tab', 'list-item', 'dropdown-menu', 'breadcrumb', 'pagination', 'pagination-item', 'side-menu', 'side-menu-item'] },
     { key: 'data',       label: 'Data',       elements: ['table', 'table-row', 'avatar'] }
 ];
 const OTHER_CATEGORY = { key: 'other', label: 'Other', elements: [] };
@@ -153,7 +153,11 @@ const ELEMENTS = [
     _el('accordion', 'Accordion', null, ['default'],
         [_border(), _radius(), _gap()]),
     _el('accordion-item', 'Accordion item', ['open', 'closed'], FORM_STATES,
-        [_bg(), _textPart('trigger', 'Trigger'), _icon(), _border(), _paddingXY(), _textPart('content', 'Content'), _gap(), _ring()])
+        [_bg(), _textPart('trigger', 'Trigger'), _icon(), _border(), _paddingXY(), _textPart('content', 'Content'), _gap(), _ring()]),
+    _el('side-menu', 'Side menu', null, ['default'],
+        [_bg(), _border(), _padding(), _gap(), _textPart('title', 'Title')]),
+    _el('side-menu-item', 'Side menu item', ['inactive', 'active'], FORM_STATES,
+        [_bg(), _text(), _icon(), _radius(), _paddingXY(), _gap(), _ring()])
 ];
 
 // --- Seeds (shadcn/ui defaults, Tailwind refs) -------------------------------
@@ -448,6 +452,29 @@ const SEED_SPEC = {
             '*.focus': { 'ring.color': 'color.ring' },
             '*.disabled': { bg: 'color.muted', 'trigger.color': 'color.muted-foreground', icon: 'color.muted-foreground', 'content.color': 'color.muted-foreground' }
         }
+    },
+    'side-menu': {
+        base: {
+            bg: 'color.sidebar',
+            'border.color': 'color.sidebar-border', 'border.width': 'border.width.1', 'border.style': 'border.style.solid',
+            padding: 'space.2', gap: 'space.1',
+            'title.color': 'color.sidebar-foreground', 'title.type': 'type.caption'
+        }
+    },
+    'side-menu-item': {
+        base: {
+            'text.type': 'type.label', radius: 'radius.sm', 'padding.x': 'space.2', 'padding.y': 'space.1.5', gap: 'space.2',
+            'ring.color': 'color.sidebar-ring', 'ring.width': 'border.width.2'
+        },
+        variants: {
+            inactive: { bg: 'palette.transparent', 'text.color': 'color.sidebar-foreground', icon: 'color.sidebar-foreground' },
+            active: { bg: 'color.sidebar-accent', 'text.color': 'color.sidebar-accent-foreground', icon: 'color.sidebar-primary' }
+        },
+        states: {
+            'inactive.hover': { bg: 'color.sidebar-accent', 'text.color': 'color.sidebar-accent-foreground', icon: 'color.sidebar-accent-foreground' },
+            '*.focus': { 'ring.color': 'color.sidebar-ring' },
+            '*.disabled': DISABLED_BOX
+        }
     }
 };
 
@@ -722,7 +749,8 @@ const GALLERY_ICONS = {
     user: '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0 1 10.5 0"/>',
     x: '<path d="M4 4l8 8M12 4l-8 8"/>',
     chevrons: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>',
-    'chevron-right': '<path d="M6 4l4 4-4 4"/>'
+    'chevron-right': '<path d="M6 4l4 4-4 4"/>',
+    home: '<path d="M2.5 8L8 3l5.5 5"/><path d="M4 6.5V13h8V6.5"/>'
 };
 
 function galleryIcon(name, cls, part) {
@@ -836,6 +864,21 @@ function renderAccordionItem(variant, state, title, body) {
 // gap between items (both land on this box, never a child) can select.
 function renderAccordion(state, itemsHtml) {
     return `<div ${rootAttrs('accordion', null, state, 'border')}>${itemsHtml}</div>`;
+}
+
+// A real <a>, unlike List item's non-interactive <div> - a nav row has a
+// ring/focus part, so it needs to be genuinely focusable.
+function renderSideMenuItem(variant, state, label, icon) {
+    return `<a href="#" role="menuitem" ${rootAttrs('side-menu-item', variant, state, 'bg')}>` +
+        galleryIcon(icon, 'ds-side-menu-item-icon', 'icon') +
+        `<span class="ds-side-menu-item-text" data-part="text">${label}</span></a>`;
+}
+
+function renderSideMenu(state, title, itemsHtml) {
+    return `<nav ${rootAttrs('side-menu', null, state, 'bg')}>` +
+        `<p class="ds-side-menu-title" data-part="title">${title}</p>` +
+        itemsHtml +
+        '</nav>';
 }
 
 const GALLERY_RENDERERS = {
@@ -962,7 +1005,15 @@ const GALLERY_RENDERERS = {
             renderAccordionItem('open', 'default', 'Is it accessible?', 'Yes. It adheres to the WAI-ARIA design pattern.') +
             renderAccordionItem('closed', 'default', 'Is it styled?', '')),
     'accordion-item': (variant, state) =>
-        renderAccordion('default', renderAccordionItem(variant, state, 'Is it accessible?', 'Yes. It adheres to the WAI-ARIA design pattern.'))
+        renderAccordion('default', renderAccordionItem(variant, state, 'Is it accessible?', 'Yes. It adheres to the WAI-ARIA design pattern.')),
+    'side-menu': (variant, state) =>
+        renderSideMenu(state, 'Workspace',
+            renderSideMenuItem('inactive', 'default', 'Home', 'home') +
+            renderSideMenuItem('active', 'default', 'Profile', 'user') +
+            renderSideMenuItem('inactive', 'default', 'Billing', 'plus') +
+            renderSideMenuItem('inactive', 'default', 'Tasks', 'check') +
+            renderSideMenuItem('inactive', 'default', 'Notifications', 'info')),
+    'side-menu-item': (variant, state) => renderSideMenu('default', 'Workspace', renderSideMenuItem(variant, state, capitalize(variant), 'user'))
 };
 
 function renderGalleryInstance(elementKey, variant, state) {

@@ -27,7 +27,8 @@
 .ds-tab:is(:focus-visible:not([data-state]), [data-state="focus"]),
 .ds-combobox:is(:focus-visible:not([data-state]), [data-state="focus"]),
 .ds-pagination-item:is(:focus-visible:not([data-state]), [data-state="focus"]),
-.ds-accordion-item:is(:focus-within:not([data-state]), [data-state="focus"]) {
+.ds-accordion-item:is(:focus-within:not([data-state]), [data-state="focus"]),
+.ds-side-menu-item:is(:focus-visible:not([data-state]), [data-state="focus"]) {
     outline: var(--_ring-width) solid var(--_ring-color);
     outline-offset: 2px;
 }
@@ -50,7 +51,8 @@
 .ds-list-item[aria-disabled="true"],
 .ds-combobox[aria-disabled="true"],
 .ds-pagination-item:is(:disabled, [aria-disabled="true"]),
-.ds-accordion-item[aria-disabled="true"] {
+.ds-accordion-item[aria-disabled="true"],
+.ds-side-menu-item[aria-disabled="true"] {
     cursor: not-allowed;
 }
 
@@ -67,7 +69,8 @@
 .ds-list-item,
 .ds-dropdown-menu,
 .ds-combobox,
-.ds-pagination-item {
+.ds-pagination-item,
+.ds-side-menu-item {
     color: var(--_text-color);
     font-family: var(--_text-family);
     font-weight: var(--_text-weight);
@@ -91,7 +94,8 @@
 .ds-card-title,
 .ds-alert-title,
 .ds-dialog-title,
-.ds-toast-title {
+.ds-toast-title,
+.ds-side-menu-title {
     margin: 0;
     color: var(--_title-color);
     font-family: var(--_title-family);
@@ -147,7 +151,8 @@
     .ds-list-item,
     .ds-combobox,
     .ds-pagination-item,
-    .ds-accordion-item {
+    .ds-accordion-item,
+    .ds-side-menu-item {
         transition: background-color 150ms, color 150ms, border-color 150ms, box-shadow 150ms, outline-color 150ms;
     }
     .ds-switch-thumb {
@@ -890,4 +895,45 @@
     font-size: var(--_content-size);
     line-height: var(--_content-leading);
     letter-spacing: var(--_content-tracking);
+}
+
+/* --- Side menu -------------------------------------------------------------
+ * The host is a flush vertical panel (no radius part - it sits flat against
+ * a window edge); its own background/border/padding/gap paint around the
+ * title and the stack of items. Each item is a real <a> (a genuine nav
+ * link, unlike List item's non-interactive <div>), sized like List item.
+ */
+
+.ds-side-menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    padding: var(--_padding);
+    background: var(--_bg);
+    border: var(--_border-width) var(--_border-style) var(--_border-color);
+}
+
+.ds-side-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--_gap);
+    padding: var(--_padding-y) var(--_padding-x);
+    background: var(--_bg);
+    border-radius: var(--_radius);
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ds-side-menu-item-icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    color: var(--_icon);
+}
+
+.ds-side-menu-item-text {
+    flex: 1;
+    min-inline-size: 0;
+    color: var(--_text-color);
 }

@@ -140,6 +140,9 @@ body {
    the gallery so their body copy wraps instead of stretching the row. */
 .gallery-stage > :is(.ds-card, .ds-alert, .ds-popover, .ds-table, .ds-tabs-list, .ds-dialog, .ds-dropdown-menu, .ds-toast, .ds-accordion, .gallery-stack) { max-inline-size: 32rem; }
 
+/* Side menu is a narrow, tall panel rather than a wide compound one. */
+.gallery-stage > .ds-side-menu { max-inline-size: 16rem; }
+
 /* Dialog's overlay is the stage's own dimmed frame around the panel. */
 .gallery-stage > .ds-dialog { padding: var(--pg-space-8); border-radius: var(--pg-radius-lg); }
 
