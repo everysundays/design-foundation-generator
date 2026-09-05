@@ -5,9 +5,15 @@
 // living in the browser's localStorage. Run via `docker compose up` here, or
 // directly with `node server.js`.
 //
-// One endpoint: POST /api/systems/:name, body = the same shape scripts.js's
-// buildSystemSnapshot() produces ({source, palette, vars, tokenLinks,
-// components, customScale}).
+// Two endpoints, both /api/systems/:name:
+//   POST   body = the same shape scripts.js's buildSystemSnapshot() produces
+//          ({source, palette, vars, tokenLinks, components, customScale}) -
+//          writes/overwrites <name>.json.
+//   DELETE removes <name>.json (404 when it's already gone; the caller,
+//          scripts.js's deleteRepoSystem, treats 2xx and 404 alike as "gone").
+// Both re-run writeIndex() on success so systems/index.json - what the
+// picker's Repo group actually reads (see scripts.js:loadRepoSystems), over
+// the static file server, not this one - stays in sync.
 
 const http = require('http');
 const fs = require('fs');
@@ -25,7 +31,7 @@ fs.mkdirSync(SYSTEMS_DIR, { recursive: true });
 
 function withCors(res) {
     res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
@@ -83,29 +89,52 @@ const server = http.createServer(async (req, res) => {
     withCors(res);
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
+    // Name validation runs before the method check (and so applies to POST
+    // and DELETE alike): an invalid name is refused no matter what the
+    // caller was trying to do to it.
     const match = /^\/api\/systems\/([^/]+)$/.exec(req.url.split('?')[0]);
-    if (req.method !== 'POST' || !match) { sendJson(res, 404, { error: 'Not found' }); return; }
+    if (!match) { sendJson(res, 404, { error: 'Not found' }); return; }
 
     const filePath = systemFilePath(match[1]);
     if (!filePath) { sendJson(res, 400, { error: 'Invalid system name' }); return; }
 
-    let raw;
-    try { raw = await readBody(req); } catch (e) { sendJson(res, 413, { error: e.message }); return; }
+    if (req.method === 'POST') {
+        let raw;
+        try { raw = await readBody(req); } catch (e) { sendJson(res, 413, { error: e.message }); return; }
 
-    let system;
-    try { system = JSON.parse(raw); } catch (e) { sendJson(res, 400, { error: 'Body is not valid JSON' }); return; }
+        let system;
+        try { system = JSON.parse(raw); } catch (e) { sendJson(res, 400, { error: 'Body is not valid JSON' }); return; }
 
-    try {
-        fs.writeFileSync(filePath, JSON.stringify(system, null, 2) + '\n');
-        writeIndex();
-    } catch (e) {
-        console.error('Write failed:', e);
-        sendJson(res, 500, { error: 'Could not write file' });
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(system, null, 2) + '\n');
+            writeIndex();
+        } catch (e) {
+            console.error('Write failed:', e);
+            sendJson(res, 500, { error: 'Could not write file' });
+            return;
+        }
+
+        console.log(`Saved ${path.relative(process.cwd(), filePath)}`);
+        sendJson(res, 200, { ok: true, path: path.relative(path.join(__dirname, '..', '..'), filePath) });
         return;
     }
 
-    console.log(`Saved ${path.relative(process.cwd(), filePath)}`);
-    sendJson(res, 200, { ok: true, path: path.relative(path.join(__dirname, '..', '..'), filePath) });
+    if (req.method === 'DELETE') {
+        try {
+            fs.unlinkSync(filePath);
+        } catch (e) {
+            if (e.code === 'ENOENT') { sendJson(res, 404, { error: 'Not found' }); return; }
+            console.error('Delete failed:', e);
+            sendJson(res, 500, { error: 'Could not delete file' });
+            return;
+        }
+        writeIndex();
+        console.log(`Deleted ${path.relative(process.cwd(), filePath)}`);
+        sendJson(res, 200, { ok: true, path: path.relative(path.join(__dirname, '..', '..'), filePath) });
+        return;
+    }
+
+    sendJson(res, 404, { error: 'Not found' });
 });
 
 server.listen(PORT, () => {

@@ -10,6 +10,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
 const assert = require('assert');
 const { spawn } = require('child_process');
 
@@ -24,6 +25,26 @@ async function test(name, fn) {
 
 function readIndex(dir) {
     return JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
+}
+
+// A literal ".." path segment never reaches the server through fetch()/the
+// WHATWG URL parser - both resolve dot-segments client-side, so
+// `fetch(base + '/api/systems/..')` actually requests `/api/` and never
+// exercises systemFilePath's own ".." check at all. Node's raw http.request
+// sends whatever `path` it's given, unnormalized - the same as a plain curl
+// or any client that isn't URL-parsing the string - so that's what this
+// drives for the literal-".." case below.
+function rawRequest(baseUrl, method, rawPath) {
+    const url = new URL(baseUrl);
+    return new Promise((resolve, reject) => {
+        const req = http.request({ host: url.hostname, port: url.port, path: rawPath, method }, (res) => {
+            let body = '';
+            res.on('data', (chunk) => { body += chunk; });
+            res.on('end', () => resolve({ status: res.statusCode, body }));
+        });
+        req.on('error', reject);
+        req.end();
+    });
 }
 
 // Starts server.js against `dir` on a random high port; resolves once its
@@ -122,6 +143,65 @@ async function main() {
         try {
             await test('an empty SYSTEMS_DIR starts up with index.json === []', () => {
                 assert.deepStrictEqual(readIndex(dir), []);
+            });
+        } finally {
+            await server.stop();
+        }
+    })();
+
+    // --- DELETE /api/systems/:name ---
+    await (async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-editor-save-server-delete-'));
+        fs.writeFileSync(path.join(dir, 'Foo.json'), '{}');
+        fs.writeFileSync(path.join(dir, 'Bar.json'), '{}');
+
+        const server = await startServer(dir);
+        try {
+            await test('DELETE /api/systems/:name removes the file and re-sorts index.json', async () => {
+                const res = await fetch(`${server.baseUrl}/api/systems/Foo`, { method: 'DELETE' });
+                assert.strictEqual(res.status, 200);
+                const json = await res.json();
+                assert.strictEqual(json.ok, true);
+                assert.strictEqual(fs.existsSync(path.join(dir, 'Foo.json')), false, 'Foo.json should be gone');
+                assert.strictEqual(fs.existsSync(path.join(dir, 'Bar.json')), true, 'Bar.json should be untouched');
+                assert.deepStrictEqual(readIndex(dir), ['Bar']);
+            });
+
+            await test('DELETE of a name already gone returns 404 and leaves index.json unchanged', async () => {
+                const before = fs.readFileSync(path.join(dir, 'index.json'), 'utf8');
+                const res = await fetch(`${server.baseUrl}/api/systems/Missing`, { method: 'DELETE' });
+                assert.strictEqual(res.status, 404);
+                assert.strictEqual(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'), before);
+            });
+
+            await test('DELETE refuses a name with a path separator or ".." and removes nothing', async () => {
+                const before = fs.readFileSync(path.join(dir, 'index.json'), 'utf8');
+                const filesBefore = fs.readdirSync(dir).sort();
+
+                // Encoded traversal attempts: no literal "/" in the request
+                // line, so they reach systemFilePath's decode-then-check.
+                for (const encoded of ['a%2Fb', '..%2Fx']) {
+                    const res = await fetch(`${server.baseUrl}/api/systems/${encoded}`, { method: 'DELETE' });
+                    assert.strictEqual(res.status, 400, `expected 400 for "${encoded}", got ${res.status}`);
+                }
+                // A literal ".." (see rawRequest's comment - fetch can't send this one).
+                const dotdot = await rawRequest(server.baseUrl, 'DELETE', '/api/systems/..');
+                assert.strictEqual(dotdot.status, 400, `expected 400 for literal "..", got ${dotdot.status}`);
+
+                // A literal "/" makes it two path segments, which the route
+                // itself doesn't match - 404, not 400, but still refused.
+                const res = await fetch(`${server.baseUrl}/api/systems/a/b`, { method: 'DELETE' });
+                assert.strictEqual(res.status, 404);
+
+                assert.deepStrictEqual(fs.readdirSync(dir).sort(), filesBefore, 'no file should have been added or removed');
+                assert.strictEqual(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'), before, 'index.json changed despite every refused delete');
+            });
+
+            await test('OPTIONS preflight for the systems route advertises DELETE and the allowed origin', async () => {
+                const res = await fetch(`${server.baseUrl}/api/systems/x`, { method: 'OPTIONS' });
+                assert.strictEqual(res.status, 204);
+                assert.ok(/\bDELETE\b/.test(res.headers.get('access-control-allow-methods') || ''), 'Access-Control-Allow-Methods should list DELETE');
+                assert.strictEqual(res.headers.get('access-control-allow-origin'), 'http://localhost:4520');
             });
         } finally {
             await server.stop();

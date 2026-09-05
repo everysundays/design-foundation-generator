@@ -22,6 +22,13 @@
 // system to theme-editor/systems/<name>.json. Independent of localStorage.
 const SAVE_SERVER_URL = 'http://localhost:4521';
 
+// Shared by every place a save-server request can fail to even reach it
+// (Save to repo's error line, the picker's repo-row delete) - one exact
+// string so they read identically instead of drifting apart.
+function saveServerUnreachableText() {
+    return `Couldn't reach the save-server at ${SAVE_SERVER_URL} - is it running? (docker compose up in theme-editor/save-server/)`;
+}
+
 const STORAGE_KEY = 'themeEditor.savedSystems';
 // v1 stored { name: { light, dark } } under this key - still readable, as
 // plain semantic vars (links re-snapped, components re-seeded on load).
@@ -927,21 +934,22 @@ function renderThemePickerList() {
     const search = document.getElementById('themeSearchInput').value.trim().toLowerCase();
     listEl.innerHTML = '';
 
-    const renderRow = (name, vars, deletable) => {
+    // `onDelete` is null for a row with no trash icon at all (presets);
+    // otherwise the callback that actually removes it - a different one per
+    // group (see the dispatch in the loop below), same icon and no-confirm
+    // click either way.
+    const renderRow = (name, vars, onDelete) => {
         const row = document.createElement('button');
         row.className = 'theme-picker-row';
         if (name === state.themeName) row.classList.add('active');
         row.innerHTML = `<span class="theme-swatch-dots">${themeSwatchHtml(vars)}</span><span class="theme-picker-row-name">${name}</span>`;
-        if (deletable) {
+        if (onDelete) {
             const del = document.createElement('span');
             del.className = 'theme-picker-row-delete';
             del.innerHTML = '<i class="fas fa-trash"></i>';
             del.addEventListener('click', (e) => {
                 e.stopPropagation();
-                delete customSystems[name];
-                delete customThemes[name];
-                saveCustomSystems();
-                renderThemePickerList();
+                onDelete();
             });
             row.appendChild(del);
         }
@@ -964,7 +972,20 @@ function renderThemePickerList() {
             listEl.appendChild(label);
             repoLabelShown = true;
         }
-        renderRow(name, varsForRow(name, group), deletable);
+        // Repo rows delete through the save-server (deleteRepoSystem);
+        // browser rows delete straight out of localStorage, no network -
+        // `deletable` (systems.js:listSystems) is only ever true for those.
+        const onDelete = group === 'repo'
+            ? () => deleteRepoSystem(name)
+            : deletable
+                ? () => {
+                    delete customSystems[name];
+                    delete customThemes[name];
+                    saveCustomSystems();
+                    renderThemePickerList();
+                }
+                : null;
+        renderRow(name, varsForRow(name, group), onDelete);
     });
 }
 
@@ -1244,6 +1265,32 @@ async function loadRepoSystems() {
     }));
     const menu = document.getElementById('themePickerMenu');
     if (menu && !menu.hidden) renderThemePickerList();
+}
+
+// Deletes a repo-saved system: DELETE to the save-server (SAVE_SERVER_URL),
+// same server Save to repo posts to. On success (or the file already being
+// gone, 404 - either way it's not on disk) drops `name` from the in-memory
+// repoSystems and re-renders, which is also what lets a same-named browser
+// save (shadowed by the repo copy until now) show through. Never touches
+// customSystems/customThemes or state.themeName, so a system loaded when its
+// file is deleted stays loaded and Save to repo can recreate the file under
+// the same name. On any other failure (server unreachable, 4xx/5xx) leaves
+// repoSystems and the row untouched and surfaces the shared "can't reach"
+// text under the picker list, same as Save to repo's own error line.
+async function deleteRepoSystem(name) {
+    const errorEl = document.getElementById('themePickerError');
+    try {
+        const res = await fetch(`${SAVE_SERVER_URL}/api/systems/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 404) throw new Error(`Server responded ${res.status}`);
+        delete repoSystems[name];
+        renderThemePickerList();
+    } catch (e) {
+        if (errorEl) {
+            errorEl.textContent = saveServerUnreachableText();
+            errorEl.hidden = false;
+        }
+        console.error('Delete from repo failed:', e);
+    }
 }
 
 // --- Preview document ---
@@ -2138,7 +2185,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('themePickerButton').addEventListener('click', () => {
         const menu = document.getElementById('themePickerMenu');
         menu.hidden = !menu.hidden;
-        if (!menu.hidden) { renderThemePickerList(); document.getElementById('themeSearchInput').focus(); }
+        if (!menu.hidden) {
+            const errorEl = document.getElementById('themePickerError');
+            if (errorEl) { errorEl.textContent = ''; errorEl.hidden = true; }
+            renderThemePickerList();
+            document.getElementById('themeSearchInput').focus();
+        }
     });
     document.getElementById('themeSearchInput').addEventListener('input', renderThemePickerList);
     document.addEventListener('click', (e) => {
@@ -2291,7 +2343,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('saveModal').hidden = true;
         } catch (e) {
             if (errorEl) {
-                errorEl.textContent = `Couldn't reach the save-server at ${SAVE_SERVER_URL} - is it running? (docker compose up in theme-editor/save-server/)`;
+                errorEl.textContent = saveServerUnreachableText();
                 errorEl.hidden = false;
             }
             console.error('Save to repo failed:', e);
