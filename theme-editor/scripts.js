@@ -1579,7 +1579,7 @@ function renderPanel() {
     else if (tab === 'shadow') html = safeBuild('buildScalePanelHtml', 'shadow', ctx, { allowAdd: true });
     else if (tab === 'type') html = safeBuild('buildTypePanelHtml', ctx);
     else html = safeBuild('buildSummaryPanelHtml', ctx);
-    body.innerHTML = html;
+    body.innerHTML = safeBuild('buildSelectionStripHtml', ctx) + html;
     if (tab === 'type') {
         mountTypeControls();
         renderTypographyTab();
@@ -1590,6 +1590,12 @@ function renderPanel() {
 // One delegated click handler for every panel: chips choose the prop a kind
 // assigns; refs assign to the active token of their kind.
 function onPanelClick(e) {
+    const pick = e.target.closest('.fp-strip [data-variant], .fp-strip [data-state]');
+    if (pick && pick.closest('#panelBody')) {
+        const sel = state.selection;
+        if (sel) selectElement(sel.element, pick.dataset.variant || sel.variant, sel.part, pick.dataset.state || sel.state);
+        return;
+    }
     const chip = e.target.closest('[data-prop]');
     if (chip && chip.closest('#panelBody')) {
         const kindHolder = chip.closest('[data-kind]');

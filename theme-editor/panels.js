@@ -81,6 +81,32 @@ function buildPropChipsHtml(ctx, kind) {
     ).join('')}</div>`;
 }
 
+// --- Selection strip (variant/state picker) ---
+
+// The one builder that isn't a tab: renderPanel prepends this ahead of
+// whichever tab's own HTML follows (Colors/Space/.../Summary), so picking a
+// variant or state works the same regardless of which tab is open. Reads
+// only elementSpec(ctx.selection.element).variants/states - never ELEMENTS
+// directly - so a custom element (components.js) gets the strip for free
+// with no changes here. Bare: no heading, no note, just the picks.
+function buildSelectionStripHtml(ctx) {
+    const sel = ctx && ctx.selection;
+    if (!sel || typeof elementSpec !== 'function') return '';
+    const spec = elementSpec(sel.element);
+    if (!spec) return '';
+    const pick = (attr, key, label, pressed) =>
+        `<button type="button" class="fp-pick" data-${attr}="${panelEsc(key)}" aria-pressed="${pressed ? 'true' : 'false'}">${panelEsc(label)}</button>`;
+    const variantRow = spec.variants
+        ? `<div class="fp-strip-row fp-strip-variants">${spec.variants.map(v => pick('variant', v, capitalize(v), v === sel.variant)).join('')}</div>`
+        : '';
+    // Defensive fallback mirrors selectElement's own state validation, so the
+    // strip always shows exactly one pressed state pick even if ctx carries
+    // a stale/invalid one.
+    const activeState = spec.states.includes(sel.state) ? sel.state : 'default';
+    const stateRow = `<div class="fp-strip-row fp-strip-states">${spec.states.map(s => pick('state', s, COMPONENT_STATE_LABELS[s] || capitalize(s), s === activeState)).join('')}</div>`;
+    return `<div class="fp-strip">${variantRow}${stateRow}</div>`;
+}
+
 // --- Colors ---
 
 // Light text on a dark step, dark text on a light one (YIQ luma, the usual
