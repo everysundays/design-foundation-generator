@@ -167,6 +167,14 @@ body {
   gap: 2px;
 }
 
+.theme-picker-group-label {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ui-text-muted);
+}
+
 .theme-picker-row {
   display: flex;
   align-items: center;

@@ -15,7 +15,10 @@ const path = require('path');
 
 const PORT = process.env.PORT || 4521;
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:4520';
-const SYSTEMS_DIR = path.join(__dirname, '..', 'systems');
+// Overridable so tests can point a spawned server at a throwaway temp dir
+// instead of the real repo; unset in docker-compose.yml, so the container
+// (which bind-mounts ../systems at /systems) is unaffected.
+const SYSTEMS_DIR = process.env.SYSTEMS_DIR || path.join(__dirname, '..', 'systems');
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 fs.mkdirSync(SYSTEMS_DIR, { recursive: true });
@@ -34,14 +37,33 @@ function sendJson(res, status, body) {
 
 // "Feynman" -> "Feynman.json" inside SYSTEMS_DIR, never outside it - rejects
 // anything containing a path separator or "..", then double-checks the
-// resolved path is still a direct child of SYSTEMS_DIR.
+// resolved path is still a direct child of SYSTEMS_DIR. "index" (any case)
+// is reserved for index.json itself, so a POST can never overwrite the list.
 function systemFilePath(rawName) {
     const name = decodeURIComponent(rawName || '').trim();
     if (!name || /[\\/]/.test(name) || name.includes('..')) return null;
+    if (name.toLowerCase() === 'index') return null;
     const filePath = path.join(SYSTEMS_DIR, `${name}.json`);
     if (path.dirname(filePath) !== SYSTEMS_DIR) return null;
     return filePath;
 }
+
+// The Design system picker's Repo group (theme-editor/systems.js:listSystems)
+// reads this directly off the static file server - every *.json in
+// SYSTEMS_DIR except itself, name sorted alphabetically (localeCompare, so
+// "Zed" sorts with the Zs, not before "a" on raw code-unit order). Rewritten
+// at startup (so a JSON file copied in by hand and picked up by a restart
+// appears) and after every successful write below.
+function writeIndex() {
+    const names = fs.readdirSync(SYSTEMS_DIR)
+        .filter(f => /\.json$/i.test(f) && f.toLowerCase() !== 'index.json')
+        .map(f => f.replace(/\.json$/i, ''))
+        .sort((a, b) => a.localeCompare(b));
+    fs.writeFileSync(path.join(SYSTEMS_DIR, 'index.json'), JSON.stringify(names, null, 2) + '\n');
+    return names;
+}
+
+writeIndex();
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -75,6 +97,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
         fs.writeFileSync(filePath, JSON.stringify(system, null, 2) + '\n');
+        writeIndex();
     } catch (e) {
         console.error('Write failed:', e);
         sendJson(res, 500, { error: 'Could not write file' });

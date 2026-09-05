@@ -148,6 +148,7 @@ function colorDistanceSq(hexA, hexB) {
 let allThemes = [DEFAULT_THEME, ...(typeof tweakcnThemes !== 'undefined' ? tweakcnThemes : [])];
 let customSystems = {};   // name -> normalizeSystem() shape (systems.js): { source, palette, vars, tokenLinks, components, customScale }
 let customThemes = {};    // legacy v1 saves: name -> { light, dark }
+let repoSystems = {};     // name -> normalizeSystem() shape, fetched from theme-editor/systems/ (see loadRepoSystems)
 
 let activePaletteSource = 'tailwind';
 
@@ -363,7 +364,9 @@ function applyLoaded({ name, vars, links, families, components, customScale }) {
 }
 
 function loadTheme(name) {
-    const saved = normalizeSystem(customSystems[name]);
+    // A repo-saved system is canonical: same name in both places, the repo
+    // copy is what loads (and what the picker shows as the single row).
+    const saved = normalizeSystem(repoSystems[name] || customSystems[name]);
     if (saved) {
         if (saved.source !== activePaletteSource) setPaletteSourceUi(saved.source);
         const vars = { light: withFallbacks({ ...saved.vars.light }), dark: withFallbacks({ ...saved.vars.dark }) };
@@ -909,13 +912,22 @@ function renderThemePickerButton() {
     document.getElementById('themeSwatchDots').innerHTML = themeSwatchHtml(currentVars());
 }
 
+// Light-mode vars to draw a row's swatch dots from, looked up by whichever
+// group listSystems said the name won in (repo shadows browser shadows
+// preset - same resolution loadTheme uses, so a row's dots never belong to
+// a different copy than clicking it would load).
+function varsForRow(name, group) {
+    if (group === 'repo') return repoSystems[name].vars.light;
+    if (group === 'browser') return customSystems[name] ? customSystems[name].vars.light : customThemes[name].light;
+    return flattenVars(allThemes.find(t => t.title === name || t.name === name) || DEFAULT_THEME).light;
+}
+
 function renderThemePickerList() {
     const listEl = document.getElementById('themePickerList');
     const search = document.getElementById('themeSearchInput').value.trim().toLowerCase();
     listEl.innerHTML = '';
 
     const renderRow = (name, vars, deletable) => {
-        if (search && !name.toLowerCase().includes(search)) return;
         const row = document.createElement('button');
         row.className = 'theme-picker-row';
         if (name === state.themeName) row.classList.add('active');
@@ -940,9 +952,20 @@ function renderThemePickerList() {
         listEl.appendChild(row);
     };
 
-    Object.entries(customSystems).forEach(([name, sys]) => renderRow(name, sys.vars.light, true));
-    Object.entries(customThemes).forEach(([name, vars]) => { if (!customSystems[name]) renderRow(name, vars.light, true); });
-    allThemes.forEach(theme => renderRow(theme.title, flattenVars(theme).light, false));
+    const rows = listSystems(repoSystems, { systems: customSystems, legacy: customThemes }, allThemes)
+        .filter(row => !search || row.name.toLowerCase().includes(search));
+
+    let repoLabelShown = false;
+    rows.forEach(({ name, group, deletable }) => {
+        if (group === 'repo' && !repoLabelShown) {
+            const label = document.createElement('div');
+            label.className = 'theme-picker-group-label';
+            label.textContent = 'Repo';
+            listEl.appendChild(label);
+            repoLabelShown = true;
+        }
+        renderRow(name, varsForRow(name, group), deletable);
+    });
 }
 
 // --- Color palette popover ---
@@ -1190,6 +1213,37 @@ function loadCustomSystemsFromStorage() {
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (legacy) customThemes = JSON.parse(legacy) || {};
     } catch (e) { console.warn('Could not load saved systems:', e); }
+}
+
+// Repo-saved systems (theme-editor/systems/*.json) for the picker's Repo
+// group - read through whatever serves this page (a fresh clone's static
+// file server included), never through SAVE_SERVER_URL/:4521, so the group
+// appears without the save-server running. Fetched once at startup; a
+// successful Save to repo (see saveToRepoButton below) inserts into
+// repoSystems directly instead of re-fetching. `cache: 'no-store'` because
+// a plain static server sends no Cache-Control, so a browser can otherwise
+// serve a stale index.json/system file after a repo save or a hand edit.
+async function loadRepoSystems() {
+    let names;
+    try {
+        const res = await fetch('systems/index.json', { cache: 'no-store' });
+        names = res.ok ? parseRepoIndex(await res.json()) : null;
+    } catch (e) { names = null; }
+    if (!names) {
+        console.warn('Repo systems list unavailable (systems/index.json missing or unreadable) - showing browser-saved and preset systems only');
+        return;
+    }
+    await Promise.all(names.map(async (name) => {
+        try {
+            const res = await fetch(`systems/${encodeURIComponent(name)}.json`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const normalized = normalizeSystem(await res.json());
+            if (normalized) repoSystems[name] = normalized;
+            else console.warn(`Repo system "${name}" has no vars - skipped`);
+        } catch (e) { /* one unreadable repo file doesn't block the rest */ }
+    }));
+    const menu = document.getElementById('themePickerMenu');
+    if (menu && !menu.hidden) renderThemePickerList();
 }
 
 // --- Preview document ---
@@ -2006,6 +2060,7 @@ function runImport(text) {
 // --- Event wiring ---
 document.addEventListener('DOMContentLoaded', () => {
     loadCustomSystemsFromStorage();
+    loadRepoSystems();
     buildColorPalettePopover();
     loadTheme('Default');
 
@@ -2220,12 +2275,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!name) return;
         if (errorEl) errorEl.hidden = true;
         try {
+            const snapshot = buildSystemSnapshot();
             const res = await fetch(`${SAVE_SERVER_URL}/api/systems/${encodeURIComponent(name)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildSystemSnapshot())
+                body: JSON.stringify(snapshot)
             });
             if (!res.ok) throw new Error(`Server responded ${res.status}`);
+            // Mirrors the localStorage Save above: insert the just-written
+            // snapshot into the in-memory map (no re-fetch) so it shows in
+            // the Repo group immediately, and close the modal the same way.
+            repoSystems[name] = normalizeSystem(snapshot);
+            state.themeName = name;
+            renderThemePickerButton();
+            document.getElementById('saveModal').hidden = true;
         } catch (e) {
             if (errorEl) {
                 errorEl.textContent = `Couldn't reach the save-server at ${SAVE_SERVER_URL} - is it running? (docker compose up in theme-editor/save-server/)`;

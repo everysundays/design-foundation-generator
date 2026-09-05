@@ -19,7 +19,7 @@ const context = vm.createContext({ console });
 ['tailwind-palette.js', 'atlassian-palette.js', 'foundation.js', 'systems.js'].forEach(file => {
     vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
 });
-const { normalizeSystem, foundationOf, emptyCustomScale } = context;
+const { normalizeSystem, foundationOf, emptyCustomScale, listSystems, parseRepoIndex } = context;
 
 const fixture = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/feynman-v3.json'), 'utf8'));
 // normalizeSystem runs inside the vm context, so object/array literals it
@@ -159,6 +159,54 @@ test('vars with only one mode defaults the other to {} (the DoD\'s "Bare" localS
     eq(result.components, {});
     eq(result.customScale, emptyCustomScale());
     assert.strictEqual(result.palette.families.length, 26);
+});
+
+// --- listSystems -----------------------------------------------------------
+// The Design system picker's row list: repo > browser > preset, same-name
+// entries collapsed to whichever group wins. Vars aren't part of the
+// contract here (that needs flattenVars, a scripts.js concern) - just
+// name/group/deletable, in display order.
+
+test('listSystems orders repo > browser > preset and collapses same-name entries', () => {
+    const repo = { Feynman: { vars: { light: {}, dark: {} } } };
+    const browser = {
+        systems: { Feynman: { vars: { light: {}, dark: {} } }, Mine: { vars: { light: {}, dark: {} } } },
+        legacy: { Old: { light: {}, dark: {} } }
+    };
+    const presets = [{ title: 'Default' }, { title: 'Mine' }];
+
+    const rows = listSystems(repo, browser, presets);
+    eq(rows.map(r => r.name), ['Feynman', 'Mine', 'Old', 'Default']);
+    eq(rows.map(r => r.group), ['repo', 'browser', 'browser', 'preset']);
+    eq(rows.map(r => r.deletable), [false, true, true, false]);
+});
+
+test('an empty repo reproduces the pre-repo ordering: browser (systems then legacy), then preset', () => {
+    const browser = { systems: { Mine: { vars: {} } }, legacy: { Old: { light: {}, dark: {} } } };
+    const presets = [{ title: 'Default' }];
+    const rows = listSystems({}, browser, presets);
+    eq(rows.map(r => r.name), ['Mine', 'Old', 'Default']);
+    eq(rows.map(r => r.group), ['browser', 'browser', 'preset']);
+});
+
+test('a preset is named by `name` when it has no `title`, and nameless entries are skipped', () => {
+    const rows = listSystems({}, { systems: {}, legacy: {} }, [{ name: 'legacy-name' }, {}, { title: 'Default' }]);
+    eq(rows.map(r => r.name), ['legacy-name', 'Default']);
+});
+
+test('listSystems tolerates missing repo/browser/presets instead of throwing', () => {
+    eq(listSystems(undefined, undefined, undefined), []);
+    eq(listSystems(null, { systems: null, legacy: null }, null), []);
+});
+
+// --- parseRepoIndex ----------------------------------------------------
+
+test('parseRepoIndex accepts an array of non-empty names (including empty), rejects everything else', () => {
+    eq(parseRepoIndex(['Feynman', 'Other']), ['Feynman', 'Other']);
+    eq(parseRepoIndex([]), []);
+    [null, undefined, 'Feynman', { Feynman: true }, 42, [1, 2], ['Feynman', ''], ['Feynman', null]].forEach(bad => {
+        assert.strictEqual(parseRepoIndex(bad), null, `parseRepoIndex(${JSON.stringify(bad)}) should be null`);
+    });
 });
 
 console.log(`\n${passed} test group(s) passed${process.exitCode ? ', with failures' : ''}`);

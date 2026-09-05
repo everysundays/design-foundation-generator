@@ -31,3 +31,51 @@ function normalizeSystem(raw) {
         customScale: cloneCustomScale(raw.customScale)
     };
 }
+
+// parseRepoIndex(parsed) - validates the parsed JSON body of the repo's
+// systems/index.json (an array of non-empty names, nothing else). Returns
+// the array unchanged when valid, else null - the caller (scripts.js's
+// loadRepoSystems) treats null the same as a missing/unreadable file: log
+// one warning, show no repo rows.
+function parseRepoIndex(parsed) {
+    if (!Array.isArray(parsed)) return null;
+    if (!parsed.every(name => typeof name === 'string' && name.length > 0)) return null;
+    return parsed;
+}
+
+// listSystems(repo, browser, presets) - the Design system picker's full row
+// list, in display order, with same-name entries collapsed to whichever
+// source wins.
+//
+// `repo`     name -> normalized system (systems/<name>.json, via the static
+//            file server - see loadRepoSystems). Wins any name collision:
+//            it is the canonical copy once a system has been saved to repo.
+// `browser`  { systems, legacy } - scripts.js's two localStorage-backed
+//            maps (customSystems, the v3 shape this module normalizes; and
+//            customThemes, the older v1 { light, dark } shape).
+// `presets`  the built-in/tweakcn theme list (allThemes) - objects with a
+//            `title` (or `name`).
+//
+// Order is repo, then browser (systems before legacy), then preset; the
+// first group to name a given name wins and later duplicates are dropped,
+// so a browser save shadowed by a repo file of the same name renders (and
+// loads) as a single row. Rows don't carry `vars` - resolving a name's
+// colors for the swatch dots means looking in the right one of those three
+// places, which is a scripts.js concern (flattenVars for presets), not
+// this foundation-only module's.
+function listSystems(repo, browser, presets) {
+    const seen = new Set();
+    const rows = [];
+    const add = (name, group, deletable) => {
+        if (!name || seen.has(name)) return;
+        seen.add(name);
+        rows.push({ name, group, deletable });
+    };
+    Object.keys(repo || {}).forEach(name => add(name, 'repo', false));
+    const browserSystems = (browser && browser.systems) || {};
+    const browserLegacy = (browser && browser.legacy) || {};
+    Object.keys(browserSystems).forEach(name => add(name, 'browser', true));
+    Object.keys(browserLegacy).forEach(name => add(name, 'browser', true));
+    (presets || []).forEach(theme => add(theme && (theme.title || theme.name), 'preset', false));
+    return rows;
+}
