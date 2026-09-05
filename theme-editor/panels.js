@@ -228,13 +228,21 @@ function panelFirstFamily(value) {
     return String(value || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
 }
 
+const TYPE_POOL_GENERICS = { sans: 'sans-serif', serif: 'serif', mono: 'monospace' };
+
 // Inline style for a set's specimen from the actual var values (the sidebar
 // document has no --type-* vars to lean on).
 function panelTypeSetStyle(vars, set) {
     const key = set.key;
     let family = vars[`type-${key}-family`] || `var(--font-${set.family})`;
     const ref = family.match(/^var\(--font-(sans|serif|mono)\)$/);
-    if (ref) family = vars[`font-${ref[1]}`] || { sans: 'sans-serif', serif: 'serif', mono: 'monospace' }[ref[1]];
+    const pool = ref ? ref[1] : set.family;
+    if (ref) family = vars[`font-${pool}`] || TYPE_POOL_GENERICS[pool];
+    // A bare face (the Sans/Serif/Mono selects write e.g. "Poppins" with no
+    // fallback) would render in the browser's default serif while the
+    // Google font loads or if it fails - append the pool's generic so the
+    // fallback is at least the right kind of face.
+    if (!family.includes(',') && family !== TYPE_POOL_GENERICS[pool]) family += `, ${TYPE_POOL_GENERICS[pool]}`;
     const weight = vars[`type-${key}-weight`] || set.weight;
     const size = vars[`type-${key}-size`] || `${set.size}rem`;
     const leading = vars[`type-${key}-leading`] || `${set.leading}rem`;

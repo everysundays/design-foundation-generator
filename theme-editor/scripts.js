@@ -1324,6 +1324,11 @@ function renderPreview() {
     const vars = currentVars();
     const links = tokenLinks[state.mode];
     const doc = previewDocument();
+    // The sidebar's type specimens are inline-styled font-family (panels.js
+    // panelTypeSetStyle) so this document needs the same Google Fonts <link>
+    // the iframe gets - otherwise a chosen web font renders as the browser's
+    // fallback serif here while the preview shows the real face.
+    syncPreviewTypeHead(document, vars);
     if (doc) {
         doc.getElementById('theme-vars').textContent = themeVarsCss(vars, links);
         syncPreviewTypeHead(doc, vars);
