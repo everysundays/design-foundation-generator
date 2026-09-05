@@ -4,8 +4,9 @@
 // color roles and grows as the user adds their own ("+ Add" row - see
 // scripts.js addSemanticColorToken / addSemanticScaleToken). Pure
 // data/validation helpers only - no DOM, no editor state; scripts.js owns
-// state.semanticTokens and is the only caller. Loaded after dtcg.js, before
-// scripts.js - dtcg.js must never call into this file (see
+// state.semanticTokens and is the only caller. Loaded after components.js
+// (semanticTokenUsers, card 15, calls its componentUsage) and dtcg.js,
+// before scripts.js - dtcg.js must never call into this file (see
 // tests/dtcg.test.js's smaller loader, which has no semantic.js and keeps
 // its own copy of the role list for that reason).
 //
@@ -247,8 +248,10 @@ function semanticVarLines(list, kind) {
 // is resolving THROUGH a token to the set it aliases, with a safe fallback,
 // and a name check against the live set list instead of scaleEntries().
 // TYPE_SETS itself lives in scripts.js (typesets.js once card 39 lands) and
-// is always passed in here as `typeSets`, never read as a global, so this
-// file's only dependency stays foundation.js.
+// is always passed in here as `typeSets`, never read as a global - kept
+// that way even though semanticTokenUsers (card 15, below) now also calls
+// components.js's componentUsage, so this file's only OTHER dependency is
+// foundation.js.
 
 // The set a token falls back to when its own target is missing: Body (the
 // natural default, and card 41's own re-point target for a removed set) -
@@ -338,13 +341,30 @@ function isTokenRenamable(token) {
     return !(token && token.kind === 'color' && token.name === 'shadow-color');
 }
 
+// True while some CURRENT token still claims `builtinRole` (renamed or not)
+// - false once it's been DELETED (card 15), never merely renamed (a rename
+// always keeps the builtin identity moving with the token - see renameToken
+// below). scripts.js renderFoldableGroups (the Summary tab's grouped
+// built-in rows, keyed by ALL_COLOR_GROUPS' fixed field list) checks this
+// BEFORE rendering a field's row at all: builtinTokenName's own fallback
+// (the role's own name, unchanged) exists only so a chrome var/export never
+// dangles when nothing claims a role - it is not a signal that the role is
+// still "there" to show a row for.
+function hasBuiltinToken(list, builtinRole) {
+    return (Array.isArray(list) ? list : []).some(t => t && t.kind === 'color' && t.builtin === builtinRole);
+}
+
 // The CURRENT name of whichever color token plays a built-in role (e.g.
 // resolving 'background' after it's been renamed to 'canvas') - scripts.js
 // cssVarBlockFor uses this to alias the four preview-chrome vars
 // (--pg-bg/-fg/-ring/-muted-fg) that preview/pages.css reads directly,
 // instead of the built-in's own (possibly stale) var name. Falls back to
-// `builtinRole` itself when no token claims it (a corrupt/stripped list),
-// so a chrome var always resolves to SOMETHING rather than dangling.
+// `builtinRole` itself when no token claims it (a corrupt/stripped list, or
+// - card 15 - the role has been deleted outright: background/foreground/
+// ring/muted-foreground can never actually reach that state, since
+// semantic.js's own SEMANTIC_FIXED_USERS always refuses deleting any of the
+// four this function's only OTHER caller aliases), so a chrome var always
+// resolves to SOMETHING rather than dangling.
 function builtinTokenName(list, builtinRole) {
     const found = (Array.isArray(list) ? list : []).find(t => t && t.kind === 'color' && t.builtin === builtinRole);
     return found ? found.name : builtinRole;
@@ -409,4 +429,69 @@ function renameToken(system, kind, oldName, newName) {
     });
 
     return { semanticTokens, vars: newVars, tokenLinks: newLinks, components: newComponents };
+}
+
+// --- Delete a semantic token (card 15) --------------------------------------
+
+// The DoD's own two non-part users, keyed by a color token's stable
+// `builtin` identity - never its current name, so a RENAMED built-in (card
+// 14: "background" renamed to "canvas") is still caught, exactly like
+// cssVarBlockFor's PREVIEW_CHROME_ROLES alias still finds it by builtin to
+// paint --pg-bg. No other kind has a fixed user - a space/radius/border/
+// shadow/type token is only ever "in use" through a component part.
+const SEMANTIC_FIXED_USERS = {
+    'shadow-color': 'every shadow step',
+    background: 'the preview page',
+    foreground: 'the preview page',
+    ring: 'the preview page',
+    'muted-foreground': 'the preview page'
+};
+
+// { ids: [id, …], fixed: string|null } - everything keeping `kind name` from
+// being deleted; both empty/null means it's safe to delete. `ids` walks
+// componentUsage with { seededStates: true } (components.js, card 15) - the
+// same resolved chain componentVarLines draws the preview from - so a part
+// that uses the token only by INHERITING it (no explicit assignment of its
+// own, seeded or not) still counts, per the DoD's "including parts that use
+// it by default without an explicit assignment". `fixed` is null for every
+// kind but color, and for a color token with no builtin identity (a plain
+// user-added token, or shadow-color's OWN name is unrenamable so it can
+// never move away from that key). `components` is the live state.components
+// object (or {} - nothing is in use yet).
+function semanticTokenUsers(kind, name, list, components) {
+    const tokens = Array.isArray(list) ? list : [];
+    const token = tokens.find(t => t && t.kind === kind && t.name === name);
+    const ref = kind === 'color' ? `color.${name}` : scaleRef(kind, name);
+    const usage = typeof componentUsage === 'function' ? componentUsage(components, { seededStates: true }) : {};
+    const fixed = (kind === 'color' && token) ? (SEMANTIC_FIXED_USERS[token.builtin] || null) : null;
+    return { ids: usage[ref] || [], fixed };
+}
+
+// A NEW { semanticTokens, vars, tokenLinks } with `kind name` removed - pure,
+// never mutates its arguments (same contract as renameToken). A color
+// token's value lives in vars/tokenLinks (both modes), so both are cleaned
+// there too; every other kind's value lives entirely in the token's own
+// `ref` field (see the file header - a non-color token has no separate
+// value store), so dropping the list entry is the whole of it. Whether the
+// token is actually safe to delete is semanticTokenUsers' job, checked by
+// the CALLER (scripts.js removeSemanticToken) BEFORE this is ever invoked -
+// this function itself never checks usage and always deletes, matching
+// renameToken's "validation is the caller's job" contract. A name not
+// present in `list` is a no-op that still returns fresh copies of
+// everything, so it's always safe to call.
+function deleteSemanticToken(system, kind, name) {
+    const sys = system || {};
+    const tokens = Array.isArray(sys.semanticTokens) ? sys.semanticTokens : [];
+    const vars = sys.vars || {};
+    const tokenLinks = sys.tokenLinks || {};
+    const semanticTokens = tokens.filter(t => !(t && t.kind === kind && t.name === name));
+    const newVars = { light: { ...(vars.light || {}) }, dark: { ...(vars.dark || {}) } };
+    const newLinks = { light: { ...(tokenLinks.light || {}) }, dark: { ...(tokenLinks.dark || {}) } };
+    if (kind === 'color') {
+        ['light', 'dark'].forEach(mode => {
+            delete newVars[mode][name];
+            delete newLinks[mode][name];
+        });
+    }
+    return { semanticTokens, vars: newVars, tokenLinks: newLinks };
 }

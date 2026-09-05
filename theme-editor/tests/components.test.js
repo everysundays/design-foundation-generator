@@ -272,4 +272,19 @@ ok(!/ src=/.test(html), 'no src attributes');
     ok(remapped['card.bg'] === 'color.card', 'colors untouched');
 }
 
+// --- componentUsage({ seededStates: true }) (card 15: "Delete a semantic
+// token" needs every id x state resolved, not only explicit entries, so a
+// part that uses a role only by INHERITING a seed - or a seeded state
+// override with no explicit assignment of its own - still counts as usage). --
+{
+    const seeded = g.componentUsage({}, { seededStates: true });
+    ok(seeded['color.accent'].includes('button.outline.bg.hover'), 'seededStates: a seeded state override with no explicit entry counts as usage');
+    ok(seeded['color.accent'].includes('button.ghost.bg.hover'), 'seededStates: every seeded state override is found, not just the first');
+    ok(seeded['color.primary'].includes('button.primary.bg'), 'seededStates: a seeded DEFAULT assignment still counts too');
+    // The default (no options) path is unchanged - it still skips a seeded
+    // state override with no explicit entry (the very gap seededStates closes).
+    const plain = g.componentUsage({});
+    ok(!(plain['color.accent'] || []).includes('button.outline.bg.hover'), 'the default componentUsage(components) call is unchanged - still skips seeded states');
+}
+
 console.log(`components.test.js: ${checks} checks passed`);

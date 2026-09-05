@@ -607,6 +607,65 @@ function renameSemanticToken(kind, oldName, newName) {
     return null;
 }
 
+// The Summary tab's per-row delete refusal (card 15): one line naming the
+// DoD's two fixed non-part users when present (semantic.js
+// SEMANTIC_FIXED_USERS, via semanticTokenUsers' `fixed`), then one line
+// listing the parts using it - elementLabel(element, variant, part) plus
+// " · <state>" for a non-default state - de-duplicated and capped like
+// panelTip. Both lines render together when both apply (all four
+// preview-page roles are also seeded onto real parts by default). `ref` is
+// the token's own ref (e.g. "color.primary", "space.card-padding"), used
+// only for the fixed-user line's wording.
+function formatTokenUsers(ref, users) {
+    const lines = [];
+    if (users.fixed) lines.push(`${ref} is used by ${users.fixed}.`);
+    const seen = new Set();
+    const partLabels = [];
+    users.ids.forEach(id => {
+        const parts = typeof tokenIdParts === 'function' ? tokenIdParts(id) : null;
+        if (!parts) return;
+        const label = elementLabel(parts.element, parts.variant, parts.part) + (parts.state !== 'default' ? ` · ${parts.state}` : '');
+        if (seen.has(label)) return;
+        seen.add(label);
+        partLabels.push(label);
+    });
+    if (partLabels.length) {
+        const shown = partLabels.slice(0, 6);
+        const rest = partLabels.length - shown.length;
+        lines.push(`used by ${shown.join(', ')}${rest > 0 ? ` (+${rest})` : ''}`);
+    }
+    return lines.join('\n');
+}
+
+// Deletes the semantic token named by a Summary-tab row's delete control
+// (card 15 - createColorFieldRow / panels.js buildTokenDeleteHtml; routed
+// here from onPanelClick's [data-delete-token] branch below). Refused - with
+// the list of parts using it and/or the DoD's fixed non-part user - when in
+// use; a refusal never touches state, only the row's own inline error slot
+// (so nothing else re-renders and no undo step is pushed). One undo step on
+// success; the actual rewrite is semantic.js's pure deleteSemanticToken.
+function removeSemanticToken(btn) {
+    const parsed = parseRef(btn.dataset.deleteToken);
+    if (!parsed) return;
+    const { kind, name } = parsed;
+    const row = btn.closest('.color-field-row, .fp-semantic-token-row');
+    const errorEl = (row || btn.parentElement).querySelector('[data-delete-error]');
+    const users = semanticTokenUsers(kind, name, state.semanticTokens, state.components);
+    if (users.ids.length || users.fixed) {
+        if (errorEl) {
+            errorEl.textContent = formatTokenUsers(btn.dataset.deleteToken, users);
+            errorEl.hidden = false;
+        }
+        return;
+    }
+    pushUndo();
+    const result = deleteSemanticToken({ semanticTokens: state.semanticTokens, vars: state.vars, tokenLinks }, kind, name);
+    state.semanticTokens = result.semanticTokens;
+    state.vars = result.vars;
+    tokenLinks = result.tokenLinks;
+    renderAll();
+}
+
 function updateUndoRedoButtons() {
     document.getElementById('undoButton').disabled = undoStack.length === 0;
     document.getElementById('redoButton').disabled = redoStack.length === 0;
@@ -643,6 +702,16 @@ function renderFoldableGroups(groups, container) {
     const vars = currentVars();
 
     groups.forEach(group => {
+        // A field whose built-in role has been DELETED (card 15) - never
+        // merely renamed - is dropped from its group entirely: builtinTokenName's
+        // own fallback (the role's own, now-orphaned name) exists only so a
+        // chrome var/export never dangles, not as a signal the role is still
+        // "there" to show a row for. A group left with nothing survives it
+        // (every one of its roles deleted) renders no <details> at all, same
+        // as an empty foldable section anywhere else in this app.
+        const fields = group.fields.filter(([key]) => hasBuiltinToken(state.semanticTokens, key));
+        if (!fields.length) return;
+
         const details = document.createElement('details');
         details.className = 'color-group';
         details.dataset.group = group.key;
@@ -657,7 +726,7 @@ function renderFoldableGroups(groups, container) {
         summaryText.textContent = group.label;
         const summarySwatches = document.createElement('span');
         summarySwatches.className = 'color-group-fold-swatches';
-        group.fields.forEach(([key]) => {
+        fields.forEach(([key]) => {
             const dot = document.createElement('span');
             dot.className = 'color-group-fold-swatch';
             dot.style.backgroundColor = cssColorToHex(vars[groupFieldCurrentKey(key)]) || '#000000';
@@ -668,7 +737,7 @@ function renderFoldableGroups(groups, container) {
 
         const body = document.createElement('div');
         body.className = 'color-group-body';
-        group.fields.forEach(([key]) => body.appendChild(createColorFieldRow(groupFieldCurrentKey(key), vars)));
+        fields.forEach(([key]) => body.appendChild(createColorFieldRow(groupFieldCurrentKey(key), vars)));
         details.appendChild(body);
         container.appendChild(details);
     });
@@ -786,10 +855,13 @@ function renderSemanticRolesIfMounted() {
 // One semantic color row: swatch, a rename control (card 14 - click the
 // name, type, Enter to confirm, Escape to cancel; see onPanelClick/
 // onPanelKeydown/renameSemanticToken) for its name, read-only token-name
-// field, palette button, reset. Only a palette swatch may set the color
-// value - never typed free text; renaming only changes which var the row
-// edits. shadow-color has no rename control (see semantic.js
-// isTokenRenamable) and renders its name as plain text.
+// field, palette button, reset, delete (card 15 - see onPanelClick's
+// [data-delete-token] branch/removeSemanticToken; EVERY role gets the
+// control, including shadow-color and the four preview-page roles, which
+// simply always refuse). Only a palette swatch may set the color value -
+// never typed free text; renaming only changes which var the row edits.
+// shadow-color has no rename control (see semantic.js isTokenRenamable) and
+// renders its name as plain text.
 function createColorFieldRow(key, vars) {
     const value = vars[key] || '';
     const hex = cssColorToHex(value) || '#000000';
@@ -871,7 +943,19 @@ function createColorFieldRow(key, vars) {
         setVar(key, loaded, { link: loadedLink ? { ...loadedLink } : null });
     });
 
-    row.append(swatch, nameWrap, input, paletteBtn, resetBtn);
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'color-field-delete';
+    deleteBtn.title = 'Delete token';
+    deleteBtn.dataset.deleteToken = `color.${key}`;
+    deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+
+    const deleteError = document.createElement('span');
+    deleteError.className = 'color-field-delete-error';
+    deleteError.dataset.deleteError = '';
+    deleteError.hidden = true;
+
+    row.append(swatch, nameWrap, input, paletteBtn, resetBtn, deleteBtn, deleteError);
     return row;
 }
 
@@ -2052,6 +2136,11 @@ function onPanelClick(e) {
             errorEl.textContent = err || '';
             errorEl.hidden = !err;
         }
+        return;
+    }
+    const deleteBtn = e.target.closest('[data-delete-token]');
+    if (deleteBtn && deleteBtn.closest('#panelBody')) {
+        removeSemanticToken(deleteBtn);
         return;
     }
     const target = e.target.closest('[data-ref]');

@@ -1,13 +1,17 @@
 // node tests/semantic.test.js
-// Loads the palette data, foundation.js, dtcg.js and semantic.js into one vm
-// context (they are plain browser globals) and checks semantic.js's
-// contract: the default token list, add/validate/normalize.
+// Loads the palette data, foundation.js, components.js, dtcg.js and
+// semantic.js into one vm context (they are plain browser globals) and
+// checks semantic.js's contract: the default token list, add/validate/
+// normalize.
 //
-// dtcg.js is loaded too (though semantic.js never calls into it) so this
-// file can assert SEMANTIC_COLOR_ROLES and DTCG_COLOR_ROLES name the same 33
-// roles as sets - the two lists are kept in different orders on purpose
-// (Summary-tab UI order vs. tokens.json export order) so a set comparison,
-// not a deep-equal, is the right guard against drift.
+// components.js is loaded (card 15) because semanticTokenUsers calls its
+// componentUsage - matching the real load order (index.html: foundation,
+// components, panels, dtcg, semantic). dtcg.js is loaded too (though
+// semantic.js never calls into it) so this file can assert
+// SEMANTIC_COLOR_ROLES and DTCG_COLOR_ROLES name the same 33 roles as sets -
+// the two lists are kept in different orders on purpose (Summary-tab UI
+// order vs. tokens.json export order) so a set comparison, not a deep-equal,
+// is the right guard against drift.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -15,7 +19,7 @@ const assert = require('assert');
 
 const root = path.resolve(__dirname, '..');
 const ctx = vm.createContext({ console });
-['tailwind-palette.js', 'atlassian-palette.js', 'foundation.js', 'dtcg.js', 'semantic.js'].forEach(f => {
+['tailwind-palette.js', 'atlassian-palette.js', 'foundation.js', 'components.js', 'dtcg.js', 'semantic.js'].forEach(f => {
     vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
 });
 // Script-scoped `const`s/`function`s are not properties of the context; lift
@@ -25,8 +29,9 @@ const g = vm.runInContext(`({
     isCssIdentifier, semanticNameError, addSemanticToken, normalizeSemanticTokens,
     resolveSemanticTarget, varCollision, semanticVarCollisionMessage, remapSemanticTokens, semanticVarLines,
     semanticTypeFallbackKey, resolveTypeSetForRef, resolveSemanticTypeSet, typeTokenNameError, semanticTypeAliasLines,
-    isTokenRenamable, builtinTokenName, renameToken,
-    parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale, buildTokensJson, parseTokensJson
+    isTokenRenamable, builtinTokenName, hasBuiltinToken, renameToken, SEMANTIC_FIXED_USERS, semanticTokenUsers, deleteSemanticToken,
+    parseRef, refToVar, scaleRef, findScaleEntry, setCustomScaleFor, emptyCustomScale, buildTokensJson, parseTokensJson,
+    componentUsage
 })`, ctx);
 
 // vm-context arrays/objects carry that realm's own Array/Object prototypes,
@@ -429,6 +434,16 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
     const renamedBg = defaults.map(t => (t.builtin === 'background' ? { ...t, name: 'canvas' } : t));
     ok(g.builtinTokenName(renamedBg, 'background') === 'canvas', 'builtinTokenName: finds whichever token now carries builtin === the role, wherever a rename moved it');
     ok(g.builtinTokenName([], 'background') === 'background', 'builtinTokenName falls back to the role name itself when nothing claims it (never dangles)');
+
+    // --- hasBuiltinToken (card 15): "renamed" vs "deleted", the distinction
+    // scripts.js renderFoldableGroups needs before it renders a field's row
+    // at all - builtinTokenName's fallback alone can't tell the two apart,
+    // since it returns the same role name either way.
+    ok(g.hasBuiltinToken(defaults, 'background') === true, 'hasBuiltinToken: true for an unrenamed built-in');
+    ok(g.hasBuiltinToken(renamedBg, 'background') === true, 'hasBuiltinToken: still true after a RENAME - the builtin identity moved, not vanished');
+    const deletedBg = defaults.filter(t => t.builtin !== 'background');
+    ok(g.hasBuiltinToken(deletedBg, 'background') === false, 'hasBuiltinToken: false once the role is genuinely DELETED (removed from the list, not renamed)');
+    ok(g.hasBuiltinToken([], 'background') === false, 'hasBuiltinToken([], …) is false');
 }
 
 // --- renameToken: pure, rewrites the token list + vars/tokenLinks (color) +
@@ -544,6 +559,142 @@ Object.entries(SCALE_TOKEN_CASES).forEach(([kind, c]) => {
     ok(parsedHighlight && parsedHighlight.builtin === 'accent', 'parseTokensJson reads the builtin identity back from the extension, not just the bare name');
     const normalizedBack = g.normalizeSemanticTokens(parsedBack.semanticTokens);
     ok(g.builtinTokenName(normalizedBack, 'accent') === 'highlight', 'end to end: after a tokens.json round trip, builtinTokenName still resolves "accent" to "highlight"');
+}
+
+// --- Delete a semantic token (card 15) --------------------------------------
+
+// --- semanticTokenUsers: in-use detection = componentUsage({seededStates:
+// true}) + the two DoD-fixed non-part users -----------------------------
+{
+    const defaults = g.defaultSemanticTokens();
+
+    // A part's own DEFAULT-state assignment (button.primary.bg -> color.primary
+    // via SEED_SPEC) and an element with no variants at all (tooltip.bg) both
+    // count, with no explicit `components` entry needed for either.
+    const primaryUsers = g.semanticTokenUsers('color', 'primary', defaults, {});
+    ok(primaryUsers.ids.includes('button.primary.bg'), '"primary": used by button.primary.bg (seeded default)');
+    ok(primaryUsers.ids.includes('tooltip.bg'), '"primary": used by tooltip.bg (seeded default, no variant)');
+    ok(primaryUsers.fixed === null, '"primary" has no fixed (non-part) user');
+
+    // "accent" is referenced ONLY by seeded STATE overrides on Default
+    // (button.outline/.ghost hover backgrounds) - the exact gap the DoD's
+    // "including parts that use it by default without an explicit
+    // assignment" line calls out; the plain (non-seededStates) componentUsage
+    // would miss these entirely (see the components.test.js case below).
+    const accentUsers = g.semanticTokenUsers('color', 'accent', defaults, {});
+    ok(accentUsers.ids.includes('button.outline.bg.hover'), '"accent": used by button.outline.bg.hover (seeded state override, no explicit entry)');
+    ok(accentUsers.ids.includes('button.ghost.bg.hover'), '"accent": used by button.ghost.bg.hover (seeded state override, no explicit entry)');
+
+    // A role nothing seeds onto by default is deletable - until a part is
+    // explicitly pointed at it.
+    const chart3Free = g.semanticTokenUsers('color', 'chart-3', defaults, {});
+    eq(chart3Free, { ids: [], fixed: null }, '"chart-3": no seeded user anywhere -> deletable');
+    const chart3Used = g.semanticTokenUsers('color', 'chart-3', defaults, { 'card.bg': 'color.chart-3' });
+    eq(chart3Used.ids, ['card.bg'], '"chart-3": an explicit assignment (card.bg) is picked up too');
+
+    // The DoD's own two fixed (non-part) users, by builtin identity.
+    ok(g.semanticTokenUsers('color', 'shadow-color', defaults, {}).fixed === 'every shadow step', 'shadow-color: fixed = "every shadow step"');
+    ['background', 'foreground', 'ring', 'muted-foreground'].forEach(name => {
+        const users = g.semanticTokenUsers('color', name, defaults, {});
+        ok(users.fixed === 'the preview page', `${name}: fixed = "the preview page"`);
+        // Every one of these four is ALSO seeded onto real parts by default
+        // (background/foreground/ring/muted-foreground all appear across
+        // Default) - the fixed line and the parts list coexist, they don't
+        // replace each other.
+        ok(users.ids.length > 0, `${name}: also has real part usage alongside its fixed user`);
+    });
+    ok(g.semanticTokenUsers('color', 'sidebar-primary', defaults, {}).fixed === null, 'sidebar-primary: an ordinary built-in role has no fixed user');
+
+    // The fixed-user check follows a RENAMED built-in's stable identity
+    // (`builtin`), not its current name - a renamed "background" must still
+    // be caught (it still feeds --pg-bg via builtinTokenName/cssVarBlockFor).
+    const renamedBg = defaults.map(t => (t.builtin === 'background' ? { ...t, name: 'canvas' } : t));
+    ok(g.semanticTokenUsers('color', 'canvas', renamedBg, {}).fixed === 'the preview page', 'a RENAMED "background" (now "canvas") is still fixed = "the preview page"');
+    // ...and a plain user token that merely happens to be named "background"
+    // again after the original moved away is NOT mistaken for the built-in
+    // (builtin: null, set by addSemanticToken/normalizeSemanticTokens).
+    const freedName = [...renamedBg, { kind: 'color', name: 'background', builtin: null }];
+    ok(g.semanticTokenUsers('color', 'background', freedName, {}).fixed === null, 'a name freed by a rename, reused by a genuinely new token, has no fixed user of its own');
+
+    // Non-color kinds have no fixed user at all - the shape (SEMANTIC_FIXED_USERS)
+    // is color-only, per the file header.
+    const spaceToken = { kind: 'space', name: 'card-padding', ref: 'space.6' };
+    eq(g.semanticTokenUsers('space', 'card-padding', [spaceToken], {}), { ids: [], fixed: null }, 'a non-color token has no fixed user, only part usage');
+
+    // --- the same path checks usage for a token INJECTED straight into the
+    // list (never added through addSemanticScaleToken) - proving the check
+    // works for a token of any kind, not just color. -----------------------
+    const injected = [...defaults, spaceToken];
+    const spaceUsers = g.semanticTokenUsers('space', 'card-padding', injected, { 'card.padding': 'space.card-padding' });
+    eq(spaceUsers, { ids: ['card.padding'], fixed: null }, 'an injected space token: componentUsage still finds an explicit assignment to it');
+}
+
+// --- deleteSemanticToken: pure, removes the list entry + (color only)
+// vars/tokenLinks in both modes, leaving everything else byte-identical.
+{
+    const defaults = g.defaultSemanticTokens();
+    const system = {
+        semanticTokens: defaults,
+        vars: {
+            light: { 'chart-3': '#398070', 'chart-4': '#d4a017', primary: '#111111' },
+            dark: { 'chart-3': '#3ba676', 'chart-4': '#e6b800', primary: '#eeeeee' }
+        },
+        tokenLinks: {
+            light: { 'chart-3': { source: 'tailwind', name: 'teal-700', hex: '#398070' } },
+            dark: { 'chart-3': { source: 'tailwind', name: 'teal-500', hex: '#3ba676' } }
+        }
+    };
+
+    const deleted = g.deleteSemanticToken(system, 'color', 'chart-3');
+    ok(!deleted.semanticTokens.some(t => t.kind === 'color' && t.name === 'chart-3'), '"chart-3" is gone from the token list');
+    ok(deleted.semanticTokens.some(t => t.kind === 'color' && t.name === 'chart-4'), 'every other entry survives');
+    eq(deleted.semanticTokens.length, defaults.length - 1, 'exactly one entry removed');
+    ok(!('chart-3' in deleted.vars.light) && !('chart-3' in deleted.vars.dark), 'both modes\' vars drop chart-3');
+    ok(!('chart-3' in deleted.tokenLinks.light) && !('chart-3' in deleted.tokenLinks.dark), 'both modes\' tokenLinks drop chart-3');
+    ok(deleted.vars.light.primary === '#111111' && deleted.vars.dark.primary === '#eeeeee', 'an unrelated var survives untouched');
+
+    // Pure: the original system is never mutated.
+    ok(system.semanticTokens.some(t => t.kind === 'color' && t.name === 'chart-3'), 'the original system.semanticTokens is untouched');
+    ok(system.vars.light['chart-3'] === '#398070', 'the original system.vars is untouched');
+    ok(system.tokenLinks.light['chart-3'].name === 'teal-700', 'the original system.tokenLinks is untouched');
+
+    // A name not in the list is a safe no-op (still fresh copies).
+    const noop = g.deleteSemanticToken(system, 'color', 'no-such-token');
+    eq(noop.semanticTokens, system.semanticTokens, 'deleting an unknown name changes nothing in the list');
+    eq(noop.vars, system.vars, 'a no-op leaves vars untouched');
+
+    // --- the same path deletes a token of ANY kind (a space token injected
+    // straight into the list, never added through addSemanticScaleToken) ---
+    const spaceToken = { kind: 'space', name: 'card-padding', ref: 'space.6' };
+    const withSpace = { ...system, semanticTokens: [...defaults, spaceToken] };
+    const deletedSpace = g.deleteSemanticToken(withSpace, 'space', 'card-padding');
+    ok(!deletedSpace.semanticTokens.some(t => t.kind === 'space' && t.name === 'card-padding'), 'the injected space token is gone from the list');
+    eq(deletedSpace.semanticTokens.length, withSpace.semanticTokens.length - 1, 'exactly one entry removed');
+    // A non-color deletion has no vars/tokenLinks entry to drop in the first
+    // place (the file header: a non-color token's value lives entirely in
+    // its own `ref` field) - both come back unchanged.
+    eq(deletedSpace.vars, withSpace.vars, "a non-color deletion never touches vars (there's nothing there to remove)");
+    eq(deletedSpace.tokenLinks, withSpace.tokenLinks, 'a non-color deletion never touches tokenLinks');
+
+    // --- tokens.json follows the deletion (dtcg.js, loaded in this same vm
+    // context): the deleted role/token is gone from every set it used to
+    // appear in, everything else is untouched. -----------------------------
+    const exported = g.buildTokensJson({
+        name: 'Delete check', source: 'tailwind', families: [],
+        vars: deleted.vars, links: deleted.tokenLinks, components: {},
+        semanticTokens: deleted.semanticTokens
+    });
+    ok(exported.light.color['chart-3'] === undefined, 'tokens.json: no light.color.chart-3 left behind');
+    ok(exported.dark.color['chart-3'] === undefined, 'tokens.json: no dark.color.chart-3 left behind');
+    ok(exported.light.color['chart-4'] !== undefined, 'tokens.json: an untouched role survives export');
+    ok(exported.global.$extensions['theme-editor'].semantic.tokens.every(t => t.name !== 'chart-3'), 'tokens.json: the $extensions token list also drops chart-3');
+
+    const exportedNoSpace = g.buildTokensJson({
+        name: 'Delete check', source: 'tailwind', families: [],
+        vars: withSpace.vars, links: withSpace.tokenLinks, components: {},
+        semanticTokens: deletedSpace.semanticTokens
+    });
+    ok(exportedNoSpace.global.semantic === undefined, 'tokens.json: no global.semantic.space.card-padding left behind once the token is deleted');
 }
 
 console.log(`semantic.test.js: ${checks} checks passed`);

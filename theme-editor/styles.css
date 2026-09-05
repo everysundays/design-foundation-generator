@@ -594,6 +594,35 @@ body.resizing-sidebar .preview-frame {
   color: var(--ui-text);
 }
 
+/* --- Delete a semantic token (card 15): a sibling of the reset button, never
+   a nested <button> - see onPanelClick's [data-delete-token] branch. Refused
+   (in-use, or one of the two fixed non-part users) shows .color-field-delete-
+   error, a direct child of .color-field-row so flex-basis:100% actually
+   drops it to its own line (the row itself has flex-wrap: wrap). */
+.color-field-delete {
+  border: none;
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.color-field-delete:hover {
+  color: var(--ui-warning);
+}
+
+.color-field-delete-error {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--ui-warning);
+  white-space: pre-line;
+}
+
+.color-field-delete-error[hidden] {
+  display: none;
+}
+
 /* --- Summary tab: "+ Add" row for a new semantic color token (see
    scripts.js buildAddSemanticTokenRow / addSemanticColorToken) --- */
 

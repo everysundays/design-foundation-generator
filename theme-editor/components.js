@@ -572,14 +572,38 @@ function buildWiringCss() {
 // --- Usage / remap -----------------------------------------------------------
 
 // { ref: [id, …] } over every default-state id (resolved) plus explicit
-// state entries.
-function componentUsage(components) {
+// state entries. `{ seededStates: true }` (card 15 - deleting a semantic
+// token) instead walks EVERY id x state through resolveComponentRef, the
+// exact loop componentVarLines emits CSS from - so a state that uses a ref
+// only by INHERITING it (a seeded hover override with no explicit entry of
+// its own, or a state with no seed at all that falls through to an
+// explicitly-changed default) counts as usage too, not only an explicit
+// non-default entry. The default (no options) path is unchanged - some
+// callers (the "used" dot on a panel entry) intentionally want only what's
+// explicit, and tests/components.test.js's own "usage skips seeded states"
+// case still holds for it.
+function componentUsage(components, options) {
     const comps = components || {};
     const usage = {};
     const add = (ref, id) => {
         if (!ref) return;
         (usage[ref] = usage[ref] || []).push(id);
     };
+    if (options && options.seededStates) {
+        ELEMENTS.forEach(el => {
+            elementVariants(el).forEach(variant => {
+                el.states.forEach(state => {
+                    el.parts.forEach(part => {
+                        part.props.forEach(prop => {
+                            const id = tokenId(el, variant, part.key, prop.key, state);
+                            add(resolveComponentRef(id, comps), id);
+                        });
+                    });
+                });
+            });
+        });
+        return usage;
+    }
     componentTokenIds().forEach(id => add(resolveComponentRef(id, comps), id));
     Object.keys(comps).forEach(id => {
         const parts = tokenIdParts(id);

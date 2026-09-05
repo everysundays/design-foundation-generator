@@ -649,6 +649,30 @@
   color: var(--ui-warning, #b45309);
 }
 
+/* --- Delete a token (card 15): a sibling of the rename/target controls on
+   the same row (panels.js buildTokenDeleteHtml) - see scripts.js
+   onPanelClick's [data-delete-token] branch / removeSemanticToken. The
+   color row's DOM-built equivalent is styles.css's .color-field-delete(-error). */
+.fp-delete-btn {
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+.fp-delete-btn:hover {
+  color: var(--ui-warning, #b45309);
+}
+
+.fp-delete-error {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--ui-warning, #b45309);
+  white-space: pre-line;
+}
+
 .fp-semantic-target-select {
   flex: 1 1 0;
   min-width: 0;

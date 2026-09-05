@@ -418,6 +418,19 @@ function buildTokenRenameHtml(name) {
   <input type="text" class="fp-rename-input" data-rename-input value="${panelEsc(name)}" hidden>`;
 }
 
+// The delete control shared by every non-color Summary-tab token row (card
+// 15: "Delete a semantic token") - an icon button (scripts.js onPanelClick's
+// [data-delete-token] branch / removeSemanticToken) plus its own inline-error
+// slot. The error is a DIRECT child of the row (same as fp-rename-error), so
+// a refusal - which can run to several lines, one per part using the token -
+// drops to its own line rather than squeezing the rename/target controls
+// (the row itself is flex-wrap: wrap). `ref` is the token's OWN ref (e.g.
+// "space.card-padding", "type.nav") - never what it targets.
+function buildTokenDeleteHtml(ref) {
+    return `<button type="button" class="fp-delete-btn" data-delete-token="${panelEsc(ref)}" title="Delete token"><i class="fas fa-trash"></i></button>
+  <span class="fp-delete-error" data-delete-error hidden></span>`;
+}
+
 // Every scaleEntries() step as an <option>, `selectedName` marked selected
 // (null selects nothing - the browser defaults to the first option, used by
 // the add-row before a step is deliberately picked).
@@ -439,6 +452,7 @@ function buildSemanticTokenSummaryRowHtml(ctx, kind, token) {
     return `<div class="fp-semantic-token-row" data-rename-kind="${panelEsc(kind)}" data-rename-name="${panelEsc(token.name)}">
   ${buildTokenRenameHtml(token.name)}
   <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTargetOptionsHtml(ctx, kind, targetName)}</select>
+  ${buildTokenDeleteHtml(ref)}
   <span class="fp-rename-error" data-rename-error hidden></span>
 </div>`;
 }
@@ -514,6 +528,7 @@ function buildSemanticTypeTokenRowHtml(ctx, token) {
     return `<div class="fp-semantic-token-row" data-rename-kind="type" data-rename-name="${panelEsc(token.name)}">
   ${buildTokenRenameHtml(token.name)}
   <select class="fp-semantic-target-select" data-semantic-target="${panelEsc(ref)}">${semanticTypeTargetOptionsHtml(ctx, targetKey)}</select>
+  ${buildTokenDeleteHtml(ref)}
   <span class="fp-rename-error" data-rename-error hidden></span>
 </div>`;
 }
