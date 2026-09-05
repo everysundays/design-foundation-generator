@@ -1321,3 +1321,66 @@ function removeVariantFromSpec(spec, components, variant) {
         components: dropVariantTokens(components, spec.key, variant)
     };
 }
+
+// --- Custom elements: rename/delete -------------------------------------------
+//
+// The only way an already-registered custom element's KEY/LABEL or its very
+// EXISTENCE changes (its part/variant lists are 20/21's) - same contract as
+// every other custom-element mutator above: pure, in the current
+// spec+components, out the next spec+components (or an error). Unlike the
+// part/variant pairs, both take the FULL list (`specs` = state.customElements)
+// rather than one spec - a rename/delete changes which key IDENTIFIES an
+// entry (or removes the entry outright), so the list itself is what's
+// edited, not just one member of it. scripts.js's entry points push one undo
+// step, swap the result into state.customElements/state.components, then
+// applyCustomElementsChange() + renderAll(), same as every add/remove pair.
+
+// null | { error } | { specs, components, key }. `rawName` goes through the
+// exact rule createCustomElement uses (validateCustomElementName), except
+// the element's OWN current key is excluded from the collision set - so
+// "Chip" -> "chip" (same key, only the label's case changes) or simply
+// re-confirming the unchanged name is a label-only edit, never a
+// self-collision refusal. A successful rename rewrites every id belonging to
+// this element (`<oldKey>.<rest>` -> `<newKey>.<rest>`) in `components` -
+// ids never carry a literal '.' inside a key segment (the validator
+// enforces that), so id.startsWith(`${oldKey}.`) is exact and can never also
+// catch an unrelated element whose key happens to start with oldKey.
+function renameCustomElement(specs, components, oldKey, rawName) {
+    const spec = (specs || []).find(s => s.key === oldKey);
+    if (!spec) return { error: `"${oldKey}" is not a custom element.` };
+    // Stock keys (ELEMENTS, a fixed const) + every OTHER registered custom
+    // key - same union createCustomElement passes via allElements(), built
+    // here from the caller's own `specs` (rather than reading the live
+    // CUSTOM_ELEMENTS registry) so this stays a pure function of its inputs.
+    const existingKeys = ELEMENTS.map(e => e.key).concat((specs || []).map(s => s.key).filter(k => k !== oldKey));
+    const err = validateCustomElementName(rawName, existingKeys);
+    if (err) return { error: err };
+    const label = String(rawName).trim();
+    const key = label.toLowerCase();
+    const prefix = `${oldKey}.`;
+    const nextComponents = {};
+    Object.keys(components || {}).forEach(id => {
+        nextComponents[id.startsWith(prefix) ? `${key}${id.slice(oldKey.length)}` : id] = components[id];
+    });
+    return {
+        specs: specs.map(s => (s.key === oldKey ? { ...s, key, label } : s)),
+        components: nextComponents,
+        key
+    };
+}
+
+// null | { specs, components }. Drops the spec and every id belonging to it -
+// dropVariantTokens's own exact-prefix match, generalised from one variant to
+// the whole element. An unknown key is a permissive no-op (equal-valued
+// specs/components), mirroring removeCustomPart/removeVariantFromSpec's own
+// defensive style, though scripts.js's entry point never calls this for a
+// key that isn't the current selection.
+function deleteCustomElement(specs, components, key) {
+    const prefix = `${key}.`;
+    const nextComponents = {};
+    Object.keys(components || {}).forEach(id => { if (!id.startsWith(prefix)) nextComponents[id] = components[id]; });
+    return {
+        specs: (specs || []).filter(s => s.key !== key),
+        components: nextComponents
+    };
+}

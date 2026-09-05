@@ -1675,6 +1675,11 @@ function onPanelClick(e) {
         }
         return;
     }
+    const customDeleteBtn = e.target.closest('[data-custom-delete]');
+    if (customDeleteBtn && customDeleteBtn.closest('#panelBody')) {
+        deleteSelectedCustomElement();
+        return;
+    }
     const partRemoveBtn = e.target.closest('[data-part-remove]');
     if (partRemoveBtn && partRemoveBtn.closest('#panelBody')) {
         const err = removeSelectedCustomPart(partRemoveBtn.dataset.partRemove);
@@ -1722,6 +1727,33 @@ function onPanelClick(e) {
     const id = kind ? activeTokenId(kind) : null;
     if (!id) return;
     setComponentToken(id, ref);
+}
+
+// The custom-element header's rename field is the only #panelBody control
+// that reads keydown (every other field there commits through a click - see
+// onPanelClick's own add/remove branches). Enter commits (validated inline -
+// a refusal writes into the sibling [data-custom-error] without a panel
+// re-render, same as every add-row's own inline error above); Escape
+// restores the field to the element's current label and clears any refusal
+// showing. Blur does nothing - the field simply keeps whatever was last
+// typed until one of these two keys is pressed.
+function onPanelKeydown(e) {
+    const input = e.target.closest('[data-custom-rename]');
+    if (!input || !input.closest('#panelBody')) return;
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const err = renameSelectedCustomElement(input.value);
+        // A success rebuilds #panelBody (renderAll -> renderPanel), so this
+        // always queries whatever error element is live AFTER the attempt -
+        // mirrors onPanelClick's own add/remove branches.
+        const errorEl = document.querySelector('#panelBody [data-custom-error]');
+        if (errorEl) { errorEl.textContent = err || ''; errorEl.hidden = !err; }
+    } else if (e.key === 'Escape') {
+        const spec = selectedSpec();
+        if (spec) input.value = spec.label;
+        const errorEl = document.querySelector('#panelBody [data-custom-error]');
+        if (errorEl) { errorEl.textContent = ''; errorEl.hidden = true; }
+    }
 }
 
 function selectElement(element, variant, part, stateKey) {
@@ -1904,6 +1936,50 @@ function removeSelectedCustomVariant(variant) {
     const spec = selectedSpec();
     if (!spec || !spec.custom) return null;
     return applyCustomPartResult(spec, removeVariantFromSpec(spec, state.components, variant));
+}
+
+// --- Custom elements: rename/delete ---
+// Rename/delete of the ELEMENT itself (its part/variant lists are 20/21's).
+// Same contract as every mutator above: components.js does the pure
+// rewrite/purge, this only pushes undo, swaps state and finishes with
+// applyCustomElementsChange() + renderAll(). No confirm dialog on delete -
+// Undo is the safety net, same as every add/remove above.
+
+// Called from the rename field's own Enter keydown (onPanelKeydown below),
+// never from a button - "a rename field" is the whole control. Returns an
+// inline-refusal string on failure (nothing changed, so nothing is pushed to
+// undo and no re-render happens - the field keeps whatever was typed), else
+// null. Re-selects under the NEW key (result.key) so the strip, this same
+// header, tooltips and every export immediately read it, not the old one.
+function renameSelectedCustomElement(rawName) {
+    const spec = selectedSpec();
+    if (!spec || !spec.custom) return null;
+    const sel = state.selection;
+    const result = renameCustomElement(state.customElements, state.components, spec.key, rawName);
+    if (result.error) return result.error;
+    pushUndo();
+    state.customElements = result.specs;
+    state.components = result.components;
+    applyCustomElementsChange();
+    selectElement(result.key, sel.variant, sel.part, sel.state);
+    renderAll();
+    return null;
+}
+
+// Called from the header's delete control - a single click. Clears the
+// selection only when THIS element was the one selected (only one element
+// can ever be selected at a time) - reconcileSelection (renderAll's first
+// step) has nothing to fall back to once the spec itself is gone.
+function deleteSelectedCustomElement() {
+    const spec = selectedSpec();
+    if (!spec || !spec.custom) return;
+    pushUndo();
+    const result = deleteCustomElement(state.customElements, state.components, spec.key);
+    state.customElements = result.specs;
+    state.components = result.components;
+    if (state.selection && state.selection.element === spec.key) state.selection = null;
+    applyCustomElementsChange();
+    renderAll();
 }
 
 // --- Palette source switch ---
@@ -2299,6 +2375,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Panels: one delegated click handler, plus tooltips for [data-tip].
     const panelBody = document.getElementById('panelBody');
     panelBody.addEventListener('click', onPanelClick);
+    panelBody.addEventListener('keydown', onPanelKeydown);
     panelBody.addEventListener('mouseover', (e) => {
         const tipped = e.target.closest('[data-tip]');
         if (tipped && panelBody.contains(tipped)) showSwatchTooltip(tipped, tipped.dataset.tip);

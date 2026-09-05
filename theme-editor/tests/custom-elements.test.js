@@ -22,7 +22,7 @@ const g = vm.runInContext(`({ ELEMENTS, allElements, setCustomElements, customEl
     tokenId, propKind, seedComponentTokens, resolveComponentRef, componentVarLines, buildWiringCss, parseRef,
     refToVar, findScaleEntry, paletteEntryByName, elementSpec, customElementMissingKinds, customPartIds,
     removeCustomPart, addCustomPart, CUSTOM_PART_FACTORY, variantNameError, addVariantToSpec,
-    removeVariantFromSpec, copyVariantTokens, dropVariantTokens })`, ctx);
+    removeVariantFromSpec, copyVariantTokens, dropVariantTokens, renameCustomElement, deleteCustomElement })`, ctx);
 
 const SOURCES = ['tailwind', 'atlassian'];
 const SEMANTIC_ROLES = new Set([
@@ -670,6 +670,140 @@ SOURCES.forEach(source => {
         const id = g.tokenId(noteSpec, 'info', part.key, prop.key);
         ok(added.components[id] !== undefined && added.components[id] !== null, `${id}: note.info.* id resolves non-null`);
     }));
+}
+
+// --- renameCustomElement: validation reuse (self-key excluded from the
+// collision set), exact id rewrite across every variant x part x prop x
+// state, every other id (stock and other customs) byte-for-byte untouched
+// (card [22]) -----------------------------------------------------------------
+{
+    const specs = [chip, note, tag, check];
+    const comps = { ...g.seedComponentTokens('tailwind', { radiusRem: 0.5 }), 'chip.primary.bg.hover': 'palette.amber-500' };
+
+    // Validation reuse: same refusals createCustomElement's own name rules
+    // enforce, PLUS the rename-only exclusion of the element's own key.
+    ok(!!g.renameCustomElement(specs, comps, 'chip', 'button').error, 'renaming to a stock key is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'chip', 'note').error, 'renaming to another custom key is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'chip', 'Chip Hover').error, 'renaming to a non-identifier (space) is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'chip', 'chip-hover').error, 'renaming to a -hover-suffixed name is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'chip', '').error, 'renaming to a blank name is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'chip', '   ').error, 'renaming to a whitespace-only name is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'chip', 'space').error, 'renaming to a reserved var-namespace prefix is refused');
+    ok(!!g.renameCustomElement(specs, comps, 'not-a-key', 'whatever').error, 'renaming an unregistered key is refused');
+    const sameKey = g.renameCustomElement(specs, comps, 'chip', 'Chip');
+    ok(!sameKey.error && sameKey.key === 'chip', 'renaming "chip" to "Chip" (same derived key) is NOT refused as a self-collision');
+    ok(sameKey.specs.find(s => s.key === 'chip').label === 'Chip', 'a same-key rename still applies the (possibly re-cased) label');
+    ok(JSON.stringify(Object.keys(sameKey.components).sort()) === JSON.stringify(Object.keys(comps).sort()), 'a same-key rename touches no id (prefix is unchanged)');
+
+    // Full rewrite, registered and unregistered forms.
+    const renamed = g.renameCustomElement(specs, comps, 'chip', 'Tag2');
+    ok(!renamed.error, 'renameCustomElement("chip" -> "Tag2") succeeds');
+    ok(renamed.key === 'tag2', 'derived key is the lowercased trimmed name, same rule createCustomElement uses');
+    const renamedSpec = renamed.specs.find(s => s.key === 'tag2');
+    ok(renamedSpec && renamedSpec.label === 'Tag2', 'the renamed spec carries the new key and label');
+    ok(!renamed.specs.some(s => s.key === 'chip'), 'no spec answers to the old key any more');
+    ok(renamed.specs.length === specs.length, 'renaming changes no other spec - same count');
+    ['note', 'tag', 'check'].forEach(k => ok(renamed.specs.find(s => s.key === k) === specs.find(s => s.key === k), `${k}'s spec is the SAME object after renaming chip (untouched)`));
+    ok(JSON.stringify(specs.map(s => s.key)) === JSON.stringify(['chip', 'note', 'tag', 'check']), 'the ORIGINAL specs array is left untouched (pure)');
+    ok(specs.find(s => s.key === 'chip') === chip, 'the ORIGINAL chip spec object is left untouched (pure)');
+
+    const chipIds = Object.keys(comps).filter(id => id.startsWith('chip.'));
+    ok(chipIds.length > 0, 'sanity: chip actually has ids to rewrite');
+    const distinctParts = new Set(chipIds.map(id => id.split('.')[2]));
+    const distinctStates = new Set(chipIds.map(id => g.tokenIdParts(id).state));
+    ok(distinctParts.size > 1, 'sanity: chip\'s seeded ids span more than one part');
+    ok(distinctStates.size > 1, 'sanity: chip\'s seeded ids span more than one state (default + at least one delta)');
+    chipIds.forEach(id => {
+        const newId = `tag2${id.slice('chip'.length)}`;
+        ok(renamed.components[newId] === comps[id], `${id} -> ${newId}: value carried over unchanged`);
+    });
+    ok(!Object.keys(renamed.components).some(id => id.startsWith('chip.')), 'no chip.* id survives the rename');
+    ok(Object.keys(renamed.components).length === Object.keys(comps).length, 'rename changes no id COUNT - a pure rewrite, never a drop or an add');
+    ok(renamed.components['button.primary.bg'] === comps['button.primary.bg'], 'a stock id (button.primary.bg) is untouched by the rename');
+    Object.keys(comps).forEach(id => {
+        if (id.startsWith('chip.')) return;
+        ok(renamed.components[id] === comps[id], `${id}: every non-chip id (stock and other customs) is untouched by the rename`);
+    });
+    ok(comps['chip.primary.bg.hover'] === 'palette.amber-500', 'sanity: the original components map is untouched (pure)');
+
+    // Exhaustive one-to-one correspondence via componentTokenIds() (every
+    // variant x part x prop of the CURRENT spec, default state) - the DoD's
+    // own "for every variant/part/state", checked structurally rather than
+    // against whichever ids the sparse seed fixture happens to carry.
+    const chipDefaultIds = g.componentTokenIds().filter(id => id.startsWith('chip.'));
+    g.setCustomElements(renamed.specs);
+    const tag2DefaultIds = g.componentTokenIds().filter(id => id.startsWith('tag2.'));
+    ok(tag2DefaultIds.length === chipDefaultIds.length && tag2DefaultIds.length > 0, 'the renamed element contributes exactly as many default-state ids as chip did');
+    tag2DefaultIds.forEach(id => ok(chipDefaultIds.includes(`chip${id.slice('tag2'.length)}`), `${id} corresponds 1:1 to a chip default id`));
+    ok(!g.componentTokenIds().some(id => id.startsWith('chip.')), 'componentTokenIds() lists no chip.* id once the rename is registered');
+
+    const wiringAfterRename = g.buildWiringCss();
+    ok(wiringAfterRename.includes('[data-element="tag2"]'), 'wiring sheet uses the new selector');
+    ok(!wiringAfterRename.includes('[data-element="chip"]'), 'wiring sheet no longer mentions the old selector');
+    SOURCES.forEach(source => {
+        const css = g.componentVarLines(renamed.components, source);
+        ok(css.includes('--tag2-') && !css.includes('--chip-'), `${source}: componentVarLines emits --tag2-* and no --chip-*`);
+        ok(!/null|undefined/.test(css), `${source}: componentVarLines has no null/undefined after the rename`);
+    });
+    g.setCustomElements([chip, note, tag, check]); // restore the shared registry
+}
+
+// --- deleteCustomElement: drops the spec and every one of its ids,
+// componentTokenIds() reflects it once registered, every other id (stock and
+// other customs) untouched, unknown key is a permissive no-op, deleting down
+// to zero leaves the Custom section with only its own control (card [22]) ---
+{
+    const specs = [chip, note, tag, check];
+    const comps = { ...g.seedComponentTokens('tailwind', { radiusRem: 0.5 }), 'chip.primary.bg': 'palette.rose-500' };
+    const chipIds = Object.keys(comps).filter(id => id.startsWith('chip.'));
+    ok(chipIds.length > 0, 'sanity: chip has ids to drop');
+
+    const deleted = g.deleteCustomElement(specs, comps, 'chip');
+    ok(!deleted.specs.some(s => s.key === 'chip'), 'chip is gone from the returned spec list');
+    ok(deleted.specs.length === 3, 'the other three custom elements remain');
+    ['note', 'tag', 'check'].forEach(k => ok(deleted.specs.find(s => s.key === k) === specs.find(s => s.key === k), `${k}'s spec is the SAME object after deleting chip (untouched)`));
+    ok(specs.length === 4 && specs.some(s => s.key === 'chip'), 'the ORIGINAL specs array is left untouched (pure)');
+
+    ok(!Object.keys(deleted.components).some(id => id.startsWith('chip.')), 'no chip.* id survives deleteCustomElement');
+    ok(Object.keys(deleted.components).length === Object.keys(comps).length - chipIds.length, "exactly chip's own ids are dropped - nothing else");
+    Object.keys(comps).forEach(id => {
+        if (id.startsWith('chip.')) return;
+        ok(deleted.components[id] === comps[id], `${id}: every non-chip id (stock and other customs) is untouched by the delete`);
+    });
+    ok(comps['chip.primary.bg'] === 'palette.rose-500', 'sanity: the original components map is untouched (pure)');
+
+    // Register the deletion and sweep componentTokenIds() - the DoD's own
+    // wording: "delete drops them from componentTokenIds()".
+    g.setCustomElements(deleted.specs);
+    ok(!g.componentTokenIds().some(id => id.startsWith('chip.')), 'componentTokenIds() lists no chip.* id once the deletion is registered');
+    ok(g.componentTokenIds().some(id => id.startsWith('note.')), 'componentTokenIds() still lists the remaining custom elements');
+    ok(!g.buildWiringCss().includes('[data-element="chip"]'), 'wiring sheet no longer mentions the deleted element');
+
+    // Unknown key: a permissive no-op - scripts.js's own entry point never
+    // calls this for a key that isn't the current selection, but the pure
+    // function stays defensive regardless (mirrors removeCustomPart/
+    // removeVariantFromSpec's own style for an absent name).
+    const noop = g.deleteCustomElement(specs, comps, 'not-a-key');
+    ok(JSON.stringify(noop.specs.map(s => s.key)) === JSON.stringify(specs.map(s => s.key)), 'deleting an unknown key drops nothing from the spec list');
+    ok(JSON.stringify(Object.keys(noop.components).sort()) === JSON.stringify(Object.keys(comps).sort()), 'deleting an unknown key drops nothing from components');
+
+    // Deleting every custom element in turn - "a system with no custom
+    // elements left shows the Custom section with only the 'New custom
+    // element' control".
+    let downTo = specs;
+    let downToComps = comps;
+    ['chip', 'note', 'tag', 'check'].forEach(k => {
+        const step = g.deleteCustomElement(downTo, downToComps, k);
+        downTo = step.specs;
+        downToComps = step.components;
+    });
+    ok(downTo.length === 0, 'deleting all four leaves an empty custom-element list');
+    ok(Object.keys(downToComps).every(id => STOCK_KEYS.some(sk => id.startsWith(`${sk}.`))), 'no custom id of any kind survives once every custom element is deleted');
+    g.setCustomElements(downTo);
+    const emptyGallery = g.buildCustomGalleryHtml();
+    ok(emptyGallery.includes('data-action="new-custom-element"'), 'a system with no custom elements left still shows the New custom element control');
+    ok(!/gallery-section/.test(emptyGallery), 'a system with no custom elements left shows no specimen sections');
+    g.setCustomElements([chip, note, tag, check]); // restore the shared registry
 }
 
 console.log(`custom-elements.test.js: ${checks} checks passed`);

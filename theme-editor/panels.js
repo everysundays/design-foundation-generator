@@ -135,15 +135,22 @@ function buildSelectionStripHtml(ctx) {
 
 // The other builder that isn't a tab: renderPanel prepends this right after
 // buildSelectionStripHtml, ahead of the tab's own HTML, whenever the
-// selection is a custom element. Name and base are read-only; the part list
-// (card [20]) is not - every part gets its own remove control, and a row
-// below offers one add button per kind customElementMissingKinds() (see
+// selection is a custom element. Base is read-only; the name is a field
+// (card [22]) - an input pre-filled with the current label, committed on
+// Enter and reverted on Escape (scripts.js's onPanelKeydown), refused inline
+// into the sibling [data-custom-error] the same way every add-row above
+// shows its own refusal, never a panel re-render. The part list (card [20])
+// is not read-only either - every part gets its own remove control, and a
+// row below offers one add button per kind customElementMissingKinds() (see
 // components.js) still lacks - never a kind already present, and a kept part
 // (radius, gap, ring, …) removed here has no way back since it was never one
-// of the six add-list kinds to begin with. scripts.js's onPanelClick reads
-// data-part-remove/data-part-add and writes any refusal into [data-part-error]
-// inline (a spec change itself only ever happens through its own entry point,
-// which ends in applyCustomElementsChange() + renderAll()).
+// of the six add-list kinds to begin with. A single delete control (card
+// [22]) removes the element outright - no confirm dialog, Undo is the safety
+// net, same as every mutator here. scripts.js's onPanelClick reads
+// data-part-remove/data-part-add/data-custom-delete and writes any refusal
+// into the matching inline error span (a spec change itself only ever
+// happens through its own entry point, which ends in
+// applyCustomElementsChange() + renderAll()).
 function buildCustomPartRowHtml(part) {
     return `<div class="fp-custom-part" data-part="${panelEsc(part.key)}">
   <span class="fp-custom-part-label">${panelEsc(part.label)}</span>
@@ -169,7 +176,12 @@ function buildCustomElementHeaderHtml(ctx) {
     if (!spec || !spec.custom) return '';
     const baseSpec = elementSpec(spec.base);
     return `<div class="fp-custom-header">
-  <div class="fp-custom-header-row"><span class="fp-custom-header-name">${panelEsc(spec.label)}</span><span class="fp-custom-header-base">from ${panelEsc(baseSpec ? baseSpec.label : spec.base)}</span></div>
+  <div class="fp-custom-header-row">
+    <input type="text" class="fp-custom-header-name" data-custom-rename value="${panelEsc(spec.label)}" aria-label="Rename ${panelEsc(spec.label)}">
+    <span class="fp-custom-header-base">from ${panelEsc(baseSpec ? baseSpec.label : spec.base)}</span>
+    <button type="button" class="fp-custom-header-delete" data-custom-delete aria-label="Delete ${panelEsc(spec.label)}"><i class="fas fa-trash"></i></button>
+  </div>
+  <span class="fp-add-error" data-custom-error hidden></span>
   <div class="fp-custom-parts">${spec.parts.map(buildCustomPartRowHtml).join('')}</div>
   ${buildCustomPartAddRowHtml(spec)}
   <span class="fp-custom-part-error" data-part-error hidden></span>

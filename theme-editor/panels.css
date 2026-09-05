@@ -518,7 +518,8 @@
 }
 
 /* --- Custom-element header, prepended (below the strip) when the selection
-   is a custom element. Name/base are read-only; the part list (card [20])
+   is a custom element. Base is read-only; the name is a rename field (card
+   [22]) and a delete control sits at the row's end; the part list (card [20])
    carries a remove control per row and an add row for the missing kinds. --- */
 
 .fp-custom-header {
@@ -531,19 +532,58 @@
 
 .fp-custom-header-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
 }
 
 .fp-custom-header-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text);
   font-size: 12px;
   font-weight: 700;
-  color: var(--ui-text);
+  font-family: inherit;
+}
+
+.fp-custom-header-name:hover {
+  border-color: var(--ui-border);
+}
+
+.fp-custom-header-name:focus {
+  outline: none;
+  border-color: var(--ui-accent);
+  background: var(--ui-bg);
 }
 
 .fp-custom-header-base {
+  flex-shrink: 0;
   font-size: 11px;
   color: var(--ui-text-muted);
+}
+
+.fp-custom-header-delete {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fp-custom-header-delete:hover {
+  color: #ffffff;
+  background: var(--ui-danger);
 }
 
 .fp-custom-parts {
